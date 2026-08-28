@@ -679,6 +679,7 @@ async function startDonorControl() {
   if (!runtime.avdIni || !runtime.avdConfig || !runtime.avdDir) throw new Error(`Required official Play AVD ${AVD_NAME} was not found.`);
   ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
   const prepared = prepareDonorAVD(runtime);
+  const windowFit = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
   for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
@@ -698,6 +699,7 @@ async function startDonorControl() {
   const emulatorPid = startDonorEmulator(runtime, captureDir);
   try {
     await waitForBoot(runtime);
+    const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
     const clockPreflight = await ensureGuestClock(runtime, captureDir);
     const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD');
     const pkg = packageState(runtime, captureDir, false);
@@ -725,6 +727,7 @@ async function startControl() {
   if (!runtime.avdIni || !runtime.avdConfig) throw new Error(`Required AVD ${AVD_NAME} was not found. A clean AVD must be created from the installed official image before launch.`);
   if (!isUnder(runtime.avdDir, EXTERNAL_ROOT)) throw new Error('Selected AVD is not on the required external runtime volume.');
   ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
+  const windowFit = prepareEmulatorWindowFit(runtime, PLAY_DISPLAY_WIDTH, PLAY_DISPLAY_HEIGHT);
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
   for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
@@ -747,6 +750,7 @@ async function startControl() {
   const reusedRunningEmulator = deviceReady(runtime);
   const emulatorPid = reusedRunningEmulator ? null : startEmulator(runtime, captureDir);
   await waitForBoot(runtime);
+  const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
   const clockPreflight = await ensureGuestClock(runtime, captureDir);
   runtimeState(runtime, captureDir, reusedRunningEmulator ? 'WARM' : 'COLD');
   const pkg = packageState(runtime, captureDir, false);
@@ -1061,6 +1065,166 @@ async function loggerHealth() {
   };
   writeJSON(path.join(state.captureDir, 'logger-health.json'), result);
   return result;
+}
+
+function hostDesktopBounds() {
+  const result = command('/usr/bin/osascript', ['-e', 'tell application "Finder" to get bounds of window of desktop'], { allowFailure: true, timeout: 10000 });
+  const values = result.stdout.trim().split(/\s*,\s*/).map(Number);
+  if (result.status !== 0 || values.length < 4 || values.some(value => !Number.isFinite(value))) return null;
+  return { x: values[0], y: values[1], width: values[2] - values[0], height: values[3] - values[1] };
+}
+
+function setUserIniValue(text, key, value) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^\\s*${escaped}\\s*=.*$`, 'm');
+  return pattern.test(text)
+    ? text.replace(pattern, `${key} = ${value}`)
+    : `${text.replace(/\s*$/, '')}${text.trim() ? '\n' : ''}${key} = ${value}\n`;
+}
+
+function prepareEmulatorWindowFit(runtime, contentWidth, contentHeight) {
+  if (!runtime.avdDir) return { prepared: false, reason: 'AVD_UNRESOLVED' };
+  const bounds = hostDesktopBounds();
+  if (!bounds) return { prepared: false, reason: 'HOST_DESKTOP_BOUNDS_UNRESOLVED' };
+  const marginX = 40;
+  const marginTop = 55;
+  const marginBottom = 45;
+  const chromeWidth = 72;
+  const chromeHeight = 38;
+  const availableWidth = Math.max(320, bounds.width - (marginX * 2) - chromeWidth);
+  const availableHeight = Math.max(240, bounds.height - marginTop - marginBottom - chromeHeight);
+  const scale = Math.max(0.1, Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight));
+  const userIniPath = path.join(runtime.avdDir, 'emulator-user.ini');
+  let text = exists(userIniPath) ? fs.readFileSync(userIniPath, 'utf8') : '[General]\n';
+  text = setUserIniValue(text, 'window.x', marginX);
+  text = setUserIniValue(text, 'window.y', marginTop);
+  text = setUserIniValue(text, 'window.scale', scale.toFixed(6));
+  fs.writeFileSync(userIniPath, text);
+  return { prepared: true, userIniPath, desktop: bounds, content: { width: contentWidth, height: contentHeight }, window: { x: marginX, y: marginTop, scale } };
+}
+
+function prepareGuestFullscreenPolicy(runtime) {
+  if (!deviceReady(runtime)) return { prepared: false, reason: 'DEVICE_NOT_READY' };
+  const keys = {
+    override_desktop_mode_features: '0',
+    enable_freeform_support: '0',
+    force_desktop_mode_on_external_displays: '0'
+  };
+  const before = {};
+  const after = {};
+  for (const [key, value] of Object.entries(keys)) {
+    before[key] = adb(runtime, ['shell', 'settings', 'get', 'global', key], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+    adb(runtime, ['shell', 'settings', 'put', 'global', key, value], { allowFailure: true, timeout: 10000 });
+    after[key] = adb(runtime, ['shell', 'settings', 'get', 'global', key], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+  }
+  return { prepared: Object.entries(keys).every(([key, value]) => after[key] === value), rebootRequiredForDesktopModeOverride: before.override_desktop_mode_features !== '0', before, after };
+}
+
+function presentationProbe() {
+  const runtime = discover();
+  if (!deviceReady(runtime)) throw new Error('No active emulator available.');
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout }).stdout;
+  const windowDump = shell(['dumpsys', 'window', 'displays']);
+  const activityDump = shell(['dumpsys', 'activity', 'top']);
+  return {
+    action: 'PRESENTATION_PROBE',
+    wmSize: shell(['wm', 'size']).trim(),
+    wmDensity: shell(['wm', 'density']).trim(),
+    orientation: shell(['settings', 'get', 'system', 'user_rotation']).trim(),
+    windowEvidence: windowDump.split(/\r?\n/).filter(line => /DisplayFrames|DisplayCutout|InsetsState|statusBars|navigationBars|mCurrentFocus|mFocusedApp|GameActivity|teamfighttactics|frame=|displayFrame=/i.test(line)).slice(0, 320),
+    activityEvidence: activityDump.split(/\r?\n/).filter(line => /ACTIVITY|GameActivity|teamfighttactics|bounds|appBounds|mResumedActivity|topResumedActivity/i.test(line)).slice(0, 220)
+  };
+}
+
+function emulatorWindowInventory() {
+  const runtime = discover();
+  if (!deviceReady(runtime)) throw new Error('No active emulator available.');
+  const state = readJSON(CONTROL_STATE);
+  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
+  const observedPid = state?.emulatorPid && processAlive(state.emulatorPid)
+    ? Number(state.emulatorPid)
+    : Number(ps.split(/\r?\n/).map(line => line.trim()).map(line => line.match(/^(\d+)\s+(.+)$/)).find(match => match && /qemu-system-aarch64/.test(match[2]) && new RegExp(`@${AVD_NAME}\\b`).test(match[2]))?.[1] ?? 0);
+  if (!observedPid) throw new Error('Active emulator host PID could not be resolved.');
+  const script = `
+    tell application "System Events"
+      set targetProcess to first application process whose unix id is ${observedPid}
+      set outputText to ""
+      set windowCount to count of windows of targetProcess
+      repeat with i from 1 to windowCount
+        set w to window i of targetProcess
+        set n to name of w
+        set s to size of w
+        set p to position of w
+        set outputText to outputText & i & "|" & n & "|" & (item 1 of s) & "x" & (item 2 of s) & "|" & (item 1 of p) & "," & (item 2 of p) & linefeed
+      end repeat
+    end tell
+    return outputText
+  `;
+  const result = command('/usr/bin/osascript', ['-e', script], { allowFailure: true, timeout: 10000 });
+  if (result.status !== 0) throw new Error(`EMULATOR_WINDOW_INVENTORY_FAILED: ${(result.stderr || result.stdout || '').trim()}`);
+  return { action: 'EMULATOR_WINDOW_INVENTORY', emulatorPid: observedPid, windows: result.stdout.trim().split(/\r?\n/).filter(Boolean) };
+}
+
+function fitEmulatorWindow() {
+  const runtime = discover();
+  if (!deviceReady(runtime)) throw new Error('No active emulator available to fit.');
+  const state = readJSON(CONTROL_STATE);
+  const nextBootGuestPolicy = prepareGuestFullscreenPolicy(runtime);
+  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
+  const observedPid = state?.emulatorPid && processAlive(state.emulatorPid)
+    ? Number(state.emulatorPid)
+    : Number(ps.split(/\r?\n/).map(line => line.trim()).map(line => line.match(/^(\d+)\s+(.+)$/)).find(match => match && /qemu-system-aarch64/.test(match[2]) && new RegExp(`@${AVD_NAME}\\b`).test(match[2]))?.[1] ?? 0);
+  if (!observedPid) throw new Error('Active emulator host PID could not be resolved.');
+  const script = `
+    tell application "Finder" to set desktopBounds to bounds of window of desktop
+    set screenWidth to item 3 of desktopBounds
+    set screenHeight to item 4 of desktopBounds
+    set marginX to 40
+    set marginTop to 55
+    set marginBottom to 45
+    set chromeWidth to 72
+    set chromeHeight to 38
+    set availableWidth to screenWidth - (marginX * 2) - chromeWidth
+    set availableHeight to screenHeight - marginTop - marginBottom - chromeHeight
+    set contentWidth to availableWidth
+    set contentHeight to contentWidth * 9 / 16
+    if contentHeight > availableHeight then
+      set contentHeight to availableHeight
+      set contentWidth to contentHeight * 16 / 9
+    end if
+    set targetWidth to (contentWidth + chromeWidth) as integer
+    set targetHeight to (contentHeight + chromeHeight) as integer
+    tell application "System Events"
+      set targetProcess to first application process whose unix id is ${observedPid}
+      set targetWindow to missing value
+      repeat with w in windows of targetProcess
+        try
+          if name of w starts with "Android Emulator - " then
+            set targetWindow to w
+            exit repeat
+          end if
+        end try
+      end repeat
+      if targetWindow is missing value then error "Android Emulator canvas window not found"
+      set frontmost of targetProcess to true
+      delay 0.1
+      set position of targetWindow to {marginX, marginTop}
+      set size of targetWindow to {targetWidth, targetHeight}
+      delay 0.1
+      set finalPosition to position of targetWindow
+      set finalSize to size of targetWindow
+    end tell
+    return (screenWidth as text) & "x" & (screenHeight as text) & " -> " & (item 1 of finalSize as text) & "x" & (item 2 of finalSize as text) & " @ " & (item 1 of finalPosition as text) & "," & (item 2 of finalPosition as text)
+  `;
+  const result = command('/usr/bin/osascript', ['-e', script], { allowFailure: true, timeout: 10000 });
+  const output = `${result.stdout}${result.stderr}`.trim();
+  if (result.status !== 0) {
+    const nextLaunch = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
+    return { action: 'EMULATOR_WINDOW_FIT_LIVE_PERMISSION_REQUIRED', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`, nextLaunch, nextBootGuestPolicy, manualLiveAction: 'Use macOS fullscreen (Control-Command-F) or resize the emulator window smaller.' };
+  }
+  const nextLaunch = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
+  if (state?.captureDir) appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'EMULATOR_WINDOW_FIT_HOST', source: 'macOS window resize', emulatorPid: observedPid, result: output, nextLaunch });
+  return { action: 'EMULATOR_WINDOW_FIT_HOST', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`, nextLaunch, nextBootGuestPolicy };
 }
 
 async function status() {
@@ -2383,6 +2547,9 @@ async function main() {
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
   if (action === 'logger-health') { json(await loggerHealth()); return; }
+  if (action === 'presentation-probe') { json(presentationProbe()); return; }
+  if (action === 'window-inventory') { json(emulatorWindowInventory()); return; }
+  if (action === 'fit-window') { json(fitEmulatorWindow()); return; }
   if (action === 'status') { json(await status()); return; }
   if (action === 'play-certification') { json(await playCertification()); return; }
   if (action === 'play-diagnose') { json(await playDiagnose()); return; }
