@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, existsSync, openSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 function resolveConsoleUserHome() {
   const userResult = spawnSync('/usr/bin/stat', ['-f', '%Su', '/dev/console'], { encoding: 'utf8' });
@@ -43,6 +44,7 @@ const PHASE1_BUILD_STATE = join(MANIFESTS, 'phase1-build-worker.json');
 const PHASE1_BUILD_LOG_ROOT = join(BUILD, 'logs');
 const PHASE1_BUILD_STDOUT = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stdout.log');
 const PHASE1_BUILD_STDERR = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stderr.log');
+const PHASE1_AEMU_ALIAS = '/private/tmp/tftmac-aemu';
 
 const EXPECTED = Object.freeze({
   architecture: 'arm64',
@@ -1218,8 +1220,24 @@ async function discoverXcodes() {
 async function phase1BuildWorker() {
   await ensureRoots();
   await mkdir(PHASE1_BUILD_LOG_ROOT, { recursive: true });
-  const qemuRoot = join(BUILD, 'aemu', 'external', 'qemu');
-  const outRoot = join(BUILD, 'aemu-out');
+  const aemuRoot = join(BUILD, 'aemu');
+  const qemuRoot = join(aemuRoot, 'external', 'qemu');
+  const outRoot = join(qemuRoot, 'objs');
+  const toolchainGeneratorPath = join(qemuRoot, 'android', 'scripts', 'unix', 'gen-android-sdk-toolchain.sh');
+  const toolchainBackupPath = join(BUILD, 'compat', 'gen-android-sdk-toolchain.original.sh');
+  await mkdir(dirname(toolchainBackupPath), { recursive: true });
+  if (existsSync(toolchainBackupPath) && existsSync(toolchainGeneratorPath)) {
+    const backupText = await readFile(toolchainBackupPath, 'utf8');
+    const currentText = await readFile(toolchainGeneratorPath, 'utf8');
+    if (backupText !== currentText && currentText.includes('26.5')) {
+      await writeFile(toolchainGeneratorPath, backupText);
+    }
+  }
+  await rm(PHASE1_AEMU_ALIAS, { recursive: true, force: true });
+  await symlink(aemuRoot, PHASE1_AEMU_ALIAS, 'dir');
+  const buildAemuRoot = PHASE1_AEMU_ALIAS;
+  const buildQemuRoot = join(buildAemuRoot, 'external', 'qemu');
+  const buildOutRoot = join(buildQemuRoot, 'objs');
   const startedAt = process.env.TFTMAC_PHASE1_BUILD_STARTED_AT ?? new Date().toISOString();
   const stackText = await readFile(join(SSOT, 'STACK.lock.yaml'), 'utf8');
   const stack = parseSimpleYamlScalars(stackText);
@@ -1241,6 +1259,11 @@ async function phase1BuildWorker() {
     ANDROID_AVD_HOME: AVD_HOME,
     ANDROID_ADB_SERVER_PORT: '5040'
   };
+  const ninjaCandidates = run('/usr/bin/find', [join(aemuRoot, 'prebuilts'), '-type', 'f', '-name', 'ninja', '-print'], { allowFailure: true, maxBuffer: 4 * 1024 * 1024 }).stdout
+    .split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const ninjaPhysical = ninjaCandidates[0] ?? null;
+  const ninjaBinary = ninjaPhysical ? ninjaPhysical.replace(aemuRoot, buildAemuRoot) : null;
+  if (ninjaBinary) env.PATH = `${dirname(ninjaBinary)}:${env.PATH ?? ''}`;
   const baseState = {
     schema: 1,
     pid: process.pid,
@@ -1248,23 +1271,192 @@ async function phase1BuildWorker() {
     qemuCommit: observedQemuCommit,
     xcode: { version: EXPECTED.xcodeVersion, build: EXPECTED.xcodeBuild, developerDir: xcode.developerDir },
     sourceRoot: qemuRoot,
+    buildAliasRoot: buildAemuRoot,
     outRoot,
     stdoutPath: PHASE1_BUILD_STDOUT,
     stderrPath: PHASE1_BUILD_STDERR
   };
   const writeState = async state => atomicWrite(PHASE1_BUILD_STATE, `${JSON.stringify({ ...baseState, ...state }, null, 2)}\n`);
+  const qtRoot = join(aemuRoot, 'prebuilts', 'android-emulator-build', 'qt');
+  const qtRegularLibexec = join(qtRoot, 'darwin-aarch64', 'libexec');
+  const qtNoWebLibexec = join(qtRoot, 'darwin-aarch64-nowebengine', 'libexec');
+  let qtLibexecBridgeCreated = false;
+  if (!existsSync(qtRegularLibexec)) {
+    if (!existsSync(qtNoWebLibexec)) throw new Error(`PHASE1_QT_HOST_TOOLS_MISSING: ${qtNoWebLibexec}`);
+    await symlink(qtNoWebLibexec, qtRegularLibexec, 'dir');
+    qtLibexecBridgeCreated = true;
+  }
+  const removeQtLibexecBridge = async () => {
+    if (qtLibexecBridgeCreated && existsSync(qtRegularLibexec)) {
+      await rm(qtRegularLibexec, { force: true });
+    }
+  };
+  const originalToolchainGenerator = await readFile(toolchainGeneratorPath, 'utf8');
+  const originalToolchainGeneratorSHA256 = await sha256(toolchainGeneratorPath);
+  await writeFile(toolchainBackupPath, originalToolchainGenerator);
+  const sourceLines = originalToolchainGenerator.split(/\r?\n/);
+  const patchedLines = [];
+  let supportedSdkEdits = 0;
+  let sdkProbeEdits = 0;
+  let xcodePathEdits = 0;
+  let xcodeClangEdits = 0;
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    let line = sourceLines[index];
+    if (line.includes('OSX_SDK_SUPPORTED=') && line.includes('15.2') && !line.includes('26.5')) {
+      line = line.replace('15.2"', '15.2 26.5"');
+      supportedSdkEdits += 1;
+    }
+    if (line.includes('OSX_SDK_INSTALLED_LIST=$(xcodebuild -showsdks')) {
+      const indent = line.match(/^\s*/)?.[0] ?? '';
+      patchedLines.push(`${indent}OSX_SDK_INSTALLED_LIST=$(xcrun --sdk macosx --show-sdk-version 2>/dev/null)`);
+      index += 2;
+      sdkProbeEdits += 1;
+      continue;
+    }
+    if (line.includes('XCODE_PATH=$(xcode-select -print-path 2>/dev/null)')) {
+      line = line.replace('XCODE_PATH=$(xcode-select -print-path 2>/dev/null)', 'XCODE_PATH="${DEVELOPER_DIR:-$(xcode-select -print-path 2>/dev/null)}"');
+      xcodePathEdits += 1;
+    }
+    if (line.trim() === 'CLANG_BINDIR=$PREBUILT_TOOLCHAIN_DIR/bin') {
+      line = `${line.match(/^\s*/)?.[0] ?? ''}CLANG_BINDIR="$XCODE_PATH/Toolchains/XcodeDefault.xctoolchain/usr/bin"`;
+      xcodeClangEdits += 1;
+    }
+    patchedLines.push(line);
+  }
+  if (supportedSdkEdits < 1 || sdkProbeEdits < 1 || xcodePathEdits < 1 || xcodeClangEdits < 1) {
+    throw new Error(`PHASE1_SDK_COMPAT_PATCH_SHAPE_CHANGED: supported=${supportedSdkEdits} probe=${sdkProbeEdits} xcode=${xcodePathEdits} clang=${xcodeClangEdits}`);
+  }
+  const patchedToolchainGenerator = patchedLines.join('\n');
+  await writeFile(toolchainGeneratorPath, patchedToolchainGenerator);
+  const patchedToolchainGeneratorSHA256 = await sha256(toolchainGeneratorPath);
+  const restoreToolchainGenerator = async () => {
+    await writeFile(toolchainGeneratorPath, originalToolchainGenerator);
+    const restoredSHA256 = await sha256(toolchainGeneratorPath);
+    if (restoredSHA256 !== originalToolchainGeneratorSHA256) {
+      throw new Error(`PHASE1_TOOLCHAIN_RESTORE_FAILED: expected ${originalToolchainGeneratorSHA256}, got ${restoredSHA256}`);
+    }
+    return restoredSHA256;
+  };
   try {
-    await writeState({ status: 'RUNNING', stage: 'BUILD' });
-    runInherited('/bin/bash', [join(qemuRoot, 'android', 'rebuild.sh'), `--out-dir=${outRoot}`], { cwd: qemuRoot, env });
+    await rm(outRoot, { recursive: true, force: true });
+    const toolchainRoot = join(outRoot, 'toolchain');
+    await mkdir(toolchainRoot, { recursive: true });
+    const xcodeToolBin = join(xcode.developerDir, 'Toolchains', 'XcodeDefault.xctoolchain', 'usr', 'bin');
+    const xcodeClang = join(xcodeToolBin, 'clang');
+    const xcodeClangXX = join(xcodeToolBin, 'clang++');
+    if (!existsSync(xcodeClang) || !existsSync(xcodeClangXX)) {
+      throw new Error(`PHASE1_XCODE_CLANG_MISSING: ${xcodeToolBin}`);
+    }
+    const macosSDKPath = run('/usr/bin/xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { env }).stdout.trim();
+    const makeCompilerWrapper = async (name, compiler) => {
+      const path = join(toolchainRoot, name);
+      await writeFile(path, [
+        '#!/bin/bash',
+        `export SDKROOT=${JSON.stringify(macosSDKPath)}`,
+        `exec ${JSON.stringify(compiler)} -mmacosx-version-min=10.14 \"$@\"`,
+        ''
+      ].join('\n'));
+      await chmod(path, 0o755);
+      return path;
+    };
+    const compilerWrappers = [];
+    for (const name of ['cc', 'gcc', 'clang']) compilerWrappers.push(await makeCompilerWrapper(name, xcodeClang));
+    for (const name of ['c++', 'g++', 'clang++']) compilerWrappers.push(await makeCompilerWrapper(name, xcodeClangXX));
+    const hostToolWrappers = [];
+    const makeHostToolWrapper = async (name, candidates) => {
+      const executable = firstExisting(candidates);
+      if (!executable) return null;
+      const path = join(toolchainRoot, name);
+      await writeFile(path, [
+        '#!/bin/bash',
+        `exec ${JSON.stringify(executable)} \"$@\"`,
+        ''
+      ].join('\n'));
+      await chmod(path, 0o755);
+      hostToolWrappers.push({ name, path, executable });
+      return path;
+    };
+    await makeHostToolWrapper('ranlib', [join(xcodeToolBin, 'ranlib'), '/usr/bin/ranlib']);
+    await makeHostToolWrapper('ar', [join(xcodeToolBin, 'ar'), '/usr/bin/ar']);
+    await makeHostToolWrapper('nm', [join(xcodeToolBin, 'nm'), '/usr/bin/nm']);
+    await makeHostToolWrapper('strip', [join(xcodeToolBin, 'strip'), '/usr/bin/strip']);
+    await makeHostToolWrapper('ld', [join(xcodeToolBin, 'ld'), '/usr/bin/ld']);
+    await makeHostToolWrapper('libtool', [join(xcodeToolBin, 'libtool'), '/usr/bin/libtool']);
+    await makeHostToolWrapper('strings', [join(xcodeToolBin, 'strings'), '/usr/bin/strings']);
+    await makeHostToolWrapper('otool', [join(xcodeToolBin, 'otool'), '/usr/bin/otool']);
+    await makeHostToolWrapper('install_name_tool', [join(xcodeToolBin, 'install_name_tool'), '/usr/bin/install_name_tool']);
+    await makeHostToolWrapper('dsymutil', [join(xcodeToolBin, 'dsymutil'), '/usr/bin/dsymutil']);
+    await writeState({
+      status: 'RUNNING', stage: 'BUILD',
+      compatibility: {
+        kind: 'temporary-host-sdk-parity',
+        sdk: '26.5',
+        sourceSHA256: originalToolchainGeneratorSHA256,
+        patchedSHA256: patchedToolchainGeneratorSHA256,
+        supportedSdkEdits,
+        sdkProbeEdits,
+        xcodePathEdits,
+        xcodeClangEdits,
+        ninjaBinary,
+        ninjaCandidates: ninjaCandidates.slice(0, 20),
+        compilerWrappers,
+        hostToolWrappers,
+        macosSDKPath,
+        qtLibexecBridgeCreated,
+        qtLibexecBridgeTarget: qtNoWebLibexec
+      }
+    });
+    const buildPython = firstExisting([
+      join(buildAemuRoot, 'prebuilts', 'python', 'darwin-x86', 'bin', 'python3'),
+      join(buildAemuRoot, 'prebuilts', 'python', 'darwin-arm64', 'bin', 'python3')
+    ]);
+    if (!buildPython) throw new Error(`PHASE1_AOSP_PREBUILT_PYTHON_MISSING: ${join(aemuRoot, 'prebuilts', 'python')}`);
+    const cmakeCompatLauncher = '/private/tmp/tftmac-aemu-cmake-compat.py';
+    await writeFile(cmakeCompatLauncher, [
+      'import argparse, sys',
+      'from pathlib import Path',
+      `sys.path.insert(0, ${JSON.stringify(join(buildQemuRoot, 'android', 'build', 'python'))})`,
+      '_orig = argparse.ArgumentParser.parse_known_args',
+      'def _parse(self, *args, **kwargs):',
+      '    ns, rest = _orig(self, *args, **kwargs)',
+      '    for name in ("aosp", "out", "dist"):',
+      '        if hasattr(ns, name):',
+      '            value = getattr(ns, name)',
+      '            if isinstance(value, str): setattr(ns, name, Path(value))',
+      '    return ns, rest',
+      'argparse.ArgumentParser.parse_known_args = _parse',
+      'from aemu.tasks.configure import ConfigureTask',
+      'def _without_webengine(self): return self',
+      'ConfigureTask.with_webengine = _without_webengine',
+      'from aemu import cmake',
+      'cmake.launch()',
+      ''
+    ].join('\n'));
+    runInherited(buildPython, [
+      cmakeCompatLauncher,
+      '--aosp', buildAemuRoot,
+      '--out', buildOutRoot,
+      '--ccache', 'auto',
+      '--task-disable', 'clean',
+      '--verbose'
+    ], { cwd: buildQemuRoot, env });
 
     await writeState({ status: 'RUNNING', stage: 'CTEST' });
-    runInherited('/usr/bin/env', ['ctest', '-j8', '--output-on-failure'], { cwd: outRoot, env });
+    const ctestBinary = join(buildAemuRoot, 'prebuilts', 'cmake', 'darwin-x86', 'bin', 'ctest');
+    if (!existsSync(ctestBinary)) throw new Error(`PHASE1_CTEST_MISSING: ${ctestBinary}`);
+    runInherited(ctestBinary, ['-j8', '--output-on-failure'], { cwd: buildOutRoot, env });
 
     await writeState({ status: 'RUNNING', stage: 'GFXSTREAM_BUILD_CHECK' });
-    const python = firstExisting(['/opt/homebrew/bin/python3', '/usr/bin/python3', '/usr/local/bin/python3']);
-    if (!python) throw new Error('PHASE1_PYTHON3_REQUIRED');
-    runInherited(python, [join(qemuRoot, 'android', 'build', 'python', 'cmake.py'), '--gfxstream'], { cwd: qemuRoot, env });
+    runInherited(buildPython, [
+      cmakeCompatLauncher,
+      '--aosp', buildAemuRoot,
+      '--out', buildOutRoot,
+      '--gfxstream',
+      '--task-disable', 'clean'
+    ], { cwd: buildQemuRoot, env });
 
+    await removeQtLibexecBridge();
+    const restoredToolchainSHA256 = await restoreToolchainGenerator();
     const emulatorCandidates = run('/usr/bin/find', [outRoot, '-type', 'f', '-name', 'emulator', '-perm', '+111', '-print'], { allowFailure: true, maxBuffer: 8 * 1024 * 1024 }).stdout
       .split(/\r?\n/).map(value => value.trim()).filter(Boolean);
     const emulatorBinary = emulatorCandidates[0] ?? null;
@@ -1278,13 +1470,27 @@ async function phase1BuildWorker() {
       sourceRoot: qemuRoot,
       outRoot,
       emulatorBinary,
-      checks: { build: 'PASS', ctest: 'PASS', gfxstreamBuildCheck: 'PASS' }
+      checks: { build: 'PASS', ctest: 'PASS', gfxstreamBuildCheck: 'PASS', toolchainSourceRestored: restoredToolchainSHA256 === originalToolchainGeneratorSHA256 },
+      hostCompatibility: {
+        macosSDK: '26.5',
+        originalToolchainGeneratorSHA256,
+        patchedToolchainGeneratorSHA256,
+        restoredToolchainSHA256
+      }
     };
     await atomicWrite(join(DIAGNOSTICS, 'phase1-build.json'), `${JSON.stringify(artifact, null, 2)}\n`);
     await writeState({ status: 'SUCCEEDED', stage: 'COMPLETE', endedAt: new Date().toISOString(), emulatorBinary });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await writeState({ status: 'FAILED', endedAt: new Date().toISOString(), error: message });
+    let restoreError = null;
+    try {
+      await removeQtLibexecBridge();
+      await restoreToolchainGenerator();
+    } catch (failure) {
+      restoreError = failure instanceof Error ? failure.message : String(failure);
+    }
+    await writeState({ status: 'FAILED', endedAt: new Date().toISOString(), error: message, restoreError });
+    if (restoreError) throw new Error(`${message}; ${restoreError}`);
     throw error;
   }
 }
@@ -1298,8 +1504,8 @@ async function phase1Build() {
     return;
   }
   const startedAt = new Date().toISOString();
-  const stdoutFd = openSync(PHASE1_BUILD_STDOUT, 'a');
-  const stderrFd = openSync(PHASE1_BUILD_STDERR, 'a');
+  const stdoutFd = openSync(PHASE1_BUILD_STDOUT, 'w');
+  const stderrFd = openSync(PHASE1_BUILD_STDERR, 'w');
   try {
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'phase1-build-worker'], {
       cwd: REPO,
@@ -1310,7 +1516,7 @@ async function phase1Build() {
     child.unref();
     console.log(JSON.stringify({
       phase: '1-build', launched: true, pid: child.pid, startedAt,
-      sourceRoot: join(BUILD, 'aemu', 'external', 'qemu'), outRoot: join(BUILD, 'aemu-out'),
+      sourceRoot: join(BUILD, 'aemu', 'external', 'qemu'), outRoot: join(BUILD, 'aemu', 'external', 'qemu', 'objs'),
       statePath: PHASE1_BUILD_STATE, stdoutPath: PHASE1_BUILD_STDOUT, stderrPath: PHASE1_BUILD_STDERR
     }, null, 2));
   } finally {
@@ -1319,12 +1525,54 @@ async function phase1Build() {
   }
 }
 
+async function validateEngineeringMap() {
+  const mapPath = join(SSOT, 'TFTMAC_ENGINEERING_MAP.sql');
+  if (!existsSync(mapPath)) return { pass: false, error: 'ENGINEERING_MAP_MISSING', path: mapPath };
+  const sql = await readFile(mapPath, 'utf8');
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(sql);
+    const foreignKeyProblems = db.prepare('PRAGMA foreign_key_check').all();
+    const schemaVersion = db.prepare("SELECT value FROM map_meta WHERE key='schema_version'").get()?.value ?? null;
+    const tableCount = Number(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count);
+    const viewCount = Number(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='view'").get().count);
+    const fieldMetadataCount = Number(db.prepare('SELECT COUNT(*) AS count FROM field_metadata').get().count);
+    const versionCount = Number(db.prepare('SELECT COUNT(*) AS count FROM version_catalog').get().count);
+    const compatibilityClaimCount = Number(db.prepare('SELECT COUNT(*) AS count FROM compatibility_claims').get().count);
+    const environmentCount = Number(db.prepare('SELECT COUNT(*) AS count FROM environment_snapshots').get().count);
+    const documentCount = Number(db.prepare('SELECT COUNT(*) AS count FROM source_documents').get().count);
+    const deploymentCandidateCount = Number(db.prepare('SELECT COUNT(*) AS count FROM deployment_target_candidates').get().count);
+    const openBlockingUnknowns = Number(db.prepare("SELECT COUNT(*) AS count FROM unknowns WHERE blocking=1 AND status IN ('OPEN','TESTING')").get().count);
+    return {
+      pass: foreignKeyProblems.length === 0 && schemaVersion === '2',
+      path: mapPath,
+      sha256: await sha256(mapPath),
+      bytes: (await stat(mapPath)).size,
+      schemaVersion,
+      tableCount,
+      viewCount,
+      fieldMetadataCount,
+      versionCount,
+      compatibilityClaimCount,
+      environmentCount,
+      documentCount,
+      deploymentCandidateCount,
+      openBlockingUnknowns,
+      foreignKeyProblems
+    };
+  } catch (error) {
+    return { pass: false, path: mapPath, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    db.close();
+  }
+}
+
 async function status() {
   await ensureRoots();
   const paths = [
     'STACK.lock.yaml', 'host-preflight.json', 'android-sdk-packages.txt', 'tool-versions.txt',
     'source-hashes.txt', 'guestangle-authority.json', 'vulkan-required-cases.txt', 'preflight-report.md',
-    'upstreams-aemu.lock.xml', 'vulkaninfo-summary.txt'
+    'upstreams-aemu.lock.xml', 'vulkaninfo-summary.txt', 'TFTMAC_ENGINEERING_MAP.sql'
   ];
   const artifacts = {};
   for (const name of paths) {
@@ -1341,6 +1589,86 @@ async function status() {
   const phase1BuildObservedStatus = phase1BuildWorker?.status === 'RUNNING' && !phase1BuildAlive
     ? 'INTERRUPTED'
     : phase1BuildWorker?.status ?? 'NOT_STARTED';
+  let phase1BuildLogTail = null;
+  if (phase1BuildWorker && phase1BuildObservedStatus !== 'RUNNING') {
+    const tail = async path => {
+      if (!existsSync(path)) return null;
+      const text = await readFile(path, 'utf8');
+      return text.slice(-8192);
+    };
+    const rebuildPath = join(BUILD, 'aemu', 'external', 'qemu', 'android', 'rebuild.sh');
+    let rebuildSnippet = null;
+    if (existsSync(rebuildPath)) {
+      const lines = (await readFile(rebuildPath, 'utf8')).split(/\r?\n/);
+      rebuildSnippet = lines.slice(38, 62).map((text, index) => ({ line: index + 39, text }));
+    }
+    const filteredSourceLines = async (path, pattern, maximum = 120) => {
+      if (!existsSync(path)) return null;
+      return (await readFile(path, 'utf8')).split(/\r?\n/)
+        .map((text, index) => ({ line: index + 1, text }))
+        .filter(item => pattern.test(item.text))
+        .slice(0, maximum);
+    };
+    const phase1AliasPython = firstExisting([
+      join(PHASE1_AEMU_ALIAS, 'prebuilts', 'python', 'darwin-x86', 'bin', 'python3'),
+      join(PHASE1_AEMU_ALIAS, 'prebuilts', 'python', 'darwin-arm64', 'bin', 'python3')
+    ]);
+    const cmakeHelp = phase1AliasPython ? run(phase1AliasPython, [
+      join(PHASE1_AEMU_ALIAS, 'external', 'qemu', 'android', 'build', 'python', 'cmake.py'), '--help'
+    ], { allowFailure: true, maxBuffer: 4 * 1024 * 1024 }) : null;
+    phase1BuildLogTail = {
+      stdout: await tail(PHASE1_BUILD_STDOUT),
+      stderr: await tail(PHASE1_BUILD_STDERR),
+      rebuildSnippet,
+      toolchainGenerator: await filteredSourceLines(
+        join(BUILD, 'aemu', 'external', 'qemu', 'android', 'scripts', 'unix', 'gen-android-sdk-toolchain.sh'),
+        /AOSP|aosp|gcc|g\+\+|clang|xcrun|ln |toolchain|realpath|dirname|SDK|sdk|xcodebuild|showsdks|SUPPORTED/
+      ),
+      cmakeDriver: await filteredSourceLines(
+        join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'cmake.py'),
+        /aosp|AOSP|out-dir|argparse|ccache|toolchain/
+      ),
+      cmakeHelp: cmakeHelp ? { status: cmakeHelp.status, stdout: cmakeHelp.stdout, stderr: cmakeHelp.stderr } : null,
+      cmakeAospParserUse: await filteredSourceLines(
+        join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'cmake.py'),
+        /aosp|Path\(|argument_parser|ArgumentParser|add_argument/,
+        160
+      ),
+      cmakeLauncherHead: (() => null)(),
+      cmakeModuleAospUse: await filteredSourceLines(
+        join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'aemu', 'cmake.py'),
+        /aosp|Path\(|add_argument|ArgumentParser|parser|args\./,
+        220
+      ),
+      sdkGateSnippet: null,
+      phase1FilesystemProbe: {
+        toolchain: run('/bin/ls', ['-la', join(BUILD, 'aemu', 'external', 'qemu', 'objs', 'toolchain')], { allowFailure: true, maxBuffer: 4 * 1024 * 1024 }),
+        clangHosts: run('/usr/bin/find', [join(BUILD, 'aemu', 'prebuilts', 'clang', 'host'), '-maxdepth', '4', '-type', 'f', '-name', 'clang', '-print'], { allowFailure: true, maxBuffer: 4 * 1024 * 1024 }),
+        ninja: run('/usr/bin/find', [join(BUILD, 'aemu', 'prebuilts'), '-type', 'f', '-name', 'ninja', '-print'], { allowFailure: true, maxBuffer: 4 * 1024 * 1024 }),
+        qtTools: run('/usr/bin/find', [join(BUILD, 'aemu', 'prebuilts', 'android-emulator-build', 'qt'), '-maxdepth', '5', '-type', 'f', '(', '-name', 'uic', '-o', '-name', 'moc', '-o', '-name', 'qmake', '-o', '-name', 'qtpaths', ')', '-print'], { allowFailure: true, maxBuffer: 8 * 1024 * 1024 }),
+        qtDirs: run('/usr/bin/find', [join(BUILD, 'aemu', 'prebuilts', 'android-emulator-build', 'qt'), '-maxdepth', '2', '-type', 'd', '-print'], { allowFailure: true, maxBuffer: 8 * 1024 * 1024 }),
+        qtWebengineLogic: run('/usr/bin/grep', ['-RniE', 'noqtwebengine|QTWEBENGINE|qtwebengine', join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'aemu')], { allowFailure: true, maxBuffer: 8 * 1024 * 1024 }),
+        qtConfigureSnippet: run('/usr/bin/sed', ['-n', '160,185p', join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'aemu', 'tasks', 'configure.py')], { allowFailure: true, maxBuffer: 2 * 1024 * 1024 })
+      }
+    };
+    {
+      const generatorPath = join(BUILD, 'aemu', 'external', 'qemu', 'android', 'scripts', 'unix', 'gen-android-sdk-toolchain.sh');
+      if (existsSync(generatorPath)) {
+        const lines = (await readFile(generatorPath, 'utf8')).split(/\r?\n/);
+        phase1BuildLogTail.sdkGateSnippet = lines.slice(512, 566).map((text, index) => ({ line: index + 513, text }));
+        phase1BuildLogTail.wrapperProgramSnippet = lines.slice(150, 401).map((text, index) => ({ line: index + 151, text }));
+        phase1BuildLogTail.wrapperGeneratorSnippet = lines.slice(400, 475).map((text, index) => ({ line: index + 401, text }));
+      }
+    }
+    {
+      const cmakeLauncherPath = join(BUILD, 'aemu', 'external', 'qemu', 'android', 'build', 'python', 'cmake.py');
+      if (existsSync(cmakeLauncherPath)) {
+        const text = await readFile(cmakeLauncherPath, 'utf8');
+        phase1BuildLogTail.cmakeLauncherHead = text.split(/\r?\n/).slice(0, 260).map((line, index) => ({ line: index + 1, text: line }));
+      }
+    }
+  }
+  const engineeringMap = await validateEngineeringMap();
   console.log(JSON.stringify({
     appRoot: APP,
     buildRoot: BUILD,
@@ -1350,6 +1678,8 @@ async function status() {
     repository: REPO,
     sourceWorker: sourceWorker ? { ...sourceWorker, alive: sourceWorkerAlive, observedStatus: sourceWorkerObservedStatus } : null,
     phase1BuildWorker: phase1BuildWorker ? { ...phase1BuildWorker, alive: phase1BuildAlive, observedStatus: phase1BuildObservedStatus } : null,
+    phase1BuildLogTail,
+    engineeringMap,
     artifacts
   }, null, 2));
 }

@@ -453,6 +453,600 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T05:10:00Z','Architecture','Reclassified repeated Phase 1 failures as host-build compatibility defects rather than evidence that the AEMU runtime architecture is invalid.','ev_phase1_compile'),
 ('2026-08-28T05:10:00Z','Invention direction','Promoted TFTMAC-owned Host Build Adapter and Executable Capability Graph as recommended owned-code opportunities.','ev_phase1_compile');
 
+-- ---------------------------------------------------------------------------
+-- Schema v2: version/time/environment truth, source freshness, and field metadata
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS environment_snapshots (
+    id TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    host_model TEXT,
+    host_arch TEXT,
+    host_memory_gb REAL,
+    macos_version TEXT,
+    macos_build TEXT,
+    xcode_version TEXT,
+    xcode_build TEXT,
+    macos_sdk_version TEXT,
+    developer_dir TEXT,
+    source_kind TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    confidence TEXT NOT NULL CHECK (confidence IN ('DIRECT','STRONG','INFERRED','HYPOTHESIS')),
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS source_documents (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE,
+    sha256 TEXT,
+    role TEXT NOT NULL,
+    authority_rank INTEGER NOT NULL CHECK (authority_rank BETWEEN 0 AND 100),
+    temporal_status TEXT NOT NULL CHECK (temporal_status IN ('CURRENT','CURRENT_WITH_LEGACY_CONTENT','HISTORICAL','STALE','DONOR','REFERENCE')),
+    scope TEXT NOT NULL,
+    last_verified_at TEXT,
+    conflicts_with_current_authority INTEGER NOT NULL DEFAULT 0 CHECK (conflicts_with_current_authority IN (0,1)),
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS external_sources (
+    id TEXT PRIMARY KEY,
+    authority TEXT NOT NULL,
+    url TEXT NOT NULL UNIQUE,
+    retrieved_at TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    claim_summary TEXT NOT NULL,
+    freshness TEXT NOT NULL CHECK (freshness IN ('CURRENT','HISTORICAL','ARCHIVED')),
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS version_catalog (
+    id TEXT PRIMARY KEY,
+    component_id TEXT REFERENCES components(id),
+    product TEXT NOT NULL,
+    version_label TEXT NOT NULL,
+    release_date TEXT,
+    channel TEXT,
+    architecture TEXT,
+    host_os_min TEXT,
+    host_os_max TEXT,
+    guest_api_min INTEGER,
+    guest_api_max INTEGER,
+    bundled_sdk_version TEXT,
+    deployment_target_min TEXT,
+    deployment_target_max TEXT,
+    source_kind TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    evidence_class TEXT NOT NULL CHECK (evidence_class IN ('DIRECT_OBSERVED','PROJECT_ATTESTED','OFFICIAL_DOCUMENTED','HISTORICAL_PROJECT','CROSS_PROJECT_CLAIM','INFERRED','UNVERIFIED')),
+    lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('CURRENT_AUTHORITY','CURRENT_CONTROL','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
+    compatibility_state TEXT NOT NULL CHECK (compatibility_state IN ('PROVEN','CLAIMED','PARTIAL','CONDITIONAL','INCOMPATIBLE','UNKNOWN')),
+    last_verified_at TEXT,
+    exact_claim TEXT NOT NULL,
+    limitations TEXT,
+    candidate_role TEXT
+);
+
+CREATE TABLE IF NOT EXISTS compatibility_claims (
+    id TEXT PRIMARY KEY,
+    version_id TEXT REFERENCES version_catalog(id),
+    environment_id TEXT REFERENCES environment_snapshots(id),
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    claim_kind TEXT NOT NULL CHECK (claim_kind IN ('OBSERVED','OFFICIAL_DOCUMENTED','PROJECT_DOCUMENTED','INFERRED','HYPOTHESIS')),
+    result TEXT NOT NULL CHECK (result IN ('SUPPORTS','BLOCKS','CONDITIONAL','UNKNOWN','SUPERSEDED')),
+    evidence_id TEXT REFERENCES evidence(id),
+    external_source_id TEXT REFERENCES external_sources(id),
+    source_document_id TEXT REFERENCES source_documents(id),
+    observed_at TEXT,
+    last_revalidated_at TEXT,
+    stale_after TEXT,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS deployment_target_candidates (
+    target_version TEXT PRIMARY KEY,
+    candidate_state TEXT NOT NULL CHECK (candidate_state IN ('RECOMMENDED','VIABLE','CONDITIONAL','REJECTED','UNKNOWN')),
+    xcode26_6_supported INTEGER NOT NULL CHECK (xcode26_6_supported IN (0,1)),
+    satisfies_std_filesystem INTEGER NOT NULL CHECK (satisfies_std_filesystem IN (0,1)),
+    matches_existing_product_minimum INTEGER NOT NULL CHECK (matches_existing_product_minimum IN (0,1)),
+    compatibility_score INTEGER NOT NULL CHECK (compatibility_score BETWEEN 0 AND 100),
+    source_basis TEXT NOT NULL,
+    rationale TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stack_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('CURRENT_AUTHORITY','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
+    confidence TEXT NOT NULL CHECK (confidence IN ('DIRECT','STRONG','INFERRED','HYPOTHESIS')),
+    environment_id TEXT REFERENCES environment_snapshots(id),
+    workload TEXT,
+    exact_result TEXT NOT NULL,
+    limitations TEXT,
+    next_use TEXT
+);
+
+CREATE TABLE IF NOT EXISTS stack_profile_members (
+    stack_id TEXT NOT NULL REFERENCES stack_profiles(id),
+    version_id TEXT NOT NULL REFERENCES version_catalog(id),
+    role TEXT NOT NULL,
+    required INTEGER NOT NULL DEFAULT 1 CHECK (required IN (0,1)),
+    PRIMARY KEY (stack_id, version_id, role)
+);
+
+CREATE TABLE IF NOT EXISTS table_metadata (
+    table_name TEXT PRIMARY KEY,
+    purpose TEXT NOT NULL,
+    authority TEXT NOT NULL,
+    update_policy TEXT NOT NULL,
+    retention_policy TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS field_metadata (
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    declared_type TEXT,
+    not_null INTEGER NOT NULL DEFAULT 0,
+    default_value TEXT,
+    primary_key INTEGER NOT NULL DEFAULT 0,
+    semantic_role TEXT,
+    unit TEXT,
+    source_of_truth TEXT,
+    volatility TEXT,
+    notes TEXT,
+    PRIMARY KEY (table_name, column_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_version_catalog_product ON version_catalog(product, version_label);
+CREATE INDEX IF NOT EXISTS idx_version_catalog_state ON version_catalog(lifecycle_state, compatibility_state);
+CREATE INDEX IF NOT EXISTS idx_compat_claims_subject ON compatibility_claims(subject, predicate);
+CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents(temporal_status, authority_rank);
+CREATE INDEX IF NOT EXISTS idx_stack_profiles_status ON stack_profiles(status);
+
+CREATE VIEW IF NOT EXISTS v_current_environment AS
+SELECT * FROM environment_snapshots
+ORDER BY observed_at DESC
+LIMIT 1;
+
+CREATE VIEW IF NOT EXISTS v_version_candidates AS
+SELECT product, version_label, lifecycle_state, compatibility_state,
+       host_os_min, host_os_max, bundled_sdk_version,
+       deployment_target_min, deployment_target_max,
+       evidence_class, exact_claim, limitations, candidate_role
+FROM version_catalog
+WHERE lifecycle_state IN ('CURRENT_AUTHORITY','CURRENT_CONTROL','KNOWN_GOOD_DONOR','CANDIDATE')
+ORDER BY CASE lifecycle_state
+           WHEN 'CURRENT_AUTHORITY' THEN 0
+           WHEN 'CURRENT_CONTROL' THEN 1
+           WHEN 'KNOWN_GOOD_DONOR' THEN 2
+           ELSE 3
+         END, product, version_label;
+
+CREATE VIEW IF NOT EXISTS v_document_truth_status AS
+SELECT path, role, authority_rank, temporal_status, conflicts_with_current_authority,
+       last_verified_at, notes
+FROM source_documents
+ORDER BY authority_rank DESC, path;
+
+CREATE VIEW IF NOT EXISTS v_deployment_target_options AS
+SELECT target_version, candidate_state, compatibility_score,
+       xcode26_6_supported, satisfies_std_filesystem,
+       matches_existing_product_minimum, rationale
+FROM deployment_target_candidates
+ORDER BY compatibility_score DESC, target_version;
+
+CREATE VIEW IF NOT EXISTS v_compatibility_claims_current AS
+SELECT c.id, c.subject, c.predicate, c.object, c.claim_kind, c.result,
+       v.product, v.version_label, e.macos_version, e.xcode_version,
+       c.last_revalidated_at, c.notes
+FROM compatibility_claims c
+LEFT JOIN version_catalog v ON v.id = c.version_id
+LEFT JOIN environment_snapshots e ON e.id = c.environment_id
+WHERE c.result <> 'SUPERSEDED'
+ORDER BY c.subject, c.predicate, c.id;
+
+INSERT OR REPLACE INTO map_meta(key, value) VALUES
+('schema_version','2'),
+('last_truth_audit_at','2026-08-28T05:19:03.867Z'),
+('current_phase','Phase 1 architecture/version reevaluation after build failure at Ninja step 885/9854'),
+('current_host_os','macOS 26.6.2 (25G83)'),
+('current_xcode','26.6 (17F113)'),
+('current_macos_sdk','26.5'),
+('deployment_target_policy','Host OS, SDK, and deployment target are independent variables. Never inherit an upstream deployment target without validating it against current Xcode support, source API availability, and product compatibility goals.'),
+('version_policy','Newest is not automatically preferred. Keep exact older versions as candidates when they have credible compatibility evidence; classify claims by provenance and revalidate before promotion.'),
+('document_policy','Current authority, historical donor evidence, stale reports, and legacy claims must be distinguishable in queries; no whole-document trust by filename alone.');
+
+INSERT OR REPLACE INTO components(id,name,kind,layer,ownership,status,purpose,notes) VALUES
+('mactician_legacy','Mactician 1.x launcher/runtime','legacy_product','donor','UPSTREAM','AVAILABLE','Known working Apple-Silicon TFT PBE donor implementation','Useful compatibility evidence must be harvested field-by-field; legacy architecture is not v2 authority.'),
+('android36_guest','Android 16 / API 36 ARM64 guests','guest_os','guest','GOOGLE','AVAILABLE','Historical working guest family for Mactician/TFTMAC experiments','Includes Google APIs userdebug and Google Play variants; not current v2 production authority.'),
+('gfxstream_main_dev_donor','emu-main-dev gfxstream donor build','gpu_transport','donor','UPSTREAM','AVAILABLE','Historical source-build evidence for native GLES/gfxstream experiments','Revision a9184fd was built successfully with local warning-compatibility allowances; not co-authoritative with locked emu-master-dev.'),
+('deployment_target','macOS deployment target','build_contract','host_build','TFTMAC','ACTIVE','Defines minimum macOS API availability for produced native binaries','Must be selected independently from host OS and SDK version.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_host_26_6_2','2026-08-28T04:07:47.479Z','host_preflight','ssot/host-preflight.json','c32ab07bdc18afa5ea261c4ab702f75a087319bce6f8cfe0efff9a3f898e5b97','Current host is Apple M4 Mac mini Mac16,10, arm64, 16 GB RAM, macOS 26.6.2 build 25G83; selected Xcode is 26.6 build 17F113 with macOS SDK 26.5.','DIRECT','This is current machine truth and must qualify every host-build compatibility claim.'),
+('ev_mactician_target12','2026-08-27T01:46:26.991Z','source_build_contract','scripts/build-mactician.command','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','Mactician production Swift and emulator-host binaries explicitly target arm64-apple-macosx12.0; launcher Info.plist also declares minimum macOS 12.0.','DIRECT','This is strong project-local evidence that 12.0 is a real compatibility target, not an invented number.'),
+('ev_phase1_target1014_fail','2026-08-28T05:10:20.931Z','compiler_failure','/Volumes/MAC MINI M4/TFTMAC/Build/logs/phase1-build.stderr.log',NULL,'Phase 1 advanced through Ninja step 885/9854 and failed because AEMU host tooling set macOS deployment target 10.14 while source uses std::filesystem APIs marked available from macOS 10.15.','DIRECT','The current build worker is FAILED, not RUNNING. The failure is host build-contract compatibility, not a graphics capability failure.'),
+('ev_aemu_legacy_target1014','2026-08-28T05:19:00Z','source_audit','external/qemu/android/scripts/unix/gen-android-sdk-toolchain.sh',NULL,'Locked AEMU helper carries OSX_DEPLOYMENT_TARGET=10.14 / OSX_REQUIRED=10.14 despite current upstream macOS development guidance requiring SDK 10.15 or later.','DIRECT','Treat this helper value as stale upstream build plumbing.'),
+('ev_mactician_stack','2026-08-27T01:46:26.986Z','release_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','Mactician 1.0.4 pins Platform Tools 36.0.2, Android Emulator 37.1.11 build 15917651, Android 36 Google APIs ARM64 system image r07, and TFT PBE 18.1-5212127.','DIRECT','Exact archived donor component set.'),
+('ev_benchmark_m1max_stack','2026-08-27T01:46:26.981Z','benchmark_document','docs/benchmarks.md','526507229e293e92155fc3ba588bc48d6a149cc7c164d24e5d10ac33755d7965','Historical benchmark environment used M1 Max, macOS 26.6 build 25G72, Emulator 37.1.11 build 15917651, Android 36 ARM64 Google APIs userdebug, with ANGLE->Vulkan->gfxstream/MoltenVK->Metal.','DIRECT','This proves a specific older guest/runtime family ran extensively on macOS 26.x, but not on this exact M4 host.'),
+('ev_native_gles_main_dev','2026-08-27T01:46:26.982Z','historical_source_build','docs/native-gles-transport-experiment.md','9b92313317a5eebd1900f5008c9db7018f467b20b6a6029dfc33523f240c650c','A historical emu-main-dev gfxstream host backend at revision a9184fd built successfully on the Mac after two AppleClang warning-compatibility adjustments; standalone backend was not a production drop-in.','DIRECT','Useful donor evidence only; do not mix branch authority.'),
+('ev_live_tft_native','2026-08-27T01:46:35.222Z','package_architecture','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','06b7f5bf6ed6a84e7be2f3f296563a0fa9b436ec462eca0700d5bd8483490c59','Live TFT 16.16.8042660 base APK SHA 9ed691... launches RiotNativeActivity, contains libleagueoflegends.so, and showed no Unreal runtime markers.','DIRECT','Current workload engine evidence; separate from legacy PBE Unreal experiments.');
+
+INSERT OR REPLACE INTO external_sources(id,authority,url,retrieved_at,source_type,claim_summary,freshness,notes) VALUES
+('ext_apple_xcode_matrix','Apple','https://developer.apple.com/xcode/system-requirements','2026-08-28T05:20:00Z','official_support_matrix','Xcode 26.6 requires macOS Tahoe 26.2 or later, ships macOS SDK 26.5, and supports macOS deployment targets 11 through 26.5.','CURRENT','Use for host/deployment-target viability, not AEMU-specific compatibility.'),
+('ext_apple_xcode266_notes','Apple','https://developer.apple.com/documentation/xcode-release-notes/xcode-26_6-release-notes','2026-08-28T05:20:00Z','official_release_notes','Xcode 26.6 includes macOS SDK 26.5 and requires macOS Tahoe 26.2 or later.','CURRENT',NULL),
+('ext_aemu_darwin_dev','Google AOSP','https://android.googlesource.com/platform/external/qemu/+/emu-master-dev/android/docs/DARWIN-DEV.md','2026-08-28T05:20:00Z','official_development_guide','Current emu-master-dev macOS guide requires Xcode 10.1 or newer, recommends historical Xcode 13.4 / SDK 12.3, and requires macOS SDK 10.15 or later.','CURRENT','The guide is broader than the stale helper implementation.'),
+('ext_aemu_helper','Google AOSP','https://android.googlesource.com/platform/external/qemu/+/bc5ef478bafb8091ef670236f9ba9f3b526cfa87/android/scripts/unix/gen-android-sdk-toolchain.sh','2026-08-28T05:20:00Z','official_source_snapshot','AEMU Darwin helper historically hardcodes OSX_DEPLOYMENT_TARGET=10.14 and a finite SDK allowlist.','HISTORICAL','Illustrates why source helper assumptions can lag platform documentation.'),
+('ext_emulator_releases','Google Android Developers','https://developer.android.com/studio/releases/emulator','2026-08-28T05:20:00Z','official_release_notes','Emulator 37.1.11 Stable (2026-07-30) adds Vulkan extensions required for API 37; 36.6.11 raises API 37 minimum RAM to 4 GB and includes a macOS 26.3 Hypervisor cleanup fix; 36.5.10 contains Vulkan improvements.','CURRENT','Older stable versions remain candidates only after exact workload/guest testing.');
+
+INSERT OR REPLACE INTO environment_snapshots(id,observed_at,host_model,host_arch,host_memory_gb,macos_version,macos_build,xcode_version,xcode_build,macos_sdk_version,developer_dir,source_kind,source_ref,confidence,notes) VALUES
+('env_current_m4','2026-08-28T04:07:47.479Z','Mac16,10 Apple M4 Mac mini','arm64',16,'26.6.2','25G83','26.6','17F113','26.5','/Applications/Xcode-26.6.0.app/Contents/Developer','PROJECT_EVIDENCE','ssot/host-preflight.json','DIRECT','Current authoritative host environment.'),
+('env_benchmark_m1max','2026-08-27T01:46:26.981Z','Apple M1 Max Mac','arm64',32,'26.6','25G72',NULL,NULL,NULL,NULL,'HISTORICAL_PROJECT','docs/benchmarks.md','DIRECT','Historical benchmark host; useful donor evidence but not this M4 machine.');
+
+INSERT OR REPLACE INTO source_documents(id,path,sha256,role,authority_rank,temporal_status,scope,last_verified_at,conflicts_with_current_authority,notes) VALUES
+('doc_stack','ssot/STACK.lock.yaml','a570433d39ecebc1f4dc8c9b08e5c92547ab2b91a0826abc6b70b1f725289f2c','machine-resolved authority',100,'CURRENT','Exact Phase 0 host/Android/AEMU/version lock','2026-08-28T05:19:03.867Z',0,'Machine values win over remembered prose.'),
+('doc_ssot','TFTMAC_GPU_RUNTIME_SSOT.md','4c905ad35a676aa8f4ad0a22416e73d640120851ce9f41e742349ac61ceab1ea','architecture authority',95,'CURRENT','Product architecture and acceptance rules','2026-08-28T05:19:03.867Z',0,NULL),
+('doc_plan','TFTMAC_FULL_IMPLEMENTATION_PLAN.md','81bd386c1d9d47f26659c93af914ec9a92568ee689e7bed47eb0f2afd6dd5f1a','execution authority',95,'CURRENT','Phase plan and causal routing','2026-08-28T05:19:03.867Z',0,'Must be revised with SSOT if architecture changes.'),
+('doc_map','ssot/TFTMAC_ENGINEERING_MAP.sql',NULL,'dynamic engineering knowledge graph',90,'CURRENT','Cross-version evidence, dependencies, experiments, options and claims','2026-08-28T05:19:03.867Z',0,'Self-hash changes as this file is updated.'),
+('doc_preflight','ssot/preflight-report.md','0ce58e1a891a3a250f1dcca1bccab5ace8c4ae08ed05877dbd0206327081136b','Phase 0 gate evidence',90,'CURRENT','Phase 0 PASS only','2026-08-28T05:19:03.867Z',0,'Does not imply Phase 1 success.'),
+('doc_phase0_remediation','ssot/phase0-remediation-inventory.md','608c258b56a57ab4775100cd2e7b333db183df86464e09c9c4419892623b2622','historical remediation log',30,'STALE','Pre-Phase-0 blocker inventory','2026-08-28T05:19:03.867Z',1,'Still lists blockers already resolved; never use as current status.'),
+('doc_tftmac_legacy','TFTMAC.md','a93a4c96a37b89033b627520bdbe848cb39b68a12d257caec31ca77ea703e37c','legacy live-profile claim',35,'CURRENT_WITH_LEGACY_CONTENT','Pre-v2 live TFT architecture claims','2026-08-28T05:19:03.867Z',1,'Contains Android 16/API36 and ES3.2 property-era claims; candidate evidence only.'),
+('doc_graphics_legacy','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','06b7f5bf6ed6a84e7be2f3f296563a0fa9b436ec462eca0700d5bd8483490c59','live engine evidence + legacy adapter design',45,'CURRENT_WITH_LEGACY_CONTENT','Live TFT engine identification and pre-v2 adapter architecture','2026-08-28T05:19:03.867Z',1,'Live package inspection remains useful; architecture is not v2 authority.'),
+('doc_readme_mactician','README.md','810e1d7117f4e9f6253d680bef270958f18645d7e275dcf9384c7db1a8cd6a13','Mactician donor overview',30,'DONOR','Legacy product requirements/version pins/performance summary','2026-08-28T05:19:03.867Z',1,'Do not treat nonconformant GLES3.2-era behavior as v2 acceptance.'),
+('doc_mactician_build','scripts/build-mactician.command','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','legacy build implementation evidence',50,'DONOR','macOS 12 deployment, signing, packaging','2026-08-28T05:19:03.867Z',0,'Strong donor for native macOS compatibility target.'),
+('doc_mactician_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','legacy exact version manifest',55,'DONOR','Mactician Android/emulator/game component pins','2026-08-28T05:19:03.867Z',0,'Exact archived component versions.'),
+('doc_benchmarks','docs/benchmarks.md','526507229e293e92155fc3ba588bc48d6a149cc7c164d24e5d10ac33755d7965','historical performance evidence',55,'HISTORICAL','M1 Max / Android36 / Emulator37.1.11 performance experiments','2026-08-28T05:19:03.867Z',0,'Scene-specific results; not current acceptance thresholds.'),
+('doc_native_gles','docs/native-gles-transport-experiment.md','9b92313317a5eebd1900f5008c9db7018f467b20b6a6029dfc33523f240c650c','historical graphics capability research',65,'HISTORICAL','ANGLE/gfxstream/native GLES source and runtime experiments','2026-08-28T05:19:03.867Z',0,'Contains valuable negative evidence and emu-main-dev donor build results.'),
+('doc_research_log','docs/research-log.md','e24b935ebcb6235db53130357121a26e724da0eec9186cbc90b6a0a1a6967dce','historical experiment chronology',50,'HISTORICAL','Compatibility/performance/rejected experiments','2026-08-28T05:19:03.867Z',0,'Useful for avoiding repeated failed experiments.');
+
+INSERT OR REPLACE INTO version_catalog(id,component_id,product,version_label,release_date,channel,architecture,host_os_min,host_os_max,guest_api_min,guest_api_max,bundled_sdk_version,deployment_target_min,deployment_target_max,source_kind,source_ref,evidence_class,lifecycle_state,compatibility_state,last_verified_at,exact_claim,limitations,candidate_role) VALUES
+('vc_macos_current','macos','macOS','26.6.2 / 25G83',NULL,'stable','arm64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'project evidence','ssot/host-preflight.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T04:07:47.479Z','Current M4 host OS.','Host version is not a deployment target or SDK version.','Current host'),
+('vc_xcode266','xcode','Xcode','26.6 / 17F113',NULL,'stable','arm64','26.2','26.x',NULL,NULL,'26.5','11','26.5','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CURRENT_AUTHORITY','PROVEN','2026-08-28T05:20:00Z','Installed and selected on current host; Apple supports it on Tahoe 26.2+ and documents macOS deployment targets 11-26.5.','Locked AEMU helper does not natively understand SDK 26.5.','Current compiler'),
+('vc_xcode263','xcode','Xcode','26.3',NULL,'stable','arm64','15.6','26.x',NULL,NULL,'26.2','11','26.2','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','CONDITIONAL','2026-08-28T05:20:00Z','Officially supports Tahoe 26.x and ships SDK 26.2.','Still outside locked AEMU helper SDK allowlist; would require compatibility adapter and is not currently installed.','Older current-host-compatible compiler candidate'),
+('vc_xcode262','xcode','Xcode','26.2',NULL,'stable','arm64','15.6','26.x',NULL,NULL,'26.2','11','26.2','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','CONDITIONAL','2026-08-28T05:20:00Z','Officially supports Tahoe 26.x and ships SDK 26.2.','Still outside locked AEMU helper SDK allowlist; would require adapter and is not currently installed.','Older current-host-compatible compiler candidate'),
+('vc_xcode164','xcode','Xcode','16.4',NULL,'stable','arm64','15.3','26.1.x',NULL,NULL,'15.5','10.13','15','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','INCOMPATIBLE','2026-08-28T05:20:00Z','Ships SDK 15.5 and has older deployment range.','Apple support matrix stops host support at Tahoe 26.1.x; current host is 26.6.2. SDK 15.5 also exceeds locked helper allowlist ending at 15.2.','Rejected on current host unless isolated older build environment'),
+('vc_xcode162','xcode','Xcode','16.2',NULL,'stable','arm64','14.5','15.x',NULL,NULL,'15.2','10.13','15','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','INCOMPATIBLE','2026-08-28T05:20:00Z','Ships SDK 15.2, which matches the locked helper allowlist.','Apple does not support Xcode 16.2 on macOS 26.6.2. Could be useful only on a separate older macOS build environment.','Historical helper-compatible compiler candidate'),
+('vc_xcode134','xcode','Xcode','13.4 / 13F17a',NULL,'historical','arm64',NULL,NULL,NULL,NULL,'12.3',NULL,NULL,'Google AEMU guide','ext_aemu_darwin_dev','OFFICIAL_DOCUMENTED','HISTORICAL','CLAIMED','2026-08-28T05:20:00Z','Current AEMU macOS guide names Xcode 13.4 with SDK 12.3 as a recommended historical build stack.','Not supported as a current-host installation claim; would require a compatible separate build OS.','Historical upstream reference'),
+('vc_emulator37111','aemu','Android Emulator','37.1.11 / build 15917651','2026-07-30','stable','darwin-aarch64',NULL,NULL,36,37,NULL,NULL,NULL,'Google release notes + project manifest','ext_emulator_releases','PROJECT_ATTESTED','CURRENT_CONTROL','PROVEN','2026-08-28T05:20:00Z','Pinned by Mactician; benchmarked on macOS 26.6 M1 Max; Google 37.1.11 release adds Vulkan extensions required for API 37.','Stock graphics capability for genuine conformant ES3.2 on current M4/API37 is not yet proven.','High-value stock-control candidate'),
+('vc_emulator36611','aemu','Android Emulator','36.6.11','2026-06-02','stable','darwin-aarch64',NULL,NULL,37,37,NULL,NULL,NULL,'Google release notes','ext_emulator_releases','OFFICIAL_DOCUMENTED','CANDIDATE','CLAIMED','2026-08-28T05:20:00Z','Explicitly supports API37 memory requirements and includes a macOS 26.3 Hypervisor cleanup fix.','No project-local TFT run yet; exact API37 Vulkan extension coverage versus 37.1.11 must be tested.','Older stable emulator candidate'),
+('vc_emulator36510','aemu','Android Emulator','36.5.10','2026-04-02','stable','darwin-aarch64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'Google release notes','ext_emulator_releases','OFFICIAL_DOCUMENTED','CANDIDATE','CLAIMED','2026-08-28T05:20:00Z','Contains Vulkan loader/backend improvements and macOS guest CPU feature updates.','Predates explicit API37 minimum-RAM note and 37.1.11 API37 Vulkan-extension additions.','Older graphics-control candidate'),
+('vc_platformtools3602','android36_guest','Android Platform Tools','36.0.2',NULL,'stable','darwin',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'Mactician manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Exact Mactician 1.0.4 platform-tools pin.','Not current v2 control revision.','Legacy donor'),
+('vc_android36_r07','android36_guest','Android system image','Android 36 Google APIs ARM64 r07',NULL,'stable','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'Mactician manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Exact Mactician system-image archive pin.','No Google Play in this exact manifest entry; rootable/Google Play variants were separate.','Legacy guest candidate'),
+('vc_android37_r6','android_guest','Android system image','Android 17 / API37 Google Play ps16k ARM64 rev6',NULL,'stable','arm64',NULL,NULL,37,37,NULL,NULL,NULL,'STACK.lock','ssot/STACK.lock.yaml','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T04:32:56.368Z','Current frozen production guest image.','Runtime graphics acceptance not yet completed.','Current guest'),
+('vc_mactician104','mactician_legacy','Mactician','1.0.4 build 40',NULL,'release','arm64','12.0',NULL,36,36,NULL,'12.0',NULL,'project source','README.md + launcher/Info.plist','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Legacy Apple-Silicon launcher/runtime with minimum macOS 12.0 and exact Emulator37.1.11/Android36 pins.','Experimental/best-effort; PBE workload; historical nonconformant ES3.2 exposure was used and cannot satisfy v2 graphics truth.','Native shell/build/runtime donor'),
+('vc_tft_live1616','tft_android','TFT Android live','16.16.8042660',NULL,'Google Play','arm64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'package inspection','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','PROJECT_ATTESTED','CURRENT_CONTROL','PROVEN','2026-08-27T01:46:35.222Z','Current inspected live package uses RiotNativeActivity/libleagueoflegends.so with no Unreal markers.','Compatibility with v2 API37 source-built runtime still requires vertical-slice proof.','Current workload'),
+('vc_pbe1815212127','tft_android','TFT PBE','18.1-5212127',NULL,'PBE','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'Mactician manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','HISTORICAL','PROVEN','2026-08-27T01:46:26.986Z','Exact historical PBE workload used for Mactician 1.0.4 and benchmarks.','Not the current live production client.','Historical graphics/workload donor'),
+('vc_gfx_main_a9184fd','gfxstream_main_dev_donor','gfxstream host backend','emu-main-dev a9184fd',NULL,'development','darwin-aarch64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'historical project source build','docs/native-gles-transport-experiment.md','HISTORICAL_PROJECT','KNOWN_GOOD_DONOR','PARTIAL','2026-08-27T01:46:26.982Z','Standalone gfxstream_backend built successfully after two AppleClang warning allowances.','Export surface was not production drop-in; branch is not current authority.','Source-build donor'),
+('vc_aemu_locked','aemu','AEMU/QEMU source','emu-master-dev qemu ae9d18d2',NULL,'development','darwin-aarch64',NULL,NULL,37,37,NULL,'10.14',NULL,'resolved manifest + source','ssot/STACK.lock.yaml','DIRECT_OBSERVED','CURRENT_AUTHORITY','PARTIAL','2026-08-28T05:19:03.867Z','Locked source configured fully and compiled through Ninja step 885/9854 with TFTMAC host adapters.','Upstream helper deployment target 10.14 is stale/incompatible with current source+Xcode; build not complete.','Current source authority');
+
+INSERT OR REPLACE INTO compatibility_claims(id,version_id,environment_id,subject,predicate,object,claim_kind,result,evidence_id,external_source_id,source_document_id,observed_at,last_revalidated_at,stale_after,notes) VALUES
+('cc_current_host','vc_xcode266','env_current_m4','Xcode 26.6','runs on','macOS 26.6.2','OBSERVED','SUPPORTS','ev_host_26_6_2','ext_apple_xcode_matrix','doc_stack','2026-08-28T04:07:47.479Z','2026-08-28T05:20:00Z',NULL,'Installed and selected successfully.'),
+('cc_xcode266_deployment','vc_xcode266','env_current_m4','Xcode 26.6','supports macOS deployment target','11 through 26.5','OFFICIAL_DOCUMENTED','SUPPORTS',NULL,'ext_apple_xcode_matrix',NULL,NULL,'2026-08-28T05:20:00Z',NULL,'Therefore 10.14 is outside the officially supported deployment-target range.'),
+('cc_aemu_target1014','vc_aemu_locked','env_current_m4','Locked AEMU helper','forces deployment target','10.14','OBSERVED','BLOCKS','ev_phase1_target1014_fail','ext_aemu_helper',NULL,'2026-08-28T05:10:20.931Z','2026-08-28T05:19:03.867Z',NULL,'Directly caused std::filesystem availability compile errors under SDK26.5.'),
+('cc_mactician_target12','vc_mactician104','env_current_m4','Mactician donor build','targets minimum macOS','12.0','OBSERVED','SUPPORTS','ev_mactician_target12',NULL,'doc_mactician_build','2026-08-27T01:46:26.991Z','2026-08-28T05:19:03.867Z',NULL,'12.0 is inside Xcode26.6 supported deployment range and satisfies std::filesystem availability.'),
+('cc_xcode162_helper','vc_xcode162','env_current_m4','Xcode 16.2 SDK15.2','matches locked AEMU helper SDK allowlist','yes','INFERRED','BLOCKS',NULL,'ext_apple_xcode_matrix',NULL,NULL,'2026-08-28T05:20:00Z',NULL,'SDK matches helper but Apple does not support Xcode16.2 on current macOS26.6.2, so it is not a direct current-host solution.'),
+('cc_xcode263_helper','vc_xcode263','env_current_m4','Xcode 26.3 SDK26.2','matches locked AEMU helper SDK allowlist','no','INFERRED','CONDITIONAL',NULL,'ext_apple_xcode_matrix',NULL,NULL,'2026-08-28T05:20:00Z',NULL,'Can run on current host but still needs adapter for stale AEMU helper.'),
+('cc_emulator37111_mac26','vc_emulator37111','env_benchmark_m1max','Emulator 37.1.11','runs extensively on','macOS 26.6 M1 Max + Android36 userdebug','OBSERVED','SUPPORTS','ev_benchmark_m1max_stack',NULL,'doc_benchmarks','2026-08-27T01:46:26.981Z','2026-08-28T05:19:03.867Z',NULL,'Historical project benchmark evidence, not a guarantee for every guest or M4.'),
+('cc_emulator37111_api37','vc_emulator37111',NULL,'Emulator 37.1.11','adds Vulkan extensions required for','API37 system images','OFFICIAL_DOCUMENTED','SUPPORTS',NULL,'ext_emulator_releases',NULL,'2026-07-30','2026-08-28T05:20:00Z',NULL,'High-value reason to keep 37.1.11 as stock control.'),
+('cc_emulator36611_api37','vc_emulator36611',NULL,'Emulator 36.6.11','supports minimum VM memory behavior for','API37','OFFICIAL_DOCUMENTED','SUPPORTS',NULL,'ext_emulator_releases',NULL,'2026-06-02','2026-08-28T05:20:00Z',NULL,'Candidate older stable control; graphics extension parity not assumed.'),
+('cc_legacy_es32','vc_mactician104','env_benchmark_m1max','Historical Mactician graphics path','claimed ES3.2 using','exposeNonConformantExtensionsAndVersions','PROJECT_DOCUMENTED','BLOCKS',NULL,NULL,'doc_research_log',NULL,'2026-08-28T05:19:03.867Z',NULL,'Worked as historical workload-enablement evidence but is forbidden as v2 conformance proof.'),
+('cc_live_api36_claim','vc_tft_live1616',NULL,'Legacy TFTMAC live profile','claims live TFT runs on','Android16/API36 stock/high-end tablet runtime','PROJECT_DOCUMENTED','CONDITIONAL','ev_live_tft_native',NULL,'doc_tftmac_legacy','2026-08-27T01:46:35.222Z','2026-08-28T05:19:03.867Z',NULL,'Useful older-stack candidate claim, but current v2 preflight explicitly quarantines legacy claims until revalidated.');
+
+INSERT OR REPLACE INTO deployment_target_candidates(target_version,candidate_state,xcode26_6_supported,satisfies_std_filesystem,matches_existing_product_minimum,compatibility_score,source_basis,rationale) VALUES
+('10.14','REJECTED',0,0,0,0,'AEMU stale helper + Apple Xcode26.6 matrix + direct compile failure','Outside Xcode26.6 supported deployment range and directly fails current AEMU std::filesystem compilation.'),
+('10.15','REJECTED',0,1,0,25,'std::filesystem availability + Apple Xcode26.6 matrix','Meets std::filesystem introduction point but is still below Xcode26.6 official minimum deployment target 11.'),
+('11.0','VIABLE',1,1,0,75,'Apple Xcode26.6 support matrix','Technically supported by current Xcode and source APIs, but lower than the project’s already-proven macOS12 minimum and therefore adds compatibility surface without proven product value.'),
+('12.0','RECOMMENDED',1,1,1,95,'Apple Xcode26.6 support matrix + Mactician build/Info.plist','Supported by current Xcode, satisfies source APIs, and matches a proven Apple-Silicon product deployment target already used throughout this repository.'),
+('15.0','VIABLE',1,1,0,70,'Apple Xcode26.6 support matrix','Modern and supported but unnecessarily narrows product compatibility relative to proven macOS12 target.'),
+('26.5','CONDITIONAL',1,1,0,45,'Apple Xcode26.6 SDK/deployment matrix','Would minimize availability ambiguity but would restrict produced binaries to the newest OS family and discard useful Apple-Silicon compatibility for no current evidence-based benefit.');
+
+INSERT OR REPLACE INTO stack_profiles(id,name,purpose,status,confidence,environment_id,workload,exact_result,limitations,next_use) VALUES
+('stack_v2_current','TFTMAC v2 frozen API37 source stack','Current architecture authority','CURRENT_AUTHORITY','DIRECT','env_current_m4','Current live TFT','Phase0 PASS; locked AEMU fully configures and compiles to step 885/9854 before host deployment-target mismatch.','Phase1 build not complete; graphics/runtime probes not yet complete.','Test deployment target 12.0 through existing detached build harness; then resume smallest Phase1 proof.'),
+('stack_mactician104','Mactician 1.0.4 Android36 / Emulator37.1.11','Legacy known-good donor','KNOWN_GOOD_DONOR','DIRECT',NULL,'TFT PBE 18.1-5212127','Native SwiftUI launcher, exact pinned SDK/emulator/system image, extensive game/runtime experiments.','Historical PBE and nonconformant ES32 workaround; not v2 conformance.','Harvest packaging, macOS12 target, runtime state machine, Emulator37.1.11 control behavior.'),
+('stack_m1max_benchmark','M1 Max Android36 userdebug performance stack','Historical performance donor','HISTORICAL','DIRECT','env_benchmark_m1max','TFT PBE','Extensive fixed-stage benchmark evidence on Emulator37.1.11 / Android36 / ANGLE-Vulkan-gfxstream-MoltenVK-Metal.','Different hardware and PBE workload; many results are scene-specific.','Use only for causal/relative graphics insights and older-version compatibility candidates.'),
+('stack_stock37111_api37','Stock Emulator37.1.11 + current API37 Play image','Low-maintenance control candidate','CANDIDATE','STRONG','env_current_m4','Current live TFT','Official release explicitly adds Vulkan extensions required for API37; current guest is already frozen.','Genuine ES3.2/GuestAngle capability on current M4 not yet measured.','Run permanent host/guest Vulkan and GLES probes before source-patching AEMU graphics.'),
+('stack_stock36611_api37','Stock Emulator36.6.11 + API37','Older stable control candidate','CANDIDATE','STRONG','env_current_m4','Capability probes first','Official API37 memory behavior; macOS26.3 Hypervisor fix indicates active macOS26 support work.','May lack Vulkan additions explicitly delivered in 37.1.11.','Only test if 37.1.11 behavior regresses or source build remains disproportionately costly.'),
+('stack_old_xcode_vm','Older macOS build environment + helper-compatible Xcode/SDK','Isolated build-tool compatibility candidate','CANDIDATE','INFERRED',NULL,'Build only','Xcode16.2 ships SDK15.2 matching stale helper allowlist; upstream AEMU historically recommends Xcode13.4/SDK12.3.','Neither is supported directly on current macOS26.6.2; requires separate compatible macOS build environment and binary transfer validation.','Keep as fallback if owned host adapter becomes harder than maintaining an isolated build environment.');
+
+INSERT OR REPLACE INTO stack_profile_members(stack_id,version_id,role,required) VALUES
+('stack_v2_current','vc_macos_current','host OS',1),
+('stack_v2_current','vc_xcode266','compiler',1),
+('stack_v2_current','vc_android37_r6','guest',1),
+('stack_v2_current','vc_aemu_locked','source runtime',1),
+('stack_v2_current','vc_tft_live1616','workload',1),
+('stack_mactician104','vc_mactician104','launcher/runtime product',1),
+('stack_mactician104','vc_emulator37111','emulator',1),
+('stack_mactician104','vc_platformtools3602','platform tools',1),
+('stack_mactician104','vc_android36_r07','guest image',1),
+('stack_mactician104','vc_pbe1815212127','workload',1),
+('stack_m1max_benchmark','vc_emulator37111','emulator',1),
+('stack_m1max_benchmark','vc_pbe1815212127','workload',1),
+('stack_stock37111_api37','vc_emulator37111','stock emulator',1),
+('stack_stock37111_api37','vc_android37_r6','guest',1),
+('stack_stock37111_api37','vc_tft_live1616','workload',1),
+('stack_stock36611_api37','vc_emulator36611','stock emulator',1),
+('stack_stock36611_api37','vc_android37_r6','guest',1),
+('stack_old_xcode_vm','vc_xcode162','helper-compatible Xcode candidate',0),
+('stack_old_xcode_vm','vc_xcode134','upstream-recommended historical Xcode candidate',0);
+
+-- Correct stale Phase-1 rows with the latest durable observation.
+INSERT OR REPLACE INTO experiments(id,observed_at,title,layer,hypothesis,action,result,status,reusable_lesson) VALUES
+('exp_host_binutils','2026-08-28T05:10:20.931Z','Provide complete Darwin host tool wrappers','host_build','Once the missing compiler/binutils/Qt host contracts are supplied, the locked AEMU source will reach genuine compilation.','Preseeded Xcode clang/clang++ and Darwin tool wrappers plus Qt host-tool bridge.','PASS for bootstrap objective: configuration completed and Ninja advanced to step 885/9854; next failure is independent deployment-target API availability.','PASS','The owned host adapter is causally effective. Stop treating later source/API failures as the same toolchain-wrapper problem.'),
+('exp_deployment_target_1014','2026-08-28T05:10:20.931Z','Audit AEMU macOS deployment target against current host/toolchain','host_build','Legacy 10.14 deployment target remains valid under Xcode26.6/SDK26.5.','Compiled locked AEMU source using current host adapter while preserving upstream 10.14 target.','Build failed at step 885/9854 because std::filesystem remove/path are unavailable to deployment target 10.14; current Xcode26.6 officially supports deployment targets only from macOS11 upward.','FAIL','Host OS, SDK, and deployment target must be modeled separately. Select a supported minimum target from evidence rather than inheriting upstream constants.');
+
+INSERT OR REPLACE INTO failures(id,experiment_id,symptom,root_cause,owning_layer,workaround,permanent_fix,state) VALUES
+('fail_deployment_target_1014','exp_deployment_target_1014','IniFile.cpp std::filesystem operations rejected as unavailable; Ninja stops around step 885/9854','AEMU helper forces MACOSX/OSX deployment target 10.14 while current source uses std::filesystem introduced in macOS10.15 and Xcode26.6 officially supports deployment targets only from macOS11.','host_build','Set a supported deployment target in the TFTMAC host adapter; 12.0 is the strongest current candidate because it matches existing product compatibility evidence.','TFTMAC host adapter owns deployment target selection and verifies it against current Xcode support matrix plus source API availability.','OPEN');
+
+INSERT OR REPLACE INTO unknowns(id,question,owning_layer,blocking,next_probe,status,resolution) VALUES
+('unk_phase1_result','Does locked AEMU complete when the host adapter uses macOS 12.0 deployment target instead of stale 10.14?','host_build',1,'Re-run the existing Phase1 build through the owned adapter with deployment target 12.0, preserving all other proven host adaptations and no graphics source mutation.','OPEN',NULL),
+('unk_deployment_floor','Is macOS 12.0 the best production minimum, or does an 11.x target materially improve compatibility without cost?','product_compatibility',0,'Build/test 12.0 first because it is already project-proven; only test 11.x if product distribution goals justify it.','OPEN',NULL),
+('unk_old_stock_runtime','Can stock Emulator37.1.11 + current API37 Play image satisfy the v2 capability graph without any source-built emulator?','architecture',0,'After Phase1 build parity is understood, run the same host/guest Vulkan and genuine GLES probes against stock37.1.11 as a control.','OPEN',NULL),
+('unk_cross_project_aemu35','Does the separate tftmac-runtime project contain a source-built older AEMU/emulator release that is directly reusable here?','donor_analysis',0,'Verify exact emulator release/build, commits, boot proof and host-toolchain evidence in that project before adding it as PROVEN to version_catalog.','OPEN',NULL);
+
+INSERT OR REPLACE INTO decisions(id,decided_at,decision,rationale,state,evidence_id,supersedes) VALUES
+('dec_separate_host_sdk_target','2026-08-28T05:19:03.867Z','Model host macOS, Xcode, SDK, and deployment target as four independent compatibility dimensions.','The current host was known but stale AEMU deployment-target assumptions still caused a real compile failure.','ACTIVE','ev_phase1_target1014_fail',NULL),
+('dec_target12_first','2026-08-28T05:20:00Z','Use macOS 12.0 as the first deployment-target candidate for Phase1 parity testing; do not set target to current host version by default.','12.0 is inside Xcode26.6 supported range, satisfies std::filesystem availability, and is already proven throughout the existing Apple-Silicon Mactician product build.','ACTIVE','ev_mactician_target12',NULL),
+('dec_version_matrix','2026-08-28T05:20:00Z','Maintain older software versions as explicit candidates with provenance, limitations, and revalidation state.','Older stable combinations may be simpler and already compatible; newest-version bias is not an engineering requirement.','ACTIVE',NULL,NULL);
+
+INSERT OR REPLACE INTO constraints(id,category,statement,severity,mutable,rationale) VALUES
+('con_version_truth','versioning','Do not equate newest with best. Every version choice must be justified by current-host support, workload capability, security/maintenance needs, and evidence.','HIGH',0,'Older stable versions can reduce compatibility friction; unsupported old versions can also create hidden failures.'),
+('con_host_sdk_target_split','host_build','Host macOS version, Xcode version, SDK version, and deployment target must never be collapsed into one version field or inferred from one another.','HARD',0,'The Phase1 10.14 deployment-target failure occurred despite correct host/Xcode/SDK discovery.'),
+('con_claim_provenance','knowledge','Every compatibility statement must declare whether it is directly observed, officially documented, project-documented, inferred, or hypothetical.','HIGH',0,'Prevents legacy claims from silently becoming current facts.');
+
+INSERT OR REPLACE INTO architecture_candidates(id,name,summary,status,integration_cost,invention_level,expected_control,expected_risk,rationale) VALUES
+('arch_h','Stock Emulator 37.1.11 + API37 capability-first runtime','Use Google stable Emulator37.1.11 as the machine/runtime control and only source-build or patch components if capability probes identify a real gap.','VIABLE',2,2,5,3,'37.1.11 is already pinned and heavily exercised in this repository, is current stable, and explicitly added Vulkan extensions for API37. This may eliminate most source-build maintenance if genuine GLES/Vulkan probes pass.'),
+('arch_i','Isolated older macOS/Xcode AEMU build environment','Build locked AEMU in a separate compatible macOS environment using an older helper-friendly Xcode/SDK, then run the produced ARM64 runtime on the current host after parity/signature verification.','RESEARCH',6,3,6,5,'Could avoid continuously adapting stale build helpers, but adds a second build OS and artifact-transfer/signing contract. Current evidence favors the owned adapter first because it already reaches 885/9854 on the host.');
+
+INSERT OR REPLACE INTO candidate_components(candidate_id,component_id,role,required) VALUES
+('arch_h','aemu','Stock stable emulator binary',1),
+('arch_h','android_guest','Current API37 Play guest',1),
+('arch_h','angle','Built-in GuestAngle path',1),
+('arch_h','gfxstream','Stock graphics transport',1),
+('arch_h','tftmac_shell','Native product surface',1),
+('arch_i','aemu','Locked source runtime',1),
+('arch_i','tftmac_harness','Artifact verification/runtime integration',1),
+('arch_i','xcode','Alternate build-environment compiler',1);
+
+INSERT OR REPLACE INTO table_metadata(table_name,purpose,authority,update_policy,retention_policy,notes) VALUES
+('map_meta','Global map schema/process/current-state metadata','engineering map','Update every material truth audit','Permanent','Values with current_* keys must be revised when environment/state changes.'),
+('components','Logical system components independent of version','engineering map','Add/update as architecture changes','Permanent',NULL),
+('component_versions','Exact frozen versions tied to components','STACK.lock/project evidence','Update when frozen source/tool authority changes','Permanent history',NULL),
+('capabilities','Acceptance capabilities and falsifiable rules','SSOT','Change only with SSOT revision','Permanent',NULL),
+('component_capabilities','Observed/expected capability state','probe evidence','Update after deterministic probes','Permanent history',NULL),
+('interfaces','Component-to-component contracts','architecture evidence','Update when integration boundary changes','Permanent',NULL),
+('dependencies','Required provider/consumer relationships','architecture evidence','Update after compatibility evidence','Permanent',NULL),
+('constraints','Hard/high/medium/low project constraints','SSOT/user decisions','Update only with explicit architecture/product decision','Permanent',NULL),
+('evidence','Atomic factual observations','direct artifacts/source/web authority','Append; do not rewrite history except factual correction','Permanent',NULL),
+('experiments','Hypothesis/action/result/lesson records','experiment evidence','Append/update terminal status','Permanent',NULL),
+('failures','Causal failure catalog','experiments/compiler/runtime evidence','Update state as fixed/avoided','Permanent',NULL),
+('architecture_candidates','Competing solution architectures','engineering analysis','Re-score when evidence changes','Permanent',NULL),
+('decisions','Explicit architectural/product decisions','evidence + user authority','Supersede rather than delete','Permanent',NULL),
+('unknowns','Unresolved questions with owning layer and next probe','engineering map','Resolve with evidence','Until resolved + historical retention',NULL),
+('invention_opportunities','Potential TFTMAC-owned technology boundaries','engineering analysis','Promote/reject with evidence','Permanent',NULL),
+('paths','Storage/path authority','SSOT + runtime evidence','Update when storage architecture changes','Permanent',NULL),
+('environment_snapshots','Exact host/toolchain observations over time','host probes','Append a new snapshot on environment change','Permanent','Do not overwrite old environment snapshots.'),
+('source_documents','Authority/freshness classification of project documents','repository audit','Revalidate on document change','Permanent','Prevents stale docs from acting as current truth.'),
+('external_sources','Official external compatibility/release evidence','official vendors/upstreams','Refresh when material version decisions are made','Permanent with freshness label',NULL),
+('version_catalog','Current/older software versions and candidate roles','mixed provenance with explicit evidence_class','Update when versions are discovered/revalidated','Permanent','Never promote CLAIMED to PROVEN without direct evidence.'),
+('compatibility_claims','Atomic compatibility statements across versions/environments','evidence/external/source docs','Revalidate and supersede explicitly','Permanent',NULL),
+('deployment_target_candidates','macOS minimum-target options','Apple matrix + source API + project evidence','Update when Xcode/product floor changes','Permanent',NULL),
+('stack_profiles','Whole-stack known-good/historical/candidate bundles','project evidence','Update as bundles are tested','Permanent',NULL),
+('stack_profile_members','Version membership for stack bundles','version catalog','Update with stack profile','Permanent',NULL),
+('table_metadata','Purpose/authority policy for each SQL table','engineering map schema','Update with schema','Permanent',NULL),
+('field_metadata','Structural and semantic metadata for every SQL column','SQLite schema + annotations','Regenerate after schema changes','Permanent','Ensures all fields are queryable/documented structurally.');
+
+-- Structural metadata for every field in every first- and second-generation table.
+-- pragma_table_info makes this self-maintaining when executed from a clean DB.
+DELETE FROM field_metadata;
+
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility)
+SELECT 'map_meta',name,type,"notnull",dflt_value,pk,'global metadata field','engineering map','mixed' FROM pragma_table_info('map_meta');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'components',name,type,"notnull",dflt_value,pk,'component field','engineering map','low' FROM pragma_table_info('components');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'component_versions',name,type,"notnull",dflt_value,pk,'version identity field','STACK.lock/evidence','medium' FROM pragma_table_info('component_versions');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'capabilities',name,type,"notnull",dflt_value,pk,'capability contract field','SSOT','low' FROM pragma_table_info('capabilities');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'component_capabilities',name,type,"notnull",dflt_value,pk,'capability observation field','probe evidence','high' FROM pragma_table_info('component_capabilities');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'interfaces',name,type,"notnull",dflt_value,pk,'interface contract field','architecture evidence','medium' FROM pragma_table_info('interfaces');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'dependencies',name,type,"notnull",dflt_value,pk,'dependency relation field','architecture evidence','medium' FROM pragma_table_info('dependencies');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'constraints',name,type,"notnull",dflt_value,pk,'constraint field','SSOT/user authority','low' FROM pragma_table_info('constraints');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'evidence',name,type,"notnull",dflt_value,pk,'evidence provenance field','direct source','append-only' FROM pragma_table_info('evidence');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'experiments',name,type,"notnull",dflt_value,pk,'experiment field','experiment evidence','medium' FROM pragma_table_info('experiments');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'failures',name,type,"notnull",dflt_value,pk,'failure causality field','experiment evidence','medium' FROM pragma_table_info('failures');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'experiment_evidence',name,type,"notnull",dflt_value,pk,'experiment/evidence relation','engineering map','low' FROM pragma_table_info('experiment_evidence');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'architecture_candidates',name,type,"notnull",dflt_value,pk,'architecture scoring field','engineering analysis','medium' FROM pragma_table_info('architecture_candidates');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'candidate_components',name,type,"notnull",dflt_value,pk,'candidate/component relation','engineering map','medium' FROM pragma_table_info('candidate_components');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'decisions',name,type,"notnull",dflt_value,pk,'decision record field','evidence/user authority','low' FROM pragma_table_info('decisions');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'unknowns',name,type,"notnull",dflt_value,pk,'unknown/probe routing field','engineering map','high' FROM pragma_table_info('unknowns');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'invention_opportunities',name,type,"notnull",dflt_value,pk,'invention analysis field','engineering analysis','medium' FROM pragma_table_info('invention_opportunities');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'paths',name,type,"notnull",dflt_value,pk,'filesystem authority field','SSOT/runtime','low' FROM pragma_table_info('paths');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'update_log',name,type,"notnull",dflt_value,pk,'map change-log field','engineering map','append-only' FROM pragma_table_info('update_log');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'environment_snapshots',name,type,"notnull",dflt_value,pk,'host environment observation','host probe','append-only' FROM pragma_table_info('environment_snapshots');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'source_documents',name,type,"notnull",dflt_value,pk,'document authority/freshness field','repository audit','medium' FROM pragma_table_info('source_documents');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'external_sources',name,type,"notnull",dflt_value,pk,'external provenance field','official upstream','medium' FROM pragma_table_info('external_sources');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'version_catalog',name,type,"notnull",dflt_value,pk,'software version/candidate field','mixed explicit provenance','medium' FROM pragma_table_info('version_catalog');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'compatibility_claims',name,type,"notnull",dflt_value,pk,'atomic compatibility claim field','evidence/provenance','high' FROM pragma_table_info('compatibility_claims');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'deployment_target_candidates',name,type,"notnull",dflt_value,pk,'deployment-target option field','Apple/source/project evidence','medium' FROM pragma_table_info('deployment_target_candidates');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'stack_profiles',name,type,"notnull",dflt_value,pk,'whole-stack profile field','project evidence','medium' FROM pragma_table_info('stack_profiles');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'stack_profile_members',name,type,"notnull",dflt_value,pk,'stack/version relation','version catalog','medium' FROM pragma_table_info('stack_profile_members');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'table_metadata',name,type,"notnull",dflt_value,pk,'table semantics field','engineering map schema','low' FROM pragma_table_info('table_metadata');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility) SELECT 'field_metadata',name,type,"notnull",dflt_value,pk,'field metadata self-description','engineering map schema','low' FROM pragma_table_info('field_metadata');
+
+UPDATE field_metadata SET unit='ISO-8601 UTC timestamp', semantic_role='observation timestamp' WHERE column_name IN ('observed_at','decided_at','created_at','retrieved_at','last_verified_at','last_revalidated_at','stale_after','frozen_at');
+UPDATE field_metadata SET unit='SHA-256 hex', semantic_role='content integrity identity' WHERE column_name LIKE '%sha256%' OR column_name='artifact_sha256';
+UPDATE field_metadata SET semantic_role='foreign-key evidence pointer' WHERE column_name='evidence_id';
+UPDATE field_metadata SET semantic_role='stable machine-readable identifier' WHERE column_name='id';
+UPDATE field_metadata SET unit='version string', semantic_role='software/platform version' WHERE column_name LIKE '%version%';
+UPDATE field_metadata SET unit='GiB', semantic_role='host physical memory' WHERE table_name='environment_snapshots' AND column_name='host_memory_gb';
+UPDATE field_metadata SET unit='0-100 score', semantic_role='compatibility prioritization score' WHERE table_name='deployment_target_candidates' AND column_name='compatibility_score';
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T05:19:03.867Z','Phase 1 truth correction','Reconciled detached build: no longer running; failed at Ninja step 885/9854 on macOS deployment target 10.14 versus std::filesystem availability.','ev_phase1_target1014_fail'),
+('2026-08-28T05:20:00Z','Host compatibility model','Separated current host macOS 26.6.2, Xcode 26.6, SDK 26.5 and deployment target into independent compatibility dimensions.','ev_host_26_6_2'),
+('2026-08-28T05:20:00Z','Version strategy','Added current/older Xcode, Emulator, Android guest, Mactician and historical source-build versions with explicit provenance and limitations.',NULL),
+('2026-08-28T05:20:00Z','Document truth model','Classified current authority, legacy donor, historical evidence and stale documents so obsolete claims cannot masquerade as current state.',NULL),
+('2026-08-28T05:20:00Z','Deployment target','Promoted macOS 12.0 as first Phase1 parity candidate; rejected inherited 10.14 and unsupported 10.15 targets.','ev_mactician_target12');
+
+-- ---------------------------------------------------------------------------
+-- Historical runtime/profile/benchmark coverage
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS runtime_variants (
+    id TEXT PRIMARY KEY,
+    entrypoint TEXT NOT NULL,
+    classification TEXT NOT NULL CHECK (classification IN ('RECOMMENDED','STABLE_FALLBACK','DIAGNOSTIC','PROVISIONAL','EXPERIMENTAL','REJECTED','HISTORICAL')),
+    runtime_family TEXT NOT NULL,
+    graphics_path TEXT,
+    display_profile TEXT,
+    resource_profile TEXT,
+    exact_result TEXT NOT NULL,
+    promotion_state TEXT NOT NULL CHECK (promotion_state IN ('PROMOTED','RETAINED','NOT_PROMOTED','REJECTED','UNKNOWN')),
+    source_document_id TEXT REFERENCES source_documents(id),
+    current_relevance TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_findings (
+    id TEXT PRIMARY KEY,
+    classification TEXT NOT NULL CHECK (classification IN ('CONFIRMED','PROVISIONAL','REJECTED','DIAGNOSTIC')),
+    environment_id TEXT REFERENCES environment_snapshots(id),
+    stack_id TEXT REFERENCES stack_profiles(id),
+    workload TEXT NOT NULL,
+    metric_summary TEXT NOT NULL,
+    causal_interpretation TEXT NOT NULL,
+    reproducibility TEXT NOT NULL,
+    source_document_id TEXT REFERENCES source_documents(id),
+    current_relevance TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS artifact_registry (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE,
+    artifact_kind TEXT NOT NULL,
+    layer TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('CURRENT_AUTHORITY','CURRENT_IMPLEMENTATION','DONOR','HISTORICAL','EXPERIMENTAL','REJECTED','STALE')),
+    mutation_policy TEXT NOT NULL,
+    source_document_id TEXT REFERENCES source_documents(id),
+    notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_variants_classification ON runtime_variants(classification, promotion_state);
+CREATE INDEX IF NOT EXISTS idx_benchmark_findings_classification ON benchmark_findings(classification);
+CREATE INDEX IF NOT EXISTS idx_artifact_registry_status ON artifact_registry(status, layer);
+
+CREATE VIEW IF NOT EXISTS v_runtime_variant_history AS
+SELECT entrypoint, classification, promotion_state, runtime_family, graphics_path,
+       exact_result, current_relevance
+FROM runtime_variants
+ORDER BY CASE classification
+           WHEN 'RECOMMENDED' THEN 0
+           WHEN 'STABLE_FALLBACK' THEN 1
+           WHEN 'PROVISIONAL' THEN 2
+           WHEN 'EXPERIMENTAL' THEN 3
+           WHEN 'DIAGNOSTIC' THEN 4
+           WHEN 'HISTORICAL' THEN 5
+           ELSE 6
+         END, entrypoint;
+
+CREATE VIEW IF NOT EXISTS v_confirmed_and_rejected_learning AS
+SELECT id, classification, workload, metric_summary, causal_interpretation,
+       reproducibility, current_relevance
+FROM benchmark_findings
+ORDER BY CASE classification WHEN 'CONFIRMED' THEN 0 WHEN 'REJECTED' THEN 1 WHEN 'PROVISIONAL' THEN 2 ELSE 3 END, id;
+
+INSERT OR REPLACE INTO source_documents(id,path,sha256,role,authority_rank,temporal_status,scope,last_verified_at,conflicts_with_current_authority,notes) VALUES
+('doc_launch_profiles','docs/launch-profiles.md','b3a53fff5c5e8ce37e5f7c0b1bf714e37d8ccead76e09981898934b8baa03524','historical runtime-profile index',55,'HISTORICAL','Explicit promoted/provisional/rejected launcher profiles','2026-08-28T05:31:00Z',0,'Primary source for not repeating rejected graphics profiles.'),
+('doc_legacy_architecture','docs/architecture.md','7132bf652fc1d851cf5479f49d9258f9b6e789c6f299db3a868f657515994c2e','Mactician donor architecture',45,'DONOR','Legacy launcher/runtime state machine, host/guest boundary, graphics and rollback','2026-08-28T05:31:00Z',1,'Architecture is donor-only; lifecycle/rollback patterns remain useful.'),
+('doc_building','docs/building.md','53252cc1b4b364d69e2f0d6f6061d3c90ef246353fa6e4f3e60048e38f977e73','Mactician donor build contract',45,'DONOR','macOS12 target, tools, signing, environment variables','2026-08-28T05:31:00Z',0,NULL),
+('doc_tftmac_app','tftmac/Sources/TFTMACApp.swift','b92fc0b8b525fca9e77e57633ab7c1939e87c113c7dbaf4aadfa00888ca15a33','pre-v2 TFTMAC app implementation',35,'CURRENT_WITH_LEGACY_CONTENT','Native UI and legacy live-runtime orchestration','2026-08-28T05:31:00Z',1,'Hardcodes old internal SDK/AVD roots and legacy ES3.2 property injection; must not be promoted unchanged.'),
+('doc_tftmac_info','tftmac/Info.plist','e1a46f86f6aa748f884314e84ff40518e1ce3b4841708fb7083b62d6cc6b6005','current native-app metadata donor',50,'CURRENT_WITH_LEGACY_CONTENT','Bundle identity/minimum macOS version','2026-08-28T05:31:00Z',0,'LSMinimumSystemVersion 12.0 supports deployment-target candidate.'),
+('doc_v2_tool','tools/tftmac-v2.mjs',NULL,'current v2 execution harness',85,'CURRENT','External storage, Phase0, source/build workers, host compatibility and map validation','2026-08-28T05:31:00Z',0,'Self-hash changes during active implementation.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_tftmac_shell_legacy_paths','2026-08-27T01:46:35.223Z','source_audit','tftmac/Sources/TFTMACApp.swift','b92fc0b8b525fca9e77e57633ab7c1939e87c113c7dbaf4aadfa00888ca15a33','Pre-v2 TFTMAC shell hardcodes ~/Library/Application Support/TFTMAC/sdk and avd, AVD TftHighEndTablet, and enhanced renderer property androidboot.opengles.version=196610.','DIRECT','This shell is a presentation/orchestration donor, not compatible unchanged with v2 external Runtime root or no-spoof acceptance.'),
+('ev_reference_android36','2026-08-27T01:46:26.989Z','reference_config','reference/avd/config.ini','4432ae12207175e046e943ec60ffd97e1a427dd3c9142a7d1b9495f3ed623d92','Reference TftPBE AVD is Android36 ARM64 Google Play-class configuration with host GPU; generated hardware evidence shows 7 vCPU/6144MB and historical pipe transport.','DIRECT','Reference files capture donor state, not current production v2 state.'),
+('ev_reference_rootable36','2026-08-27T01:46:26.989Z','reference_config','reference/rootable-avd/config.ini','095305826c0efe3c8bec12f9926e81672773ceb9deda3594894fb103fafb6977','Reference TftRootAffinity AVD is Android36 ARM64 Google APIs, rootable/no Play Store, 7 vCPU/6144MB, host GPU, 1600x900.','DIRECT','Useful proof of package-authority/execution-guest split patterns.'),
+('ev_mactician_min12_plist','2026-08-27T01:46:26.983Z','bundle_metadata','launcher/Info.plist','33f27c2f2b1ee80e0b1d56035fb83002c862d4f6c003083b098303e2eec264ae','Mactician 1.0.4 bundle declares LSMinimumSystemVersion 12.0.','DIRECT',NULL),
+('ev_tftmac_min12_plist','2026-08-27T01:46:35.222Z','bundle_metadata','tftmac/Info.plist','e1a46f86f6aa748f884314e84ff40518e1ce3b4841708fb7083b62d6cc6b6005','TFTMAC 1.0.0 native shell also declares LSMinimumSystemVersion 12.0.','DIRECT','Independent second project-local signal supporting macOS12 floor.');
+
+INSERT OR REPLACE INTO compatibility_claims(id,version_id,environment_id,subject,predicate,object,claim_kind,result,evidence_id,external_source_id,source_document_id,observed_at,last_revalidated_at,stale_after,notes) VALUES
+('cc_tftmac_shell_paths',NULL,'env_current_m4','Pre-v2 TFTMAC shell','uses runtime storage','internal Application Support sdk/avd paths','OBSERVED','BLOCKS','ev_tftmac_shell_legacy_paths',NULL,'doc_tftmac_app','2026-08-27T01:46:35.223Z','2026-08-28T05:31:00Z',NULL,'Must be refactored to consume v2 external Runtime/SDK/AVD roots before native-shell promotion.'),
+('cc_tftmac_shell_spoof',NULL,'env_current_m4','Pre-v2 TFTMAC enhanced renderer','injects','androidboot.opengles.version=196610','OBSERVED','BLOCKS','ev_tftmac_shell_legacy_paths',NULL,'doc_tftmac_app','2026-08-27T01:46:35.223Z','2026-08-28T05:31:00Z',NULL,'Forbidden as v2 capability proof; source remains useful for UI/runtime control structure only.'),
+('cc_two_min12_signals','vc_mactician104','env_current_m4','Mactician and TFTMAC native bundles','share minimum macOS target','12.0','OBSERVED','SUPPORTS','ev_tftmac_min12_plist',NULL,'doc_tftmac_info','2026-08-27T01:46:35.222Z','2026-08-28T05:31:00Z',NULL,'Two independent project bundles plus build scripts use 12.0.'),
+('cc_rootable36_split','vc_android36_r07',NULL,'Android36 userdebug/rootable donor','supports architecture pattern','separate execution guest without Play Store','PROJECT_DOCUMENTED','SUPPORTS','ev_reference_rootable36',NULL,'doc_legacy_architecture','2026-08-27T01:46:26.989Z','2026-08-28T05:31:00Z',NULL,'Useful only if conditional custom-driver execution guest becomes necessary.');
+
+INSERT OR REPLACE INTO runtime_variants(id,entrypoint,classification,runtime_family,graphics_path,display_profile,resource_profile,exact_result,promotion_state,source_document_id,current_relevance,notes) VALUES
+('rv_best_verified','run-tft-best-verified.command','RECOMMENDED','Mactician/PBE Android36','ANGLE/OpenGL -> Vulkan -> gfxstream/MoltenVK -> Metal','1440p historical default',NULL,'Canonical audited legacy source launch; pins selected ASG, ANGLE/OpenGL and MoltenVK settings.','PROMOTED','doc_launch_profiles','Donor baseline only; v2 workload/guest differs.','Historical recommendation does not override v2 no-spoof policy.'),
+('rv_fast_quality','run-tft-fast-quality.command','STABLE_FALLBACK','Mactician/PBE Android36','Same selected legacy graphics stack','configurable',NULL,'Stable fallback without canonical override reset.','RETAINED','doc_launch_profiles','Useful rollback/donor structure.',NULL),
+('rv_performance_max','run-tft-performance-max.command','HISTORICAL','Mactician/PBE Android36','ANGLE/Vulkan/gfxstream/MoltenVK','2560x1440; 67% 3D scale','selected 16KiB ASG write step','Two full transport confirmations retained 34.1-35.1 FPS at stage1-8; app render-base.','PROMOTED','doc_launch_profiles','Performance donor only; not v2 acceptance.',NULL),
+('rv_angle_opengl','run-tft-angle-opengl.command','DIAGNOSTIC','Mactician/PBE Android36','Verified ANGLE/OpenGL overlay',NULL,NULL,'Required lower-level renderer delegate; not complete safety wrapper.','RETAINED','doc_launch_profiles','Useful graphics-control donor.',NULL),
+('rv_root_affinity','run-tft-root-affinity.command','DIAGNOSTIC','Android36 rootable execution guest','ANGLE/gfxstream with root scheduling/overlays','1600x900 historical','7 vCPU / 6144MB donor','Owns rootable AVD, overlays, PSO scheduling, HWUI repair and cleanup.','RETAINED','doc_launch_profiles','Important conditional execution-guest donor.',NULL),
+('rv_gles32_legacy','run-tft-gles32.command','HISTORICAL','older non-root Android36','legacy pipe-era GLES path','1600x900','6GB','Legacy stable fallback before selected ASG stack.','RETAINED','doc_launch_profiles','Do not infer genuine ES3.2 from name.',NULL),
+('rv_mvk128','run-tft-mvk128-experimental.command','EXPERIMENTAL','Mactician/PBE Android36','MoltenVK 128-buffer candidate',NULL,NULL,'One strong run failed cold and sustained reproducibility.','NOT_PROMOTED','doc_launch_profiles','Do not repeat as default.',NULL),
+('rv_no_fbo_submit','run-tft-fast-quality-angle-no-fbo-submit.command','PROVISIONAL','Mactician/PBE Android36','ANGLE preferSubmitAtFBOBoundary disabled',NULL,NULL,'Promising first run; lacked required cold confirmation.','NOT_PROMOTED','doc_launch_profiles','May be retested only under comparable modern stack evidence.',NULL),
+('rv_shader_prewarm','run-tft-fast-quality-shader-prewarm.command','REJECTED','Mactician/PBE Android36','shader preload candidate',NULL,NULL,'Neutral/rejected by fixed-stage campaign.','REJECTED','doc_launch_profiles','Do not repeat without new causal evidence.',NULL),
+('rv_submit_thread','run-tft-fast-quality-submit-thread.command','REJECTED','Mactician/PBE Android36','guest Vulkan submit/marshalling thread',NULL,NULL,'Regressed to 37.40/32.60/25.80 FPS at fixed stages.','REJECTED','doc_launch_profiles','Negative evidence.',NULL),
+('rv_upstream_asg','run-tft-fast-quality-upstream-asg.command','REJECTED','Mactician/PBE Android36','upstream ASG feature candidate',NULL,NULL,'Failed campaign promotion gates.','REJECTED','doc_launch_profiles','Negative evidence.',NULL),
+('rv_asg_active_consumer','run-tft-fast-quality-asg-active-consumer.command','REJECTED','Mactician/PBE Android36','isolated host active-consumer patch',NULL,NULL,'11.2 FPS / 334ms p95 versus 60 FPS / 18.44ms same-scene control.','REJECTED','doc_launch_profiles','Explicit forensic opt-in only.',NULL),
+('rv_native_gles','run-tft-fast-quality-native-gles.command','DIAGNOSTIC','Mactician/PBE Android36','native gfxstream GLES without guest ANGLE',NULL,NULL,'High-risk diagnostic; no accepted production result.','NOT_PROMOTED','doc_launch_profiles','Protocol/API capability gap proven in native GLES research.',NULL),
+('rv_native_gles30','run-tft-fast-quality-native-gles30.command','REJECTED','Mactician/PBE Android36','native GLES3.0',NULL,NULL,'TFT crashed before first frame because required GLES APIs absent.','REJECTED','doc_launch_profiles','Strong evidence against GLES3.0 shortcut.',NULL),
+('rv_native_gles31','run-tft-fast-quality-native-gles31.command','REJECTED','Mactician/PBE Android36','native GLES3.1 attempt',NULL,NULL,'Host native path exposed only GLES3.0; strict gate failed.','REJECTED','doc_launch_profiles','Strong evidence against shallow native-GLES shortcut.',NULL),
+('rv_ubo_direct','run-tft-fast-quality-ubo-direct-write.command','EXPERIMENTAL','Mactician/PBE Android36','direct UBO writes',NULL,NULL,'Isolated risky profile; no promotion evidence.','NOT_PROMOTED','doc_launch_profiles','Keep only for reproducibility.',NULL),
+('rv_ubo_pool','run-tft-fast-quality-ubo-pool.command','EXPERIMENTAL','Mactician/PBE Android36','larger UBO pool',NULL,NULL,'Isolated risky profile; no promotion evidence.','NOT_PROMOTED','doc_launch_profiles','Keep only for reproducibility.',NULL),
+('rv_direct_vulkan','run-tft-direct-vulkan.command','REJECTED','Mactician/PBE Android36','direct Unreal Vulkan RHI',NULL,NULL,'Selected Shipping device profile disabled direct Vulkan; Vulkan remained below ANGLE.','REJECTED','doc_launch_profiles','Current live client is not proven Unreal anyway.',NULL);
+
+INSERT OR REPLACE INTO benchmark_findings(id,classification,environment_id,stack_id,workload,metric_summary,causal_interpretation,reproducibility,source_document_id,current_relevance,notes) VALUES
+('bf_asg_vs_pipe','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Exact stage1-1 battle','ASG 40.1 FPS / 34.85ms p95 vs pipe 29.6 FPS / 49.75ms p95','ASG transport materially outperformed old pipe transport in controlled scene.','Accepted exact-scene A/B','doc_benchmarks','Transport-design donor; do not assume identical delta on API37.',NULL),
+('bf_selected_stack','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Later stage1-5','36.0-36.8 FPS, p95 near35ms','Selected legacy stack was CPU/RHI/transport limited, not simply pixel-fill limited.','Confirmed range','doc_benchmarks','Useful bottleneck model.',NULL),
+('bf_resolution_ab','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Controlled stage1-5 resolution A/B','2560x1440 31.3 FPS vs 1600x900 30.5 FPS despite 2.56x pixels','Scene was CPU/RHI-bound; lowering resolution was not a universal solution.','Accepted narrow A/B','doc_benchmarks','Avoid reflexive resolution reduction.',NULL),
+('bf_effects67','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Tocker Trials stages1-2/1-5/1-8','Mean 45.20 / 38.50 / 33.80 FPS; stage1-8 p95 35.07-35.95ms','Lower-cost effects/LOD at 67% 3D scale improved heavy-scene throughput while preserving more resolution than 50%.','Two complete Trials','doc_benchmarks','Historical performance donor.',NULL),
+('bf_asg16k','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Transport candidate','16KiB write step 41.3-43.0 / 34.1-35.1 FPS at stages1-5/1-8; paired4KiB control 38.0/32.8','Moderate ASG write-step increase reduced guest transport overhead without tail regression in selected profile.','Three complete 16KiB Trials plus paired control','doc_benchmarks','Candidate concept only; remeasure on current source/runtime.',NULL),
+('bf_mvk128','REJECTED','env_benchmark_m1max','stack_m1max_benchmark','MoltenVK command buffers','Strong 40.20/34.50/32.40 run; cold confirmation 39.5/31.6/23.3','Single favorable run did not reproduce; larger buffer count hurt cold/heavy behavior.','Failed reproducibility','doc_benchmarks','Do not promote 128 buffers by memory.',NULL),
+('bf_submit_thread','REJECTED','env_benchmark_m1max','stack_m1max_benchmark','Guest submit thread','37.40/32.60/25.80 FPS','Moving submission/marshalling to forced thread regressed fixed stages.','Rejected fixed-stage campaign','doc_benchmarks','Negative donor evidence.',NULL),
+('bf_active_consumer','REJECTED','env_benchmark_m1max','stack_m1max_benchmark','ASG active-consumer host patch','11.2 FPS / 334ms p95 vs 60 FPS / 18.44ms control','Four-byte host patch catastrophically worsened pacing.','Same-scene rejection','doc_benchmarks','Never reapply without new causal reason.',NULL),
+('bf_native_gles_capability','REJECTED','env_benchmark_m1max','stack_m1max_benchmark','Native gfxstream GLES shortcut','Native guest exposed ES3.0; ES3.1/3.2 requests failed; gate-relaxed TFT reached protocol validation failures','Shorter path lacks coherent ES3.1/3.2 capability contract; version spoof/alias patches cannot create semantics.','Multiple host/guest probes and game diagnostic','doc_native_gles','Critical architectural negative evidence.',NULL),
+('bf_webview_skiagl','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Riot login WebView','Skia OpenGL HWUI avoided verified WebView Vulkan deadlock while TFT ANGLE Vulkan remained enabled','UI renderer and TFT renderer can be separated; Vulkan need not be globally disabled.','Repeated operational fix','doc_research_log','Useful future UI/runtime isolation pattern.',NULL);
+
+INSERT OR REPLACE INTO artifact_registry(id,path,artifact_kind,layer,role,status,mutation_policy,source_document_id,notes) VALUES
+('ar_stack','ssot/STACK.lock.yaml','machine_lock','authority','Exact machine/source/version lock','CURRENT_AUTHORITY','Mutate only through deterministic preflight/freeze tooling','doc_stack',NULL),
+('ar_ssot','TFTMAC_GPU_RUNTIME_SSOT.md','authority_document','authority','Architecture/product acceptance authority','CURRENT_AUTHORITY','Revise together with implementation plan','doc_ssot',NULL),
+('ar_plan','TFTMAC_FULL_IMPLEMENTATION_PLAN.md','authority_document','authority','Execution/phase authority','CURRENT_AUTHORITY','Revise together with SSOT','doc_plan',NULL),
+('ar_map','ssot/TFTMAC_ENGINEERING_MAP.sql','knowledge_graph','reasoning','Persistent dependency/version/evidence map','CURRENT_AUTHORITY','Update before architecture-changing action','doc_map',NULL),
+('ar_v2tool','tools/tftmac-v2.mjs','orchestration_code','host_build','Phase0/Phase1/external storage/build compatibility/map validation','CURRENT_IMPLEMENTATION','Changes require validation and map evidence','doc_v2_tool',NULL),
+('ar_tftmac_shell','tftmac/Sources/TFTMACApp.swift','native_app_source','presentation','Pre-v2 native TFTMAC UI/runtime controller','DONOR','Do not promote unchanged; remove old storage and spoof assumptions first','doc_tftmac_app',NULL),
+('ar_mactician_build','scripts/build-mactician.command','build_script','donor','Proven macOS12 native build/sign/package path','DONOR','Harvest compatibility patterns only','doc_mactician_build',NULL),
+('ar_mactician_runtime','launcher/Sources/RuntimeController.swift','runtime_controller','donor','Legacy process/runtime orchestration and environment injection','DONOR','Harvest state/lifecycle patterns; paths/profiles are legacy','doc_legacy_architecture',NULL),
+('ar_mactician_paths','launcher/Sources/LauncherPaths.swift','path_model','donor','Legacy Application Support SDK/AVD layout','HISTORICAL','Do not use for v2 bulk runtime path','doc_legacy_architecture',NULL),
+('ar_ref_play36','reference/avd/config.ini','avd_reference','guest','Android36 Play-class AVD donor','HISTORICAL','Read-only evidence','doc_readme_mactician',NULL),
+('ar_ref_root36','reference/rootable-avd/config.ini','avd_reference','guest','Android36 rootable execution donor','HISTORICAL','Read-only evidence','doc_readme_mactician',NULL),
+('ar_native_gles_host_patch','artifacts/gfxstream-gles32-host-capability-prototype.patch','prototype_patch','graphics_transport','Historical GLES3.2 host capability prototype','EXPERIMENTAL','Do not apply to locked source without fresh causal evidence','doc_native_gles',NULL),
+('ar_native_gles_alias_patch','artifacts/gfxstream-gles32-guest-proc-alias-prototype.patch','prototype_patch','guest_graphics','Historical proc-alias prototype','REJECTED','Retain for evidence only; runtime loader already resolved aliases','doc_native_gles',NULL),
+('ar_performance_candidates','scripts/performance-candidates.json','experiment_manifest','performance','Historical reproducible performance candidates','HISTORICAL','Do not infer promotion from file presence','doc_benchmarks',NULL);
+
+INSERT OR REPLACE INTO unknowns(id,question,owning_layer,blocking,next_probe,status,resolution) VALUES
+('unk_native_shell_v2','Which current TFTMAC native-shell pieces can be retained after replacing legacy internal runtime paths and ES3.2 property injection?','presentation',0,'Defer until runtime capability path is green; then map UI/lifecycle code separately from obsolete runtime constants.','DEFERRED',NULL),
+('unk_legacy_performance_transfer','Which confirmed M1 Max/Android36 performance findings remain directionally valid on M4/API37?','performance',0,'Only retest candidates tied to a measured current bottleneck; do not replay the historical campaign wholesale.','OPEN',NULL);
+
+INSERT OR REPLACE INTO table_metadata(table_name,purpose,authority,update_policy,retention_policy,notes) VALUES
+('runtime_variants','Historical launcher/profile outcomes and promotion status','launch-profiles/research evidence','Append or reclassify only with new comparable evidence','Permanent','Prevents rejected profile rediscovery.'),
+('benchmark_findings','Confirmed/provisional/rejected measured findings','benchmark/research evidence','Append comparable findings; preserve scene/environment limits','Permanent','Performance evidence is environment/workload scoped.'),
+('artifact_registry','Critical source/artifact role and mutation policy','repository audit','Update when artifact role/status changes','Permanent','Separates current authority from donor/rejected artifacts.');
+
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility)
+SELECT 'runtime_variants',name,type,"notnull",dflt_value,pk,'runtime variant/history field','launch-profile evidence','low' FROM pragma_table_info('runtime_variants');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility)
+SELECT 'benchmark_findings',name,type,"notnull",dflt_value,pk,'benchmark evidence field','benchmark/research evidence','append-only' FROM pragma_table_info('benchmark_findings');
+INSERT OR REPLACE INTO field_metadata(table_name,column_name,declared_type,not_null,default_value,primary_key,semantic_role,source_of_truth,volatility)
+SELECT 'artifact_registry',name,type,"notnull",dflt_value,pk,'artifact governance field','repository audit','medium' FROM pragma_table_info('artifact_registry');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T05:31:00Z','Historical runtime coverage','Mapped every indexed legacy launch profile as promoted, provisional, experimental, diagnostic or rejected.',NULL),
+('2026-08-28T05:31:00Z','Benchmark memory','Mapped confirmed and rejected transport/renderer findings so known failures are queryable instead of rediscovered.',NULL),
+('2026-08-28T05:31:00Z','Native shell truth','Marked current pre-v2 TFTMAC shell as donor until internal runtime paths and GLES property injection are removed.','ev_tftmac_shell_legacy_paths'),
+('2026-08-28T05:31:00Z','Artifact governance','Added critical artifact registry with current/donor/historical/experimental/rejected mutation policy.',NULL);
+
 COMMIT;
 
 -- Recommended queries during every future work session:
