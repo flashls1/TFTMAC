@@ -9,7 +9,33 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const PACKAGE = 'com.riotgames.league.teamfighttactics';
-const AVD_NAME = 'TFTMAC_Live_API37';
+const PLAY_PROBE_PACKAGE = 'com.openai.chatgpt';
+const RIOT_SIGNER_SHA256 = '931d969502f3de01a4c239e4199211ebdc57bb9a7526394b9e3e2d1cc079ff0c';
+const AVD_NAME = 'TFT_Ultra_Tablet';
+const PLAY_DEVICE_ID = '13.5in Freeform';
+const PLAY_PROFILE_LABEL = 'TFT Ultra Tablet - 13.5in Freeform / Galaxy Tab S10 Ultra-class';
+const PLAY_DISPLAY_WIDTH = 2960;
+const PLAY_DISPLAY_HEIGHT = 1848;
+const PLAY_DISPLAY_DENSITY = 320;
+const PLAY_RAM_MB = 8192;
+const DONOR_PROFILE = Object.freeze({
+  id: 'mactician_compatible_official_v0',
+  label: 'Mactician-compatible official TFT control',
+  width: 1920,
+  height: 1080,
+  density: 320,
+  vcpu: 6,
+  ramMB: 6144,
+  refreshHz: 60,
+  glTransport: 'virtio-gpu-asg',
+  asgWriteBufferSize: 1048576,
+  asgWriteStepSize: 16384,
+  asgDataRingSize: 32768,
+  drawFlushInterval: 800,
+  featureList: 'GLESDynamicVersion,Vulkan,GuestAngle,-GLPipeChecksum,VulkanBatchedDescriptorSetUpdate,AsyncComposeSupport,VirtioGpuFenceContexts',
+  angleEnabledFeatures: 'exposeNonConformantExtensionsAndVersions:exposeES32ForTesting',
+  angleDisabledFeatures: 'preferSubmitAtFBOBoundary'
+});
 const ADB_PORT = '5040';
 const SERIAL = 'emulator-5592';
 const EMULATOR_PORT = '5592';
@@ -34,8 +60,8 @@ const CONTROL_STATE = path.join(STATE_ROOT, 'direct-control.json');
 const IMAGE_UPGRADE_STATE = path.join(STATE_ROOT, 'image-upgrade.json');
 const IMAGE_UPGRADE_STDOUT = path.join(APP_SUPPORT, 'Logs', 'image-upgrade.stdout.log');
 const IMAGE_UPGRADE_STDERR = path.join(APP_SUPPORT, 'Logs', 'image-upgrade.stderr.log');
-const REQUIRED_IMAGE = 'system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a';
-const REQUIRED_IMAGE_MIN_REVISION = 9;
+const REQUIRED_IMAGE = 'system-images;android-36;google_apis_playstore;arm64-v8a';
+const REQUIRED_IMAGE_MIN_REVISION = 7;
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(scriptPath);
 const repoRoot = process.env.TFTMAC_REPO_ROOT ? path.resolve(process.env.TFTMAC_REPO_ROOT) : path.resolve(scriptDir, '..');
@@ -199,6 +225,58 @@ async function waitForBoot(runtime, timeoutMs = 240000) {
   throw new Error('Timed out waiting for Android boot completion.');
 }
 
+function hostTimeZoneId() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+}
+
+function hostUtcOffsetString() {
+  const minutesEast = -new Date().getTimezoneOffset();
+  const sign = minutesEast >= 0 ? '+' : '-';
+  const absolute = Math.abs(minutesEast);
+  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}${String(absolute % 60).padStart(2, '0')}`;
+}
+
+async function ensureGuestClock(runtime, captureDir = null) {
+  const setAutoTime = adb(runtime, ['shell', 'settings', 'put', 'global', 'auto_time', '1'], { allowFailure: true, timeout: 10000 });
+  const setAutoZone = adb(runtime, ['shell', 'settings', 'put', 'global', 'auto_time_zone', '1'], { allowFailure: true, timeout: 10000 });
+  await sleep(1500);
+  let best = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const hostBeforeMs = Date.now();
+    const guestEpochRaw = adb(runtime, ['shell', 'date', '+%s'], { allowFailure: true, timeout: 10000 }).stdout.trim();
+    const hostAfterMs = Date.now();
+    const guestEpochSeconds = Number(guestEpochRaw);
+    const hostMidpointSeconds = (hostBeforeMs + hostAfterMs) / 2000;
+    const skewSeconds = Number.isFinite(guestEpochSeconds) ? Math.abs(guestEpochSeconds - hostMidpointSeconds) : null;
+    const sample = {
+      observedAt: nowISO(),
+      attempt: attempt + 1,
+      hostEpochSeconds: hostMidpointSeconds,
+      guestEpochSeconds: Number.isFinite(guestEpochSeconds) ? guestEpochSeconds : null,
+      absoluteSkewSeconds: skewSeconds,
+      hostTimeZone: hostTimeZoneId(),
+      hostUtcOffset: hostUtcOffsetString(),
+      guestUtcOffset: adb(runtime, ['shell', 'date', '+%z'], { allowFailure: true, timeout: 10000 }).stdout.trim() || null,
+      guestTimeZone: adb(runtime, ['shell', 'getprop', 'persist.sys.timezone'], { allowFailure: true, timeout: 10000 }).stdout.trim() || null,
+      autoTime: adb(runtime, ['shell', 'settings', 'get', 'global', 'auto_time'], { allowFailure: true, timeout: 10000 }).stdout.trim(),
+      autoTimeZone: adb(runtime, ['shell', 'settings', 'get', 'global', 'auto_time_zone'], { allowFailure: true, timeout: 10000 }).stdout.trim(),
+      setAutoTimeStatus: setAutoTime.status,
+      setAutoTimeZoneStatus: setAutoZone.status
+    };
+    if (!best || (sample.absoluteSkewSeconds ?? Number.POSITIVE_INFINITY) < (best.absoluteSkewSeconds ?? Number.POSITIVE_INFINITY)) best = sample;
+    if (sample.autoTime === '1' && sample.autoTimeZone === '1' && sample.absoluteSkewSeconds !== null && sample.absoluteSkewSeconds <= 5 && (!sample.guestUtcOffset || sample.guestUtcOffset === sample.hostUtcOffset)) break;
+    await sleep(1000);
+  }
+  if (captureDir && best) {
+    writeJSON(path.join(captureDir, 'clock-preflight.json'), best);
+    appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'CLOCK_PREFLIGHT', ...best });
+  }
+  if (!best || best.autoTime !== '1' || best.autoTimeZone !== '1') throw new Error(`PLAY_CLOCK_PREFLIGHT_FAILED: automatic time settings are not enabled (${JSON.stringify(best)}).`);
+  if (best.absoluteSkewSeconds === null || best.absoluteSkewSeconds > 5) throw new Error(`PLAY_CLOCK_PREFLIGHT_FAILED: guest clock skew is ${best.absoluteSkewSeconds ?? 'unknown'} seconds.`);
+  if (best.guestUtcOffset && best.guestUtcOffset !== best.hostUtcOffset) throw new Error(`PLAY_CLOCK_PREFLIGHT_FAILED: guest UTC offset ${best.guestUtcOffset} does not match host ${best.hostUtcOffset}.`);
+  return best;
+}
+
 function parseKeyValueLines(text) {
   const out = {};
   for (const line of text.split(/\r?\n/)) {
@@ -239,6 +317,10 @@ function captureSigningDigest(runtime, apkPaths, captureDir, versionName, versio
   }
 }
 
+function resolvedComponent(text) {
+  return String(text ?? '').split(/\r?\n/).map(line => line.trim()).filter(Boolean).findLast(line => /^[^\s/]+\/[^\s]+$/.test(line)) ?? null;
+}
+
 function packageState(runtime, captureDir = null, includeSigning = true) {
   const pathsOut = adb(runtime, ['shell', 'pm', 'path', PACKAGE], { allowFailure: true }).stdout.trim();
   if (!pathsOut.includes('package:')) {
@@ -253,7 +335,8 @@ function packageState(runtime, captureDir = null, includeSigning = true) {
   const installer = dump.match(/installerPackageName=([^\s]+)/)?.[1] ?? dump.match(/Installer package name:\s*([^\s]+)/i)?.[1] ?? null;
   const firstInstallTime = dump.match(/firstInstallTime=([^\n]+)/)?.[1]?.trim() ?? null;
   const lastUpdateTime = dump.match(/lastUpdateTime=([^\n]+)/)?.[1]?.trim() ?? null;
-  const launchActivity = adb(runtime, ['shell', 'cmd', 'package', 'resolve-activity', '--brief', PACKAGE], { allowFailure: true }).stdout.trim() || null;
+  const launchResolveRaw = adb(runtime, ['shell', 'cmd', 'package', 'resolve-activity', '--brief', PACKAGE], { allowFailure: true }).stdout.trim();
+  const launchActivity = resolvedComponent(launchResolveRaw);
   const hashes = {};
   const apkBytes = {};
   for (const apkPath of apkPaths) {
@@ -337,7 +420,7 @@ function runtimeState(runtime, captureDir, bootClass) {
     sdkRoot: runtime.sdkRoot, emulatorVersion: runtime.emulatorVersion, adbVersion: runtime.adbVersion,
     systemImagePackage: REQUIRED_IMAGE, avdName: AVD_NAME, avdHome: runtime.avdHome, avdConfigSHA256: avdHash,
     adbSerial: SERIAL, adbServerPort: Number(ADB_PORT), emulatorConsolePort: Number(EMULATOR_PORT),
-    vcpu: 6, ramMB: 6144, displayRequested: '1920x1080', densityRequested: 320, refreshTargetHz: 60,
+    vcpu: 6, ramMB: PLAY_RAM_MB, displayRequested: `${PLAY_DISPLAY_WIDTH}x${PLAY_DISPLAY_HEIGHT}`, densityRequested: PLAY_DISPLAY_DENSITY, refreshTargetHz: 60,
     gpuMode: 'host', audioEnabled: true, deviceFrame: false, snapshotsRequired: false, bootClass,
     observedDisplay: display, observedDensity: density
   };
@@ -361,7 +444,7 @@ function prepareAVD() {
     const avdmanager = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'avdmanager');
     if (!executable(avdmanager)) throw new Error(`Required AVD ${AVD_NAME} is missing and avdmanager is unavailable.`);
     ensureDir(path.join(EXTERNAL_ROOT, 'AVD'));
-    command(avdmanager, ['create', 'avd', '--name', AVD_NAME, '--package', REQUIRED_IMAGE, '--device', 'pixel_tablet', '--force'], {
+    command(avdmanager, ['create', 'avd', '--name', AVD_NAME, '--package', REQUIRED_IMAGE, '--device', PLAY_DEVICE_ID, '--force'], {
       env: { ...runtime.env, ANDROID_AVD_HOME: path.join(EXTERNAL_ROOT, 'AVD') },
       timeout: 120000
     });
@@ -372,23 +455,21 @@ function prepareAVD() {
   let config = runtime.avdConfig;
   const values = {
     AvdId: AVD_NAME,
-    'avd.ini.displayname': 'TFTMAC Live Control',
+     'avd.ini.displayname': 'TFT Ultra Tablet - API36 Google Play',
     'hw.device.manufacturer': 'Google',
-    'hw.device.name': 'pixel_tablet',
+    'hw.device.name': PLAY_DEVICE_ID,
     'hw.initialOrientation': 'Landscape',
     'hw.cpu.arch': 'arm64',
     'hw.cpu.ncore': '6',
-    'hw.ramSize': '6144',
+    'hw.ramSize': String(PLAY_RAM_MB),
     'hw.vmHeapSize': '768',
-    'hw.lcd.width': '1920',
-    'hw.lcd.height': '1080',
-    'hw.lcd.density': '320',
+    'hw.lcd.width': String(PLAY_DISPLAY_WIDTH),
+    'hw.lcd.height': String(PLAY_DISPLAY_HEIGHT),
+    'hw.lcd.density': String(PLAY_DISPLAY_DENSITY),
     'hw.gpu.enabled': 'yes',
     'hw.gpu.mode': 'host',
     'hw.audioInput': 'yes',
     'hw.keyboard': 'yes',
-    showDeviceFrame: 'no',
-    'skin.name': '1920x1080',
     'disk.dataPartition.size': '16G',
     'runtime.network.speed': 'full',
     'runtime.network.latency': 'none',
@@ -406,7 +487,7 @@ function prepareAVD() {
     avdDir: runtime.avdDir,
     configPath,
     configSHA256: sha256File(configPath),
-    control: { vcpu: 6, ramMB: 6144, width: 1920, height: 1080, densityDpi: 320, gpu: 'host', playStore: true, audio: true },
+    control: { role: 'PLAY_AUTHORITY', profileLabel: PLAY_PROFILE_LABEL, deviceTemplate: PLAY_DEVICE_ID, vcpu: 6, ramMB: PLAY_RAM_MB, width: PLAY_DISPLAY_WIDTH, height: PLAY_DISPLAY_HEIGHT, densityDpi: PLAY_DISPLAY_DENSITY, gpu: 'host', playStore: true, audio: true },
     imagePackage: REQUIRED_IMAGE,
     emulatorVersion: runtime.emulatorVersion
   };
@@ -427,10 +508,12 @@ function startEmulator(runtime, captureDir) {
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
-    `@${AVD_NAME}`, '-id', 'TFTMAC-Direct-Control', '-port', EMULATOR_PORT,
-    '-gpu', 'host', '-skin', '1920x1080', '-cores', '6', '-memory', '6144',
+    `@${AVD_NAME}`, '-id', 'TFTMAC-Play-Authority', '-port', EMULATOR_PORT,
+    '-gpu', 'host', '-cores', '6', '-memory', String(PLAY_RAM_MB),
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
+  const timeZone = hostTimeZoneId();
+  if (timeZone) args.push('-timezone', timeZone);
   const env = { ...runtime.env, ANDROID_AVD_HOME: runtime.avdHome, ANDROID_EMULATOR_USE_SYSTEM_LIBS: '0' };
   const child = spawn(runtime.emulator, args, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
   child.unref();
@@ -438,7 +521,204 @@ function startEmulator(runtime, captureDir) {
   return child.pid;
 }
 
+function donorConfigBackupPath(runtime) {
+  if (!runtime.avdDir) throw new Error('Donor control requires a resolved AVD directory.');
+  return path.join(runtime.avdDir, 'config.ini.tftmac-donor-backup');
+}
+
+function prepareDonorAVD(runtime) {
+  if (!runtime.avdDir || !runtime.avdConfig) throw new Error('Donor control requires an existing official Play AVD.');
+  if (!isUnder(runtime.avdDir, EXTERNAL_ROOT)) throw new Error('Donor control AVD must remain on the external runtime volume.');
+  const configPath = path.join(runtime.avdDir, 'config.ini');
+  const backupPath = donorConfigBackupPath(runtime);
+  if (exists(backupPath)) {
+    const restored = fs.readFileSync(backupPath, 'utf8');
+    fs.writeFileSync(configPath, restored);
+    fs.unlinkSync(backupPath);
+  }
+  const baseline = fs.readFileSync(configPath, 'utf8');
+  fs.writeFileSync(backupPath, baseline);
+  let config = baseline;
+  const values = {
+    'hw.cpu.ncore': String(DONOR_PROFILE.vcpu),
+    'hw.ramSize': String(DONOR_PROFILE.ramMB),
+    'hw.lcd.width': String(DONOR_PROFILE.width),
+    'hw.lcd.height': String(DONOR_PROFILE.height),
+    'hw.lcd.density': String(DONOR_PROFILE.density),
+    'hw.gpu.enabled': 'yes',
+    'hw.gpu.mode': 'host',
+    'hw.gltransport': DONOR_PROFILE.glTransport,
+    'hw.gltransport.drawFlushInterval': String(DONOR_PROFILE.drawFlushInterval),
+    'hw.gltransport.asg.writeBufferSize': String(DONOR_PROFILE.asgWriteBufferSize),
+    'hw.gltransport.asg.writeStepSize': String(DONOR_PROFILE.asgWriteStepSize),
+    'hw.gltransport.asg.dataRingSize': String(DONOR_PROFILE.asgDataRingSize),
+    'showDeviceFrame': 'no',
+    'skin.name': `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
+    'fastboot.forceColdBoot': 'yes',
+    'fastboot.forceFastBoot': 'no'
+  };
+  for (const [key, value] of Object.entries(values)) config = setIniValue(config, key, value);
+  fs.writeFileSync(configPath, config);
+  return {
+    profile: DONOR_PROFILE,
+    configPath,
+    configSHA256: sha256File(configPath),
+    baselineSHA256: crypto.createHash('sha256').update(baseline).digest('hex'),
+    backupPath
+  };
+}
+
+function restoreDonorAVD(runtime) {
+  if (!runtime?.avdDir) return { restored: false, reason: 'AVD_UNRESOLVED' };
+  const configPath = path.join(runtime.avdDir, 'config.ini');
+  const backupPath = donorConfigBackupPath(runtime);
+  if (!exists(backupPath)) return { restored: false, reason: 'NO_DONOR_BACKUP' };
+  const baseline = fs.readFileSync(backupPath, 'utf8');
+  fs.writeFileSync(configPath, baseline);
+  fs.unlinkSync(backupPath);
+  return { restored: true, configPath, configSHA256: sha256File(configPath) };
+}
+
+function startDonorEmulator(runtime, captureDir) {
+  if (!runtime.avdHome || !runtime.avdIni || !runtime.avdDir) throw new Error(`Official AVD ${AVD_NAME} is not present under the external runtime.`);
+  const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
+  const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
+  const args = [
+    `@${AVD_NAME}`, '-id', 'TFTMAC-Mactician-Compatible', '-port', EMULATOR_PORT,
+    '-gpu', 'host', '-feature', DONOR_PROFILE.featureList,
+    '-append-userspace-opt', 'androidboot.opengles.version=196610',
+    '-append-userspace-opt', 'androidboot.tftmac.graphics_profile=mactician-compatible',
+    '-skin', `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
+    '-vsync-rate', String(DONOR_PROFILE.refreshHz),
+    '-dns-server', '1.1.1.1,8.8.8.8',
+    '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(DONOR_PROFILE.ramMB),
+    '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
+  ];
+  const timeZone = hostTimeZoneId();
+  if (timeZone) args.push('-timezone', timeZone);
+  const env = {
+    ...runtime.env,
+    ANDROID_AVD_HOME: runtime.avdHome,
+    ANDROID_EMULATOR_USE_SYSTEM_LIBS: '0',
+    ANGLE_FEATURE_OVERRIDES_ENABLED: DONOR_PROFILE.angleEnabledFeatures,
+    ANGLE_FEATURE_OVERRIDES_DISABLED: DONOR_PROFILE.angleDisabledFeatures,
+    MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS: '0',
+    MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE: '64',
+    MVK_CONFIG_FAST_MATH_ENABLED: '1'
+  };
+  const child = spawn(runtime.emulator, args, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
+  child.unref();
+  appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
+    utc: nowISO(), event: 'DONOR_EMULATOR_STARTED', pid: child.pid, args,
+    profile: DONOR_PROFILE.id,
+    env: {
+      ANGLE_FEATURE_OVERRIDES_ENABLED: env.ANGLE_FEATURE_OVERRIDES_ENABLED,
+      ANGLE_FEATURE_OVERRIDES_DISABLED: env.ANGLE_FEATURE_OVERRIDES_DISABLED,
+      MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS: env.MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS,
+      MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE: env.MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE,
+      MVK_CONFIG_FAST_MATH_ENABLED: env.MVK_CONFIG_FAST_MATH_ENABLED
+    }
+  });
+  return child.pid;
+}
+
+function donorRuntimeState(runtime, captureDir, prepared, bootClass) {
+  const display = adb(runtime, ['shell', 'wm', 'size'], { allowFailure: true }).stdout.trim();
+  const density = adb(runtime, ['shell', 'wm', 'density'], { allowFailure: true }).stdout.trim();
+  const state = {
+    observedAt: nowISO(),
+    control: DONOR_PROFILE.id,
+    compatibilityAdapter: true,
+    compatibilitySource: 'Mactician 1.1.0 measured runtime on this host',
+    externalRoot: runtime.externalRoot,
+    sdkRoot: runtime.sdkRoot,
+    emulatorVersion: runtime.emulatorVersion,
+    adbVersion: runtime.adbVersion,
+    systemImagePackage: REQUIRED_IMAGE,
+    avdName: AVD_NAME,
+    avdHome: runtime.avdHome,
+    avdConfigSHA256: prepared.configSHA256,
+    baselineAvdConfigSHA256: prepared.baselineSHA256,
+    adbSerial: SERIAL,
+    adbServerPort: Number(ADB_PORT),
+    emulatorConsolePort: Number(EMULATOR_PORT),
+    vcpu: DONOR_PROFILE.vcpu,
+    ramMB: DONOR_PROFILE.ramMB,
+    displayRequested: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
+    densityRequested: DONOR_PROFILE.density,
+    refreshTargetHz: DONOR_PROFILE.refreshHz,
+    gpuMode: 'host',
+    graphicsTransportRequested: DONOR_PROFILE.glTransport,
+    guestAngleRequested: true,
+    vulkanRequested: true,
+    glesCompatibilityExposure: 196610,
+    angleDisabledFeatures: DONOR_PROFILE.angleDisabledFeatures,
+    moltenVK: { synchronousQueueSubmits: false, maxActiveMetalCommandBuffersPerQueue: 64, fastMath: true },
+    asg: {
+      writeBufferSize: DONOR_PROFILE.asgWriteBufferSize,
+      writeStepSize: DONOR_PROFILE.asgWriteStepSize,
+      dataRingSize: DONOR_PROFILE.asgDataRingSize,
+      drawFlushInterval: DONOR_PROFILE.drawFlushInterval
+    },
+    audioEnabled: true,
+    deviceFrame: false,
+    snapshotsRequired: false,
+    bootClass,
+    observedDisplay: display,
+    observedDensity: density
+  };
+  writeJSON(path.join(captureDir, 'runtime-state.json'), state);
+  return state;
+}
+
+async function startDonorControl() {
+  singleRuntimePreflight();
+  const runtime = discover();
+  if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
+  if (!runtime.requiredImagePresent) throw new Error(`Required official Play image is missing: ${runtime.requiredImagePath}`);
+  if (!runtime.avdIni || !runtime.avdConfig || !runtime.avdDir) throw new Error(`Required official Play AVD ${AVD_NAME} was not found.`);
+  ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
+  const prepared = prepareDonorAVD(runtime);
+  const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
+  const captureDir = path.join(CAPTURE_ROOT, sessionId);
+  for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
+  for (const name of ['clock-sync.jsonl', 'markers.jsonl', 'logcat.raw.txt', 'logcat.filtered.txt', 'host-process.csv', 'host-process.jsonl', 'host-memory.csv', 'host-memory.jsonl']) fs.closeSync(fs.openSync(path.join(captureDir, name), 'a'));
+  appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'LOGGER_INITIALIZED', sessionId, profile: DONOR_PROFILE.id });
+  const session = {
+    schema: 1, sessionId, startedUTC: nowISO(), endedUTC: null,
+    hostStartMonoNs: monoNs().toString(), hostEndMonoNs: null, captureState: 'CAPTURING',
+    workloadLabel: 'mactician-compatible-official-control', appCommit: currentGitSha(), runtimeConfig: DONOR_PROFILE.id,
+    packageName: PACKAGE, packageUpdatedDuringSession: false, packageAuthorityVerified: false, packageCurrentObservedAt: null,
+    matchEntryObserved: false, combatObserved: false
+  };
+  writeJSON(path.join(captureDir, 'session.json'), session);
+  const samplerPid = startSampler(runtime, captureDir, sessionId);
+  appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'SAMPLER_STARTED', pid: samplerPid });
+  adbServer(runtime);
+  const emulatorPid = startDonorEmulator(runtime, captureDir);
+  try {
+    await waitForBoot(runtime);
+    const clockPreflight = await ensureGuestClock(runtime, captureDir);
+    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD');
+    const pkg = packageState(runtime, captureDir, false);
+    const renderer = rendererState(runtime, captureDir);
+    const state = {
+      schema: 1, sessionId, captureDir, samplerPid, emulatorPid, reusedRunningEmulator: false,
+      sdkRoot: runtime.sdkRoot, avdHome: runtime.avdHome, startedUTC: session.startedUTC,
+      packageState: pkg.state, controlProfile: DONOR_PROFILE.id, donorConfigBackupPath: prepared.backupPath
+    };
+    writeJSON(CONTROL_STATE, state);
+    return { ...state, package: pkg, clockPreflight, runtime: runtimeObserved, renderer, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
+  } catch (error) {
+    if (processAlive(samplerPid)) { try { process.kill(samplerPid, 'SIGTERM'); } catch {} }
+    try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
+    restoreDonorAVD(runtime);
+    throw error;
+  }
+}
+
 async function startControl() {
+  const singleRuntime = singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
   if (!runtime.requiredImagePresent) throw new Error(`Required official Play image is missing: ${runtime.requiredImagePath}`);
@@ -467,14 +747,13 @@ async function startControl() {
   const reusedRunningEmulator = deviceReady(runtime);
   const emulatorPid = reusedRunningEmulator ? null : startEmulator(runtime, captureDir);
   await waitForBoot(runtime);
-  adb(runtime, ['shell', 'wm', 'size', '1920x1080']);
-  adb(runtime, ['shell', 'wm', 'density', '320']);
+  const clockPreflight = await ensureGuestClock(runtime, captureDir);
   runtimeState(runtime, captureDir, reusedRunningEmulator ? 'WARM' : 'COLD');
   const pkg = packageState(runtime, captureDir, false);
   rendererState(runtime, captureDir);
   const state = { schema: 1, sessionId, captureDir, samplerPid, emulatorPid, reusedRunningEmulator, sdkRoot: runtime.sdkRoot, avdHome: runtime.avdHome, startedUTC: session.startedUTC, packageState: pkg.state };
   writeJSON(CONTROL_STATE, state);
-  return { ...state, package: pkg, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
+  return { ...state, package: pkg, clockPreflight, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
 }
 
 function parseBounds(text) {
@@ -503,6 +782,7 @@ async function playAction() {
   const state = readJSON(CONTROL_STATE);
   const captureDir = state?.captureDir ?? null;
   await waitForBoot(runtime, 60000);
+  await ensureGuestClock(runtime, captureDir);
   adb(runtime, ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `market://details?id=${PACKAGE}`], { allowFailure: true });
   await sleep(3500);
   const xml = dumpUI(runtime);
@@ -529,6 +809,12 @@ async function playAction() {
   }
   const pkg = packageState(runtime, captureDir);
   if (pkg.state !== 'MISSING' && open) {
+    if (!/^\d+$/.test(String(pkg.versionCode ?? '')) || Number(pkg.versionCode) <= 0) {
+      return { action: 'PACKAGE_VERSION_INVALID', package: pkg, reason: 'Google Play-installed TFT must expose a positive Riot versionCode.' };
+    }
+    if (pkg.signerCertificateSHA256 && pkg.signerCertificateSHA256 !== RIOT_SIGNER_SHA256) {
+      return { action: 'PACKAGE_SIGNER_MISMATCH', package: pkg, expectedSignerCertificateSHA256: RIOT_SIGNER_SHA256 };
+    }
     if (pkg.installerPackage !== 'com.android.vending') {
       if (captureDir) appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
         utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'PACKAGE_AUTHORITY_RESET',
@@ -556,21 +842,98 @@ async function playAction() {
   return { action: 'PLAY_STATE_UNRESOLVED', package: pkg, uiSample: xml.slice(0, 2000) };
 }
 
+async function playProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  await waitForBoot(runtime, 60000);
+  await ensureGuestClock(runtime, captureDir);
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const installedBefore = shell(['pm', 'path', PLAY_PROBE_PACKAGE]).stdout.includes('package:');
+  if (installedBefore) return { action: 'PROBE_ALREADY_INSTALLED', packageName: PLAY_PROBE_PACKAGE };
+  shell(['am', 'start', '-a', 'android.intent.action.VIEW', '-d', `market://details?id=${PLAY_PROBE_PACKAGE}`]);
+  await sleep(3500);
+  let xml = dumpUI(runtime);
+  const install = findNodeByText(xml, [/^Install$/i]);
+  if (!install?.bounds) {
+    return { action: 'PROBE_INSTALL_BUTTON_NOT_FOUND', packageName: PLAY_PROBE_PACKAGE, uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 60) ?? [] };
+  }
+  shell(['input', 'tap', String(install.bounds.x), String(install.bounds.y)]);
+  const startedAt = Date.now();
+  let installed = false;
+  while (Date.now() - startedAt < 45000) {
+    await sleep(1500);
+    if (shell(['pm', 'path', PLAY_PROBE_PACKAGE], 10000).stdout.includes('package:')) { installed = true; break; }
+  }
+  xml = dumpUI(runtime);
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '6000'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024 }).stdout;
+  const relevant = logcat.split(/\r?\n/).filter(line => line.includes(PLAY_PROBE_PACKAGE) || /statusCode:1010|Delivery received non-OK response|Account .* from AppState|estimated size required|INSTALL_ERROR|DOWNLOAD_PENDING/i.test(line)).slice(-500);
+  const result = {
+    action: installed ? 'PROBE_INSTALLED' : 'PROBE_FAILED',
+    packageName: PLAY_PROBE_PACKAGE,
+    installed,
+    packagePath: shell(['pm', 'path', PLAY_PROBE_PACKAGE]).stdout.trim() || null,
+    uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 60) ?? [],
+    relevantLogLines: relevant
+  };
+  if (captureDir) writeJSON(path.join(captureDir, 'google-play-third-party-probe.json'), result);
+  return result;
+}
+
+function launchFailureProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device for launch failure probe.');
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '12000'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 96 * 1024 * 1024 }).stdout;
+  const lines = logcat.split(/\r?\n/);
+  const relevant = lines.filter(line => /teamfighttactics|GameActivity|SplashActivity|AndroidRuntime|FATAL EXCEPTION|Fatal signal|DEBUG\s*:|crash_dump|tombstone|ActivityManager.*(died|killing|crash)|Process .*teamfighttactics|libUnreal|libUE|SIG(SEGV|ABRT|BUS|ILL)|linker|dlopen failed|UnsatisfiedLinkError|abort message|ANR in|am_crash/i.test(line)).slice(-1400);
+  const result = { observedAt: nowISO(), sessionId: state?.sessionId ?? null, lines: relevant };
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'launch-failure-probe.json'), result);
+  return result;
+}
+
+function glesCapabilityProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device for GLES capability probe.');
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const sf = shell(['dumpsys', 'SurfaceFlinger']).stdout;
+  const gfx = shell(['dumpsys', 'gfxinfo', PACKAGE]).stdout;
+  const props = {};
+  for (const key of ['ro.opengles.version','ro.hardware.egl','ro.hardware.vulkan','ro.boot.hardwareegl','ro.boot.hardware.vulkan','ro.boot.hardware.gltransport','ro.boot.qemu.gltransport.name']) {
+    props[key] = shell(['getprop', key]).stdout.trim() || null;
+  }
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '4000'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024 }).stdout;
+  const relevant = logcat.split(/\r?\n/).filter(line => /teamfighttactics|GameActivity|Unreal|OpenGL ES|GLES|GL_VERSION|ANGLE|EGL|unable to run on this device|not supported|ES 3\.2|ES3_2|FeatureLevel/i.test(line)).slice(-500);
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state?.sessionId ?? null,
+    properties: props,
+    surfaceFlingerGraphics: sf.split(/\r?\n/).filter(line => /GLES|GL_VERSION|OpenGL|EGL|ANGLE|Vulkan|renderer/i.test(line)).slice(0, 240),
+    gfxInfoGraphics: gfx.split(/\r?\n/).filter(line => /GLES|OpenGL|EGL|renderer|driver|version/i.test(line)).slice(0, 160),
+    relevantLogLines: relevant
+  };
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'gles-capability-probe.json'), result);
+  return result;
+}
+
 async function launchGame() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
   if (!state?.captureDir) throw new Error('No active direct-control session. Run start first.');
   const captureDir = state.captureDir;
   await waitForBoot(runtime, 60000);
+  await ensureGuestClock(runtime, captureDir);
   const pkg = packageState(runtime, captureDir, false);
   if (pkg.state === 'MISSING') throw new Error('Official TFT package is not installed. Run play-action first.');
   rendererState(runtime, captureDir);
   adb(runtime, ['shell', 'dumpsys', 'gfxinfo', PACKAGE, 'reset'], { allowFailure: true, timeout: 30000 });
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'GFXINFO_RESET_BEFORE_TFT_LAUNCH' });
-  const resolved = adb(runtime, ['shell', 'cmd', 'package', 'resolve-activity', '--brief', PACKAGE], { allowFailure: true }).stdout.trim();
+  const resolvedRaw = adb(runtime, ['shell', 'cmd', 'package', 'resolve-activity', '--brief', PACKAGE], { allowFailure: true }).stdout.trim();
+  const resolved = resolvedComponent(resolvedRaw);
   let launchResult;
-  if (resolved && !/No activity/i.test(resolved)) {
-    launchResult = adb(runtime, ['shell', 'am', 'start', '-W', '-n', resolved], { allowFailure: true, timeout: 120000 });
+  if (resolved) {
+    launchResult = adb(runtime, ['shell', 'am', 'start', '-W', '-n', resolved], { allowFailure: true, timeout: 30000 });
   } else {
     launchResult = adb(runtime, ['shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1'], { allowFailure: true, timeout: 120000 });
   }
@@ -582,7 +945,7 @@ async function launchGame() {
     if (pid) break;
     await sleep(1000);
   }
-  if (!pid) throw new Error(`TFT did not remain running. ${launchResult.stderr || launchResult.stdout}`);
+  if (!pid) throw new Error(`TFT did not remain running. component=${resolved ?? 'unresolved'} launch=${(launchResult.stderr || launchResult.stdout || '').trim()}`);
   await sleep(8000);
   const renderer = rendererState(runtime, captureDir);
   const xml = dumpUI(runtime);
@@ -693,7 +1056,7 @@ async function imageUpgradeWorker() {
     command(avdmanager, [
       'create', 'avd', '--name', AVD_NAME,
       '--package', REQUIRED_IMAGE,
-      '--device', 'pixel_tablet', '--force'
+      '--device', PLAY_DEVICE_ID, '--force'
     ], {
       env: { ...env, ANDROID_AVD_HOME: avdHome },
       input: 'no\n',
@@ -805,6 +1168,23 @@ function imageCheck() {
   };
 }
 
+function deviceProfiles() {
+  const runtime = discover();
+  const { env, javaHome } = androidToolEnv(runtime);
+  const avdmanager = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'avdmanager');
+  if (!executable(avdmanager)) throw new Error(`avdmanager unavailable: ${avdmanager}`);
+  const result = command(avdmanager, ['list', 'device'], { env, allowFailure: true, timeout: 120000, maxBuffer: 32 * 1024 * 1024 });
+  const blocks = result.stdout.split(/---------/).map(block => block.trim()).filter(Boolean);
+  const profiles = blocks.map(block => {
+    const id = block.match(/id:\s*\d+\s+or\s+"([^"]+)"/)?.[1] ?? null;
+    const name = block.match(/Name:\s*(.+)/)?.[1]?.trim() ?? null;
+    const oem = block.match(/OEM\s*:\s*(.+)/)?.[1]?.trim() ?? null;
+    const tag = block.match(/Tag\s*:\s*(.+)/)?.[1]?.trim() ?? null;
+    return { id, name, oem, tag, raw: block };
+  }).filter(p => p.id);
+  return { javaHome, status: result.status, profiles };
+}
+
 async function googleAccountUI() {
   const runtime = discover();
   await waitForBoot(runtime, 60000);
@@ -828,6 +1208,249 @@ async function googleAccountUI() {
     accountsBefore: before.match(/Accounts:\s*(\d+)/)?.[1] ?? null,
     uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 40) ?? []
   };
+}
+
+async function playStoreRepair() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const accountsBefore = shell(['dumpsys', 'account']).stdout;
+  const countBefore = Number(accountsBefore.match(/Accounts:\s*(\d+)/)?.[1] ?? 0);
+  const clear = shell(['pm', 'clear', 'com.android.vending'], 60000);
+  shell(['am', 'force-stop', 'com.android.vending']);
+  await sleep(1200);
+  const launch = shell(['am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', `market://details?id=${PACKAGE}`], 30000);
+  await sleep(5000);
+  const accountsAfter = shell(['dumpsys', 'account']).stdout;
+  const countAfter = Number(accountsAfter.match(/Accounts:\s*(\d+)/)?.[1] ?? 0);
+  const xml = dumpUI(runtime);
+  const result = {
+    action: 'PLAY_STORE_STATE_REPAIRED',
+    clearStatus: clear.status,
+    clearOutput: `${clear.stdout}${clear.stderr}`.trim(),
+    launchStatus: launch.status,
+    accountCountBefore: countBefore,
+    accountCountAfter: countAfter,
+    googleAccountPreserved: /type=com\.google|Account \{.*com\.google/i.test(accountsAfter),
+    uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 60) ?? []
+  };
+  if (captureDir) {
+    appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'PLAY_STORE_STATE_REPAIR', accountCountBefore: countBefore, accountCountAfter: countAfter, clearStatus: clear.status });
+    writeJSON(path.join(captureDir, 'play-store-repair.json'), result);
+  }
+  return result;
+}
+
+async function playInstallBrief() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '15000'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024 }).stdout;
+  const lines = logcat.split(/\r?\n/);
+  const focus = lines.filter(line => /(com\.riotgames\.league\.teamfighttactics|Finsky.*(tos|install|acqui|download|deliver|session|offer|eligible|account|library|purchase|error|fail|abandon|device)|PackageInstaller.*(teamfight|riot|abandon|fail|error)|Phonesky.*(tos|install|fail|error)|Installer.*teamfight|Session.*teamfight)/i.test(line)).slice(-800);
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const vendingPrefs = shell(['dumpsys', 'package', 'com.android.vending']).stdout;
+  const accounts = shell(['dumpsys', 'account']).stdout;
+  const result = {
+    observedAt: nowISO(),
+    accountCount: Number(accounts.match(/Accounts:\s*(\d+)/)?.[1] ?? 0),
+    googleAccountPresent: /type=com\.google|Account \{.*com\.google/i.test(accounts),
+    playVersionName: vendingPrefs.match(/versionName=([^\s]+)/)?.[1] ?? null,
+    tosTokenEmptySeen: focus.some(line => /tosToken is empty/i.test(line)),
+    tftMentionCount: focus.filter(line => /com\.riotgames\.league\.teamfighttactics/i.test(line)).length,
+    focusLines: focus
+  };
+  if (captureDir) writeJSON(path.join(captureDir, 'google-play-install-brief.json'), result);
+  return result;
+}
+
+async function installDiagnose() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '12000'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024 }).stdout;
+  const rx = /(INSTALL_FAILED|PackageInstaller|PackageManager|PackageInstallerSession|Finsky|Phonesky|installd|dex2oat|AppIntegrity|PlayProtect|Verifier|install[^ ]*.*fail|fail[^ ]*.*install|insufficient|not enough|storage|native librar|ABI|split|session.*(fail|abandon)|download.*(fail|error)|asset.*(fail|error)|fs-verity|parse.*package|incompatible)/i;
+  const lines = logcat.split(/\r?\n/).filter(line => rx.test(line)).slice(-1800);
+  const vendingDump = shell(['dumpsys', 'package', 'com.android.vending']).stdout;
+  const sessions = shell(['dumpsys', 'package', 'installer']).stdout;
+  const staged = shell(['cmd', 'package', 'list', 'staged-sessions']).stdout;
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state?.sessionId ?? null,
+    tftPackage: packageState(runtime, captureDir, false),
+    guest: {
+      sdk: shell(['getprop', 'ro.build.version.sdk']).stdout.trim(),
+      release: shell(['getprop', 'ro.build.version.release']).stdout.trim(),
+      fingerprint: shell(['getprop', 'ro.build.fingerprint']).stdout.trim(),
+      abi: shell(['getprop', 'ro.product.cpu.abi']).stdout.trim(),
+      abiList: shell(['getprop', 'ro.product.cpu.abilist']).stdout.trim(),
+      pageSize: shell(['getconf', 'PAGESIZE']).stdout.trim(),
+      dataFilesystem: shell(['df', '-h', '/data']).stdout.trim(),
+      dataBytes: shell(['df', '-B1', '/data']).stdout.trim()
+    },
+    playStore: {
+      versionName: vendingDump.match(/versionName=([^\s]+)/)?.[1] ?? null,
+      versionCode: vendingDump.match(/versionCode=([^\s]+)/)?.[1] ?? null,
+      installerSessions: sessions.split(/\r?\n/).filter(line => /Session|install|failure|error|stage|package/i.test(line)).slice(-500),
+      stagedSessions: staged.trim() || null
+    },
+    foreground: shell(['dumpsys', 'activity', 'top']).stdout.split(/\r?\n/).filter(line => /ACTIVITY|topResumedActivity|mResumedActivity|com\.android\.vending/.test(line)).slice(0, 50),
+    relevantLogLines: lines
+  };
+  if (captureDir) {
+    writeJSON(path.join(captureDir, 'google-play-install-diagnostic.json'), result);
+    fs.writeFileSync(path.join(captureDir, 'google-play-install-logcat.txt'), `${lines.join('\n')}\n`);
+  }
+  return result;
+}
+
+async function authBrief() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '5000'], { env: runtime.env, allowFailure: true, timeout: 30000 }).stdout;
+  const rx = /(MinuteMaid|PreAddAccount|GLSUser|DeviceKeyStore|crashpad|FATAL EXCEPTION|Force finishing activity.*google|Process .*com\.google\.android\.gms.*died|POST_PRE_ADD_ACCOUNT|auth\.uiflows|Protocol message end-group|Account.*error)/i;
+  const lines = logcat.split(/\r?\n/).filter(line => rx.test(line)).slice(-500);
+  const accounts = adb(runtime, ['shell', 'dumpsys', 'account'], { allowFailure: true, timeout: 30000 }).stdout;
+  const top = adb(runtime, ['shell', 'dumpsys', 'activity', 'top'], { allowFailure: true, timeout: 30000 }).stdout;
+  const result = {
+    observedAt: nowISO(),
+    accountCount: Number(accounts.match(/Accounts:\s*(\d+)/)?.[1] ?? 0),
+    foreground: top.split(/\r?\n/).filter(line => /ACTIVITY|topResumedActivity|mResumedActivity/.test(line)).slice(0, 30),
+    minuteMaidCrash: lines.some(line => /Force finishing activity.*MinuteMaid|crashpad|FATAL EXCEPTION.*google|Process .*com\.google\.android\.gms.*died/i.test(line)),
+    glsProtocolError: lines.some(line => /Protocol message end-group tag did not match expected tag/i.test(line)),
+    deviceKeyMissing: lines.some(line => /Device key file not found/i.test(line)),
+    relevantLines: lines
+  };
+  const state = readJSON(CONTROL_STATE);
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'google-auth-brief.json'), result);
+  return result;
+}
+
+async function playCertification() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  await ensureGuestClock(runtime, captureDir);
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const prop = key => shell(['getprop', key]).stdout.trim() || null;
+  const features = shell(['pm', 'list', 'features']).stdout.split(/\r?\n/).filter(Boolean);
+  const gsfQuery = shell(['content', 'query', '--uri', 'content://com.google.android.gsf.gservices', '--projection', 'name:value', '--where', "name='android_id'"]).stdout.trim();
+  const packageDump = name => shell(['dumpsys', 'package', name]).stdout;
+  const vendingDump = packageDump('com.android.vending');
+  const gmsDump = packageDump('com.google.android.gms');
+  const gsfDump = packageDump('com.google.android.gsf');
+
+  const activityCandidates = [
+    'com.android.vending/com.google.android.finsky.activities.SettingsActivity',
+    'com.android.vending/com.google.android.finsky.settings.SettingsActivity'
+  ];
+  let settingsLaunch = null;
+  let xml = '';
+  for (const component of activityCandidates) {
+    const launch = shell(['am', 'start', '-W', '-n', component]);
+    if (launch.status === 0 && !/Error|Exception|does not exist|not exported/i.test(`${launch.stdout}${launch.stderr}`)) {
+      settingsLaunch = component;
+      await sleep(1800);
+      xml = dumpUI(runtime);
+      break;
+    }
+  }
+  if (!xml) {
+    shell(['am', 'force-stop', 'com.android.vending']);
+    shell(['am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', '-n', 'com.android.vending/com.google.android.finsky.activities.MainActivity']);
+    await sleep(2200);
+    xml = dumpUI(runtime);
+    const account = findNodeByText(xml, [/account and settings/i, /settings and account/i, /profile/i]);
+    if (account?.bounds) {
+      shell(['input', 'tap', String(account.bounds.x), String(account.bounds.y)]);
+      await sleep(900);
+      xml = dumpUI(runtime);
+      const settings = findNodeByText(xml, [/^Settings$/i]);
+      if (settings?.bounds) {
+        shell(['input', 'tap', String(settings.bounds.x), String(settings.bounds.y)]);
+        await sleep(1000);
+        xml = dumpUI(runtime);
+      }
+    }
+  }
+  const about = findNodeByText(xml, [/^About$/i]);
+  if (about?.bounds) {
+    shell(['input', 'tap', String(about.bounds.x), String(about.bounds.y)]);
+    await sleep(1000);
+    xml = dumpUI(runtime);
+  }
+  const nodes = xml.match(/<node\b[^>]*\/>/g) ?? [];
+  const visibleText = nodes.flatMap(node => {
+    const text = node.match(/text="([^"]*)"/)?.[1] ?? '';
+    const desc = node.match(/content-desc="([^"]*)"/)?.[1] ?? '';
+    return [text, desc].filter(Boolean);
+  });
+  const certificationText = visibleText.filter(value => /play protect certification|device is (?:not )?certified|certification/i.test(value));
+  const sanitizedUiText = visibleText.filter(value => !/@/.test(value)).filter(value => /play protect|certif|about|play store version|update play store|device/i.test(value)).slice(0, 80);
+  const clickableNodes = nodes.filter(node => /clickable="true"/.test(node)).flatMap(node => {
+    const text = node.match(/text="([^"]*)"/)?.[1] ?? '';
+    const desc = node.match(/content-desc="([^"]*)"/)?.[1] ?? '';
+    const bounds = parseBounds(node);
+    if ((text && /@/.test(text)) || (desc && /@/.test(desc))) return [];
+    if (!bounds) return [];
+    return [{ text: text || null, contentDescription: desc || null, bounds }];
+  }).slice(0, 120);
+  const allSanitizedText = visibleText.filter(value => value && !/@/.test(value)).slice(0, 160);
+  const result = {
+    observedAt: nowISO(),
+    imagePackage: REQUIRED_IMAGE,
+    playStoreEnabledInAvd: parseKeyValueLines(runtime.avdConfig ?? '')['PlayStore.enabled'] ?? null,
+    settingsLaunch,
+    certificationText,
+    certificationState: certificationText.some(value => /not certified/i.test(value)) ? 'NOT_CERTIFIED'
+      : certificationText.some(value => /device is certified|play protect certified/i.test(value)) ? 'CERTIFIED'
+      : 'UNRESOLVED',
+    device: {
+      fingerprint: prop('ro.build.fingerprint'),
+      brand: prop('ro.product.brand'),
+      manufacturer: prop('ro.product.manufacturer'),
+      model: prop('ro.product.model'),
+      device: prop('ro.product.device'),
+      buildType: prop('ro.build.type'),
+      buildTags: prop('ro.build.tags'),
+      debuggable: prop('ro.debuggable'),
+      secure: prop('ro.secure'),
+      verifiedBootState: prop('ro.boot.verifiedbootstate'),
+      flashLocked: prop('ro.boot.flash.locked'),
+      vbmetaDeviceState: prop('ro.boot.vbmeta.device_state'),
+      sdk: prop('ro.build.version.sdk'),
+      release: prop('ro.build.version.release'),
+      abi: prop('ro.product.cpu.abi')
+    },
+    graphicsEligibility: {
+      roOpenGLESVersion: prop('ro.opengles.version'),
+      hardwareEGL: prop('ro.hardware.egl'),
+      hardwareVulkan: prop('ro.hardware.vulkan'),
+      vulkanVersionFeature: features.find(line => /android\.hardware\.vulkan\.version/i.test(line)) ?? null,
+      vulkanLevelFeature: features.find(line => /android\.hardware\.vulkan\.level/i.test(line)) ?? null,
+      glesVersionFeature: features.find(line => /reqGlEsVersion|opengles/i.test(line)) ?? null,
+      relevantFeatures: features.filter(line => /vulkan|opengl|gles|texture|screen\.landscape|touchscreen|ram\.(normal|low)/i.test(line)).slice(0, 120)
+    },
+    registration: {
+      androidIdPresent: Boolean(shell(['settings', 'get', 'secure', 'android_id']).stdout.trim()),
+      gsfAndroidIdQuerySucceeded: Boolean(gsfQuery && !/Permission Denial|SecurityException|No result/i.test(gsfQuery)),
+      gsfAndroidIdPresent: /value=\d+|android_id/i.test(gsfQuery),
+      playStoreVersionName: vendingDump.match(/versionName=([^\s]+)/)?.[1] ?? null,
+      playServicesVersionName: gmsDump.match(/versionName=([^\s]+)/)?.[1] ?? null,
+      gsfVersionName: gsfDump.match(/versionName=([^\s]+)/)?.[1] ?? null
+    },
+    uiEvidence: sanitizedUiText,
+    allSanitizedText,
+    clickableNodes
+  };
+  if (captureDir) writeJSON(path.join(captureDir, 'google-play-certification.json'), result);
+  return result;
 }
 
 async function playDiagnose() {
@@ -1273,6 +1896,9 @@ async function stopControl() {
   writeJSON(path.join(captureDir, 'control-result.json'), controlResult);
   const result = { sessionId: state.sessionId, captureDir, ...controlResult };
   try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
+  if (state.controlProfile === DONOR_PROFILE.id) {
+    try { result.donorAvdRestore = restoreDonorAVD(runtime); } catch (error) { result.donorAvdRestore = { restored: false, error: error instanceof Error ? error.message : String(error) }; }
+  }
   try { fs.unlinkSync(CONTROL_STATE); } catch {}
   return result;
 }
@@ -1426,6 +2052,208 @@ function buildApp() {
   return { app, binary, binarySHA256: sha256File(binary), infoPlistSHA256: sha256File(path.join(contents, 'Info.plist')) };
 }
 
+function runtimeProcessAudit() {
+  const ps = command('/bin/ps', ['axo', 'pid=,ppid=,etime=,command='], { allowFailure: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024 });
+  const lines = ps.stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const relevant = lines.filter(line => /(TFTMAC|Mactician|TftPBE|TFT_Ultra_Tablet|TFTMAC_Live_API36|qemu-system-aarch64|\/emulator(?:\s|$)|adb.*fork-server|tftmac-direct-control\.mjs\s+sampler)/i.test(line));
+  const classified = relevant.map(line => {
+    const match = line.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
+    const pid = match ? Number(match[1]) : null;
+    const ppid = match ? Number(match[2]) : null;
+    const elapsed = match?.[3] ?? null;
+    const commandLine = match?.[4] ?? line;
+    let kind = 'OTHER_RELEVANT';
+    if (/tftmac-direct-control\.mjs\s+sampler/i.test(commandLine)) kind = 'TFTMAC_SAMPLER';
+    else if (/TFTMAC\.app\/Contents\/MacOS\/TFTMAC/i.test(commandLine)) kind = 'TFTMAC_APP';
+    else if (/Mactician\.app\/Contents\/MacOS\/Mactician/i.test(commandLine)) kind = 'MACTICIAN_APP';
+    else if (/qemu-system-aarch64|\/emulator(?:\s|$)/i.test(commandLine)) kind = 'ANDROID_EMULATOR';
+    else if (/adb.*fork-server/i.test(commandLine)) kind = 'ADB_SERVER';
+    return { pid, ppid, elapsed, kind, command: commandLine };
+  });
+  const lsof = command('/usr/sbin/lsof', ['-nP', '-iTCP:5038', '-iTCP:5040', '-iTCP:5582', '-iTCP:5592'], { allowFailure: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 });
+  const portLines = lsof.stdout.split(/\r?\n/).filter(Boolean);
+  const adb5040 = portLines.some(line => /:5040\s+\(LISTEN\)/.test(line)) ? 'LISTENER_PRESENT' : 'NO_LISTENER';
+  return {
+    observedAt: nowISO(),
+    processCount: classified.length,
+    processes: classified,
+    ports: portLines,
+    adb5040,
+    controlState: readJSON(CONTROL_STATE),
+    duplicateRisk: {
+      tftmacApps: classified.filter(item => item.kind === 'TFTMAC_APP').length,
+      macticianApps: classified.filter(item => item.kind === 'MACTICIAN_APP').length,
+      emulators: classified.filter(item => item.kind === 'ANDROID_EMULATOR').length,
+      samplers: classified.filter(item => item.kind === 'TFTMAC_SAMPLER').length,
+      adbServers: classified.filter(item => item.kind === 'ADB_SERVER').length
+    }
+  };
+}
+
+function cleanupTftmacAdbResidue() {
+  const auditBefore = runtimeProcessAudit();
+  const tftmacAdb = auditBefore.processes.filter(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command));
+  if (!tftmacAdb.length) return { action: 'TFTMAC_ADB_RESIDUE_ABSENT', auditBefore, auditAfter: auditBefore };
+  const runtime = discover();
+  const killed = command(runtime.adb, ['-P', ADB_PORT, 'kill-server'], { env: runtime.env, allowFailure: true, timeout: 10000 });
+  const auditAfter = runtimeProcessAudit();
+  if (auditAfter.processes.some(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command))) {
+    throw new Error(`TFTMAC_ADB_RESIDUE_CLEANUP_FAILED: ${(killed.stderr || killed.stdout || '').trim()}`);
+  }
+  return { action: 'TFTMAC_ADB_RESIDUE_CLEANED', killedPids: tftmacAdb.map(item => item.pid), killStatus: killed.status, auditBefore, auditAfter };
+}
+
+function singleRuntimePreflight() {
+  const audit = runtimeProcessAudit();
+  const blockers = audit.processes.filter(item => ['TFTMAC_APP', 'MACTICIAN_APP', 'ANDROID_EMULATOR', 'TFTMAC_SAMPLER', 'ADB_SERVER'].includes(item.kind));
+  if (blockers.length || audit.ports.length) {
+    throw new Error(`SINGLE_RUNTIME_PREFLIGHT_BLOCKED: ${JSON.stringify({ blockers, ports: audit.ports, adb5040: audit.adb5040 })}`);
+  }
+  return { pass: true, observedAt: audit.observedAt, audit };
+}
+
+function launchMacticianControl() {
+  const preflight = singleRuntimePreflight();
+  const app = '/Applications/Mactician.app';
+  const binary = path.join(app, 'Contents', 'MacOS', 'Mactician');
+  if (!executable(binary)) throw new Error(`MACTICIAN_APP_MISSING: ${binary}`);
+  const env = { ...process.env, ANDROID_ADB_SERVER_PORT: '5038', ADB_MDNS_AUTO_CONNECT: '' };
+  const child = spawn(binary, [], { env, detached: true, stdio: 'ignore' });
+  child.unref();
+  return { action: 'MACTICIAN_LAUNCHED', app, binary, pid: child.pid, inheritedAdbServerPort: 5038, preflight, observedAt: nowISO() };
+}
+
+async function stopMacticianControl() {
+  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
+  const lines = ps.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const targets = lines.flatMap(line => {
+    const match = line.match(/^(\d+)\s+(.+)$/);
+    if (!match) return [];
+    const pid = Number(match[1]);
+    const cmd = match[2];
+    if (/Mactician\.app\/Contents\/MacOS\/Mactician|\/Mactician\/sdk\/emulator\/.*qemu-system-aarch64|launcher-runtime\.command|run-asg-experiment\.command|run-tft-root-affinity\.command/i.test(cmd)) return [{ pid, cmd }];
+    return [];
+  });
+  for (const target of [...targets].sort((a, b) => b.pid - a.pid)) {
+    try { process.kill(target.pid, 'SIGTERM'); } catch {}
+  }
+  const adbCandidates = [
+    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
+    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
+  ].filter(executable);
+  if (adbCandidates.length) command(adbCandidates[0], ['-P', '5038', 'kill-server'], { allowFailure: true, timeout: 10000 });
+  await sleep(1200);
+  const after = runtimeProcessAudit();
+  const remaining = after.processes.filter(item => ['MACTICIAN_APP','ANDROID_EMULATOR'].includes(item.kind) || (item.kind === 'ADB_SERVER' && /tcp:5038\b/.test(item.command)));
+  if (remaining.length) throw new Error(`MACTICIAN_STOP_INCOMPLETE: ${JSON.stringify(remaining)}`);
+  return { action: 'MACTICIAN_STOPPED', terminated: targets, observedAt: nowISO(), auditAfter: after };
+}
+
+function newestMatchingFile(roots, pattern, maximum = 20000) {
+  const candidates = [];
+  for (const root of roots) {
+    if (!exists(root)) continue;
+    for (const file of walk(root, 5, maximum)) {
+      try {
+        const stat = fs.statSync(file);
+        if (stat.isFile() && pattern.test(file)) candidates.push({ file, mtimeMs: stat.mtimeMs });
+      } catch {}
+    }
+  }
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return candidates[0]?.file ?? null;
+}
+
+function macticianRuntimeAudit() {
+  const processAudit = runtimeProcessAudit();
+  const ps = command('/bin/ps', ['axo', 'pid=,ppid=,etime=,command='], { allowFailure: true, timeout: 10000, maxBuffer: 32 * 1024 * 1024 });
+  const processTree = ps.stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+    .filter(line => /(Mactician|TftPBE|emulator-5582|qemu-system-aarch64|\/emulator(?:\s|$))/i.test(line));
+  const app = '/Applications/Mactician.app';
+  const appVersion = exists(path.join(app, 'Contents', 'Info.plist'))
+    ? command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(app, 'Contents', 'Info.plist')], { allowFailure: true, timeout: 10000 }).stdout.trim() || null
+    : null;
+  const appBuild = exists(path.join(app, 'Contents', 'Info.plist'))
+    ? command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion', path.join(app, 'Contents', 'Info.plist')], { allowFailure: true, timeout: 10000 }).stdout.trim() || null
+    : null;
+  const macticianAdbPort = processTree.map(line => line.match(/adb\s+-L\s+tcp:(\d+)\s+fork-server/i)?.[1]).find(Boolean)
+    ?? processAudit.processes.map(item => item.command.match(/adb\s+-L\s+tcp:(\d+)\s+fork-server/i)?.[1]).find(Boolean)
+    ?? '5038';
+  const adbCandidates = [
+    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
+    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
+  ].filter(executable);
+  const adbSnapshots = adbCandidates.map(adbPath => {
+    const devices = command(adbPath, ['-P', macticianAdbPort, 'devices', '-l'], { allowFailure: true, timeout: 10000 });
+    const serials = [...devices.stdout.matchAll(/^(emulator-\d+)\s+device\b/gm)].map(match => match[1]);
+    const snapshots = serials.map(serial => {
+      const shell = args => command(adbPath, ['-P', macticianAdbPort, '-s', serial, ...args], { allowFailure: true, timeout: 20000, maxBuffer: 24 * 1024 * 1024 }).stdout.trim();
+      const packageDump = shell(['shell', 'dumpsys', 'package', PACKAGE]);
+      const props = {};
+      for (const key of ['ro.boot.qemu.avd_name','ro.hardware.egl','ro.hardware.vulkan','ro.opengles.version','ro.boot.qemu.gltransport','ro.boot.qemu.gles']) props[key] = shell(['shell', 'getprop', key]) || null;
+      const angleSettings = {};
+      for (const key of ['angle_gl_driver_all_angle','angle_gl_driver_selection_pkgs','angle_gl_driver_selection_values']) angleSettings[key] = shell(['shell', 'settings', 'get', 'global', key]) || null;
+      const surfaceFlinger = shell(['shell', 'dumpsys', 'SurfaceFlinger']);
+      return {
+        serial,
+        bootCompleted: shell(['shell', 'getprop', 'sys.boot_completed']) || null,
+        avdName: shell(['emu', 'avd', 'name']) || props['ro.boot.qemu.avd_name'],
+        packagePath: shell(['shell', 'pm', 'path', PACKAGE]) || null,
+        versionName: packageDump.match(/versionName=([^\s]+)/)?.[1] ?? null,
+        versionCode: packageDump.match(/versionCode=(\d+)/)?.[1] ?? null,
+        packagePid: shell(['shell', 'pidof', PACKAGE]) || null,
+        topActivity: shell(['shell', 'dumpsys', 'activity', 'activities']).split(/\r?\n/).filter(line => /topResumedActivity|mResumedActivity|teamfighttactics|leagueoflegends/i.test(line)).slice(0, 40),
+        properties: props,
+        angleSettings,
+        displaySize: shell(['shell', 'wm', 'size']) || null,
+        displayDensity: shell(['shell', 'wm', 'density']) || null,
+        surfaceFlingerGraphics: surfaceFlinger.split(/\r?\n/).filter(line => /GLES|OpenGL|Vulkan|ANGLE|gfxstream|GPU|renderer/i.test(line)).slice(0, 160)
+      };
+    });
+    return { adbPath, devices: devices.stdout.trim(), snapshots };
+  });
+  const logRoots = [
+    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'logs'),
+    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician'),
+    '/Volumes/MAC MINI M4/Mactician'
+  ];
+  const latestLog = newestMatchingFile(logRoots, /(?:launcher|emulator|mactician|tft).*\.log$/i);
+  let graphicsLogEvidence = [];
+  let failureLogEvidence = [];
+  let latestLogTail = [];
+  if (latestLog) {
+    try {
+      const logLines = fs.readFileSync(latestLog, 'utf8').split(/\r?\n/);
+      latestLogTail = logLines.slice(-240);
+      graphicsLogEvidence = logLines.filter(line => /ANGLE|ASG|gfxstream|MoltenVK|Metal|Vulkan|Setting ICD|gltransport|GuestAngle|feature/i.test(line)).slice(-200);
+      failureLogEvidence = logLines.filter(line => /error|failed|failure|fatal|abort|offline|not found|missing|exit|terminated|could not|cannot|timed out|timeout/i.test(line)).slice(-160);
+    } catch {}
+  }
+  const relevantPorts = command('/usr/sbin/lsof', ['-nP', '-iTCP:5037', '-iTCP:5038', '-iTCP:5040', '-iTCP:5582', '-iTCP:5592'], { allowFailure: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 }).stdout.split(/\r?\n/).filter(Boolean);
+  return { observedAt: nowISO(), appVersion, appBuild, macticianAdbPort: Number(macticianAdbPort), processAudit, processTree, relevantPorts, adbSnapshots, latestLog, latestLogTail, failureLogEvidence, graphicsLogEvidence };
+}
+
+function cleanupObserverAdb5037() {
+  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
+  const observed = ps.split(/\r?\n/).map(line => line.trim()).filter(line => /adb\s+-L\s+tcp:5037\s+fork-server/i.test(line));
+  if (!observed.length) return { action: 'OBSERVER_ADB_5037_ABSENT' };
+  const adbCandidates = [
+    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
+    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
+  ].filter(executable);
+  if (!adbCandidates.length) throw new Error('No Mactician adb binary available to remove observer-created 5037 server.');
+  const killed = command(adbCandidates[0], ['-P', '5037', 'kill-server'], { allowFailure: true, timeout: 10000 });
+  const after = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout.split(/\r?\n/).map(line => line.trim()).filter(line => /adb\s+-L\s+tcp:5037\s+fork-server/i.test(line));
+  if (after.length) throw new Error(`OBSERVER_ADB_5037_CLEANUP_FAILED: ${(killed.stderr || killed.stdout || '').trim()}`);
+  return { action: 'OBSERVER_ADB_5037_CLEANED', observed, killStatus: killed.status };
+}
+
+function openPlayWeb() {
+  const url = `https://play.google.com/store/apps/details?id=${PACKAGE}`;
+  const result = command('/usr/bin/open', [url], { allowFailure: true, timeout: 30000 });
+  return { action: 'PLAY_WEB_OPENED', url, openStatus: result.status, stderr: result.stderr.trim() || null };
+}
+
 function launchApp() {
   const app = path.join(repoRoot, 'dist', 'TFTMAC.app');
   if (!exists(app)) throw new Error('TFTMAC.app has not been built. Run build first.');
@@ -1445,13 +2273,31 @@ async function main() {
   if (action === 'lab-selftest') { json(labSelfTest()); return; }
   if (action === 'build') { json(buildApp()); return; }
   if (action === 'launch-app') { json(launchApp()); return; }
+  if (action === 'open-play-web') { json(openPlayWeb()); return; }
+  if (action === 'runtime-process-audit') { json(runtimeProcessAudit()); return; }
+  if (action === 'cleanup-tftmac-adb-residue') { json(cleanupTftmacAdbResidue()); return; }
+  if (action === 'single-runtime-preflight') { json(singleRuntimePreflight()); return; }
+  if (action === 'launch-mactician-control') { json(launchMacticianControl()); return; }
+  if (action === 'stop-mactician-control') { json(await stopMacticianControl()); return; }
+  if (action === 'mactician-runtime-audit') { json(macticianRuntimeAudit()); return; }
+  if (action === 'cleanup-observer-adb-5037') { json(cleanupObserverAdb5037()); return; }
   if (action === 'start') { json(await startControl()); return; }
+  if (action === 'start-donor-control') { json(await startDonorControl()); return; }
   if (action === 'play-action') { json(await playAction()); return; }
+  if (action === 'play-probe') { json(await playProbe()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
+  if (action === 'gles-capability-probe') { json(glesCapabilityProbe()); return; }
+  if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'status') { json(await status()); return; }
+  if (action === 'play-certification') { json(await playCertification()); return; }
   if (action === 'play-diagnose') { json(await playDiagnose()); return; }
+  if (action === 'auth-brief') { json(await authBrief()); return; }
+  if (action === 'install-diagnose') { json(await installDiagnose()); return; }
+  if (action === 'play-install-brief') { json(await playInstallBrief()); return; }
+  if (action === 'play-store-repair') { json(await playStoreRepair()); return; }
   if (action === 'google-account-ui') { json(await googleAccountUI()); return; }
   if (action === 'image-check') { json(imageCheck()); return; }
+  if (action === 'device-profiles') { json(deviceProfiles()); return; }
   if (action === 'image-upgrade-start') { json(imageUpgradeStart()); return; }
   if (action === 'image-upgrade-status') { json(imageUpgradeStatus()); return; }
   if (action === 'image-upgrade-worker') { json(await imageUpgradeWorker()); return; }
@@ -1467,7 +2313,7 @@ async function main() {
     await sampler(args[captureIndex + 1], args[sessionIndex + 1]);
     return;
   }
-  throw new Error('Usage: tftmac-direct-control.mjs inventory|prepare|lab-selftest|build|launch-app|start|play-action|launch-game|status|marker|match-entry|combat-start|stop|package-state');
+  throw new Error('Usage: tftmac-direct-control.mjs inventory|prepare|lab-selftest|build|launch-app|runtime-process-audit|single-runtime-preflight|launch-mactician-control|mactician-runtime-audit|start|start-donor-control|play-action|launch-game|gles-capability-probe|launch-failure-probe|status|play-certification|marker|match-entry|combat-start|stop|package-state');
 }
 
 main().catch(error => { process.stderr.write(`${error.stack || error.message}\n`); process.exit(1); });

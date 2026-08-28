@@ -4,9 +4,9 @@ import SwiftUI
 
 private enum TFTMACControl {
     static let package = "com.riotgames.league.teamfighttactics"
-    static let avdName = "TFTMAC_Live_API37"
+    static let avdName = "TFT_Ultra_Tablet"
     static let emulatorVersion = "37.1.11"
-    static let image = "system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a"
+    static let image = "system-images;android-36;google_apis_playstore;arm64-v8a"
     static let serial = "emulator-5592"
     static let adbPort = 5040
     static let consolePort = 5592
@@ -115,12 +115,22 @@ final class TFTMACModel: ObservableObject {
     }
 
     func startControl() {
-        perform(action: "start", working: "Starting capture before Android…") { response in
+        perform(action: "start", working: "Starting stock capture before Android…") { response in
             self.captureActive = true
             self.capturePath = response.captureDir
-            self.status = "Control capture active"
+            self.status = "Stock control capture active"
             let packageState = response.packageState ?? "unknown"
-            self.detail = "Android is ready. Official TFT package state: \(packageState). Next: Google Play / Update."
+            self.detail = "Stock Android control is ready. Official TFT package state: \(packageState)."
+        }
+    }
+
+    func startDonorControl() {
+        perform(action: "start-donor-control", working: "Starting Mactician-compatible control…") { response in
+            self.captureActive = true
+            self.capturePath = response.captureDir
+            self.status = "Mactician-compatible control active"
+            let packageState = response.packageState ?? "unknown"
+            self.detail = "ANGLE + Vulkan + virtio-gpu-ASG compatibility control is live. Official TFT package state: \(packageState)."
         }
     }
 
@@ -238,7 +248,7 @@ struct TFTMACView: View {
                     Text("320 DPI · 6 vCPU · 6144 MB")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    Text("Stock host GPU · direct window")
+                    Text("Stock or Mactician-compatible · direct window")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -252,14 +262,16 @@ struct TFTMACView: View {
                 Text("Frozen runtime")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("Google Emulator \(TFTMACControl.emulatorVersion) · API 37 Play ARM64 · \(TFTMACControl.avdName)")
+                Text("Google Emulator \(TFTMACControl.emulatorVersion) · API 36 Play ARM64 · \(TFTMACControl.avdName)")
                     .font(.system(size: 12, design: .monospaced))
                 Text("Package authority: Google Play / Riot only")
                     .font(.system(size: 12, weight: .medium))
             }
 
             HStack(spacing: 10) {
-                Button("1  Start Control") { model.startControl() }
+                Button("1A  Start Stock") { model.startControl() }
+                    .disabled(model.busy || model.captureActive)
+                Button("1B  Start Mactician-Compatible") { model.startDonorControl() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.busy || model.captureActive)
                 Button("2  Google Play / Update") { model.openGooglePlay() }

@@ -31,8 +31,8 @@ android_command_line_tools:
 
 android:
   api: 37
-  play_image_package: "system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a"
-  play_image_revision: 9
+  play_image_package: "system-images;android-36;google_apis_playstore;arm64-v8a"
+  play_image_revision: 7
   avd_name: "TFTMAC_Live_API37"
   emulator_console_port: 5592
   adb_serial: "emulator-5592"
