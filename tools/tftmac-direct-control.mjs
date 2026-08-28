@@ -31,7 +31,11 @@ const STATE_ROOT = path.join(APP_SUPPORT, 'State');
 const CAPTURE_ROOT = path.join(APP_SUPPORT, 'Captures');
 const DIAGNOSTICS_ROOT = path.join(APP_SUPPORT, 'Diagnostics');
 const CONTROL_STATE = path.join(STATE_ROOT, 'direct-control.json');
-const REQUIRED_IMAGE = 'system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a';
+const IMAGE_UPGRADE_STATE = path.join(STATE_ROOT, 'image-upgrade.json');
+const IMAGE_UPGRADE_STDOUT = path.join(APP_SUPPORT, 'Logs', 'image-upgrade.stdout.log');
+const IMAGE_UPGRADE_STDERR = path.join(APP_SUPPORT, 'Logs', 'image-upgrade.stderr.log');
+const REQUIRED_IMAGE = 'system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a';
+const REQUIRED_IMAGE_MIN_REVISION = 9;
 const scriptPath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(scriptPath);
 const repoRoot = process.env.TFTMAC_REPO_ROOT ? path.resolve(process.env.TFTMAC_REPO_ROOT) : path.resolve(scriptDir, '..');
@@ -54,7 +58,8 @@ function command(executablePath, args = [], options = {}) {
     env: options.env ?? process.env,
     cwd: options.cwd ?? repoRoot,
     timeout: options.timeout ?? 120000,
-    maxBuffer: 32 * 1024 * 1024
+    maxBuffer: options.maxBuffer ?? 32 * 1024 * 1024,
+    input: options.input
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !options.allowFailure) {
@@ -137,7 +142,7 @@ function discover() {
     if (exists(configPath)) avdConfig = fs.readFileSync(configPath, 'utf8');
   }
 
-  const imagePkg = path.join(sdkRoot, 'system-images', 'android-37.0', 'google_apis_playstore_ps16k', 'arm64-v8a');
+  const imagePkg = path.join(sdkRoot, ...REQUIRED_IMAGE.split(';'));
   const env = {
     ...process.env,
     ANDROID_SDK_ROOT: sdkRoot,
@@ -623,6 +628,267 @@ async function status() {
   const googleAuth = xml ? findNodeByText(xml, [/sign in/i, /add account/i, /choose an account/i]) : null;
   const riotAuth = xml ? findNodeByText(xml, [/sign in/i, /log in/i, /riot account/i]) : null;
   return { activeSession: state, deviceReady: ready, samplerAlive: processAlive(state?.samplerPid), emulatorProcessAlive: processAlive(state?.emulatorPid), package: pkg, tftPid: pid || null, resumedActivity: top, googleAuthPossible: Boolean(googleAuth), riotAuthPossible: Boolean(pid && riotAuth), uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 20) ?? [] };
+}
+
+function androidToolEnv(runtime) {
+  const javaHomes = [
+    process.env.JAVA_HOME,
+    '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home',
+    '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home',
+    '/Applications/Android Studio.app/Contents/jbr/Contents/Home'
+  ].filter(Boolean);
+  const javaHome = javaHomes.find(home => executable(path.join(home, 'bin', 'java'))) ?? null;
+  const env = { ...runtime.env };
+  if (javaHome) {
+    env.JAVA_HOME = javaHome;
+    env.PATH = `${path.join(javaHome, 'bin')}:${env.PATH ?? ''}`;
+  }
+  return { env, javaHome };
+}
+
+function imageRevision(runtime, imagePackage = REQUIRED_IMAGE) {
+  const properties = path.join(runtime.sdkRoot, ...imagePackage.split(';'), 'source.properties');
+  if (!exists(properties)) return null;
+  return parseKeyValueLines(fs.readFileSync(properties, 'utf8'))['Pkg.Revision'] ?? null;
+}
+
+async function imageUpgradeWorker() {
+  ensureDir(path.dirname(IMAGE_UPGRADE_STATE));
+  ensureDir(path.dirname(IMAGE_UPGRADE_STDOUT));
+  const base = {
+    schema: 1,
+    pid: process.pid,
+    targetPackage: REQUIRED_IMAGE,
+    minimumRevision: REQUIRED_IMAGE_MIN_REVISION,
+    startedAt: nowISO()
+  };
+  const record = extra => writeJSON(IMAGE_UPGRADE_STATE, { ...base, ...extra });
+  try {
+    const runtime = discover();
+    const { env, javaHome } = androidToolEnv(runtime);
+    const sdkmanager = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'sdkmanager');
+    const avdmanager = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'avdmanager');
+    if (!executable(sdkmanager)) throw new Error(`sdkmanager unavailable: ${sdkmanager}`);
+    if (!executable(avdmanager)) throw new Error(`avdmanager unavailable: ${avdmanager}`);
+
+    record({ status: 'RUNNING', stage: 'INSTALLING_IMAGE', javaHome });
+    const install = command(sdkmanager, ['--install', REQUIRED_IMAGE, '--channel=3'], {
+      env,
+      timeout: 30 * 60 * 1000,
+      maxBuffer: 128 * 1024 * 1024
+    });
+    const revision = imageRevision(runtime);
+    if (!revision || Number.parseInt(revision, 10) < REQUIRED_IMAGE_MIN_REVISION) {
+      throw new Error(`Image install completed but revision ${revision ?? 'unknown'} is below ${REQUIRED_IMAGE_MIN_REVISION}.`);
+    }
+
+    record({ status: 'RUNNING', stage: 'RECREATING_AVD', installedRevision: revision });
+    for (const target of [runtime.avdIni, runtime.avdDir]) {
+      if (!target) continue;
+      if (!isUnder(target, EXTERNAL_ROOT)) throw new Error(`Refusing to remove AVD path outside external runtime: ${target}`);
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+    ensureDir(runtime.avdHome ?? path.join(EXTERNAL_ROOT, 'AVD'));
+    const avdHome = runtime.avdHome ?? path.join(EXTERNAL_ROOT, 'AVD');
+    command(avdmanager, [
+      'create', 'avd', '--name', AVD_NAME,
+      '--package', REQUIRED_IMAGE,
+      '--device', 'pixel_tablet', '--force'
+    ], {
+      env: { ...env, ANDROID_AVD_HOME: avdHome },
+      input: 'no\n',
+      timeout: 120000,
+      maxBuffer: 32 * 1024 * 1024
+    });
+    const prepared = prepareAVD();
+    const completed = {
+      status: 'SUCCEEDED',
+      stage: 'COMPLETE',
+      installedRevision: revision,
+      endedAt: nowISO(),
+      prepared,
+      sdkmanagerOutputTail: install.stdout.slice(-6000)
+    };
+    record(completed);
+    return completed;
+  } catch (error) {
+    const failure = {
+      status: 'FAILED',
+      stage: 'FAILED',
+      endedAt: nowISO(),
+      error: error instanceof Error ? error.message : String(error)
+    };
+    record(failure);
+    throw error;
+  }
+}
+
+function imageUpgradeStart() {
+  const existing = readJSON(IMAGE_UPGRADE_STATE);
+  if (existing?.status === 'RUNNING' && processAlive(existing.pid)) {
+    return { launched: false, alreadyRunning: true, worker: existing };
+  }
+  ensureDir(path.dirname(IMAGE_UPGRADE_STDOUT));
+  const out = fs.openSync(IMAGE_UPGRADE_STDOUT, 'a');
+  const err = fs.openSync(IMAGE_UPGRADE_STDERR, 'a');
+  try {
+    const child = spawn(process.execPath, [scriptPath, 'image-upgrade-worker'], {
+      cwd: repoRoot,
+      env: process.env,
+      detached: true,
+      stdio: ['ignore', out, err]
+    });
+    child.unref();
+    return {
+      launched: true,
+      pid: child.pid,
+      targetPackage: REQUIRED_IMAGE,
+      minimumRevision: REQUIRED_IMAGE_MIN_REVISION,
+      statePath: IMAGE_UPGRADE_STATE,
+      stdoutPath: IMAGE_UPGRADE_STDOUT,
+      stderrPath: IMAGE_UPGRADE_STDERR
+    };
+  } finally {
+    fs.closeSync(out);
+    fs.closeSync(err);
+  }
+}
+
+function imageUpgradeStatus() {
+  const state = readJSON(IMAGE_UPGRADE_STATE, { status: 'NOT_STARTED' });
+  const tail = file => {
+    if (!exists(file)) return null;
+    const text = fs.readFileSync(file, 'utf8');
+    return text.slice(-6000);
+  };
+  return {
+    ...state,
+    alive: Boolean(state?.pid && processAlive(state.pid)),
+    stdoutTail: tail(IMAGE_UPGRADE_STDOUT),
+    stderrTail: tail(IMAGE_UPGRADE_STDERR)
+  };
+}
+
+function imageCheck() {
+  const runtime = discover();
+  const sourceProperties = path.join(runtime.requiredImagePath, 'source.properties');
+  const installedProperties = exists(sourceProperties) ? parseKeyValueLines(fs.readFileSync(sourceProperties, 'utf8')) : {};
+  const javaHomes = [
+    process.env.JAVA_HOME,
+    '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home',
+    '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home',
+    '/Applications/Android Studio.app/Contents/jbr/Contents/Home'
+  ].filter(Boolean);
+  const javaHome = javaHomes.find(home => executable(path.join(home, 'bin', 'java'))) ?? null;
+  const env = { ...runtime.env };
+  if (javaHome) {
+    env.JAVA_HOME = javaHome;
+    env.PATH = `${path.join(javaHome, 'bin')}:${env.PATH ?? ''}`;
+  }
+  const sdkmanager = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'sdkmanager');
+  const androidCli = path.join(runtime.sdkRoot, 'cmdline-tools', 'latest', 'bin', 'android');
+  let listing = { status: -1, stdout: '', stderr: 'No Android SDK package-list tool found' };
+  if (executable(sdkmanager)) {
+    listing = command(sdkmanager, ['--list', '--channel=3'], { env, allowFailure: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
+  } else if (executable(androidCli)) {
+    listing = command(androidCli, [`--sdk=${runtime.sdkRoot}`, 'sdk', 'list', '.*(android-3[67]).*playstore.*arm64.*', '--all', '--all-versions', '--canary'], { env, allowFailure: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
+  }
+  const lines = `${listing.stdout}\n${listing.stderr}`.split(/\r?\n/)
+    .filter(line => /system-images.*android-3[67].*(google_apis_playstore|playstore).*arm64/i.test(line));
+  return {
+    installedPackage: REQUIRED_IMAGE,
+    installedRevision: installedProperties['Pkg.Revision'] ?? null,
+    installedDescription: installedProperties['Pkg.Desc'] ?? null,
+    packageToolStatus: listing.status,
+    javaHome,
+    matchingAvailableLines: lines.slice(0, 120)
+  };
+}
+
+async function googleAccountUI() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const before = adb(runtime, ['shell', 'dumpsys', 'account'], { allowFailure: true, timeout: 30000 }).stdout;
+  const launch = adb(runtime, [
+    'shell', 'am', 'start', '-W',
+    '-a', 'android.settings.ADD_ACCOUNT_SETTINGS',
+    '--esa', 'account_types', 'com.google'
+  ], { allowFailure: true, timeout: 30000 });
+  await sleep(1800);
+  const xml = dumpUI(runtime);
+  const state = readJSON(CONTROL_STATE);
+  if (state?.captureDir) {
+    fs.writeFileSync(path.join(state.captureDir, 'google-account-ui.xml'), xml);
+    appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'GOOGLE_ACCOUNT_UI_OPENED', launchStatus: launch.status });
+  }
+  return {
+    action: 'GOOGLE_ACCOUNT_UI_OPEN',
+    launchStatus: launch.status,
+    launchOutput: `${launch.stdout}${launch.stderr}`.trim(),
+    accountsBefore: before.match(/Accounts:\s*(\d+)/)?.[1] ?? null,
+    uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 40) ?? []
+  };
+}
+
+async function playDiagnose() {
+  const runtime = discover();
+  await waitForBoot(runtime, 60000);
+  const state = readJSON(CONTROL_STATE);
+  const captureDir = state?.captureDir ?? null;
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const pkg = name => {
+    const dump = shell(['dumpsys', 'package', name]).stdout;
+    return {
+      installed: /Package \[|versionCode=|versionName=/.test(dump),
+      versionName: dump.match(/versionName=([^\s]+)/)?.[1] ?? null,
+      versionCode: dump.match(/versionCode=([^\s]+)/)?.[1] ?? null,
+      firstInstallTime: dump.match(/firstInstallTime=([^\n]+)/)?.[1]?.trim() ?? null,
+      lastUpdateTime: dump.match(/lastUpdateTime=([^\n]+)/)?.[1]?.trim() ?? null,
+      enabled: dump.match(/enabled=([^\s]+)/)?.[1] ?? null
+    };
+  };
+  const props = {};
+  for (const key of [
+    'ro.build.version.release','ro.build.version.sdk','ro.build.version.security_patch','ro.build.fingerprint',
+    'ro.product.model','ro.product.manufacturer','ro.product.device','ro.product.cpu.abi',
+    'ro.boot.verifiedbootstate','ro.boot.flash.locked','ro.kernel.qemu','ro.boot.qemu.avd_name',
+    'ro.build.tags','ro.build.type','ro.debuggable','ro.secure','persist.sys.timezone'
+  ]) props[key] = shell(['getprop', key]).stdout.trim() || null;
+  const epoch = shell(['date', '+%s']).stdout.trim();
+  const utcDate = shell(['date', '-u']).stdout.trim();
+  const autoTime = shell(['settings', 'get', 'global', 'auto_time']).stdout.trim();
+  const autoZone = shell(['settings', 'get', 'global', 'auto_time_zone']).stdout.trim();
+  const androidId = shell(['settings', 'get', 'secure', 'android_id']).stdout.trim();
+  const accounts = shell(['dumpsys', 'account']).stdout;
+  const connectivity = shell(['dumpsys', 'connectivity']).stdout;
+  const dnsProbe = shell(['ping', '-c', '1', '-W', '3', 'connectivitycheck.gstatic.com'], 10000);
+  const playCheck = shell(['pm', 'list', 'packages', '-i']).stdout.split(/\r?\n/)
+    .filter(line => /com\.android\.vending|com\.google\.android\.gms|com\.google\.android\.gsf/.test(line));
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '6000'], { env: runtime.env, allowFailure: true, timeout: 30000 }).stdout;
+  const authRx = /(Finsky|Vending|GoogleLogin|GoogleAuth|AuthManager|AccountManager|GLS|GmsAuth|GmsCore|Google Play services|checkin|Checkin|DroidGuard|SafetyNet|Integrity|PlayIntegrity|device.?cert|certification|OAuth|token|Token|signin|SignIn|auth|Auth|phenotype|conscrypt|SSL|TLS|network|Network)/i;
+  const authLines = logcat.split(/\r?\n/).filter(line => authRx.test(line)).slice(-1200);
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state?.sessionId ?? null,
+    foreground: shell(['dumpsys', 'activity', 'top']).stdout.split(/\r?\n/).filter(line => /ACTIVITY|mResumedActivity|topResumedActivity|com\.android\.vending/.test(line)).slice(0, 40),
+    clock: { hostEpochSeconds: Math.floor(Date.now() / 1000), guestEpochSeconds: Number(epoch) || null, guestUTC: utcDate || null, autoTime, autoTimeZone: autoZone },
+    network: { dnsProbeStatus: dnsProbe.status, dnsProbe: `${dnsProbe.stdout}${dnsProbe.stderr}`.trim(), connectivityMentions: connectivity.split(/\r?\n/).filter(line => /VALIDATED|INTERNET|WIFI|NetworkAgentInfo|Dns|dns/i.test(line)).slice(0, 120) },
+    properties: props,
+    androidId: androidId || null,
+    packages: {
+      playStore: pkg('com.android.vending'),
+      playServices: pkg('com.google.android.gms'),
+      googleServicesFramework: pkg('com.google.android.gsf')
+    },
+    packageInstallers: playCheck,
+    accountsSummary: accounts.split(/\r?\n/).filter(line => /Account \{|type=com\.google|Accounts:|User UserInfo|AuthenticatorDescription/i.test(line)).slice(0, 160),
+    authLogLines: authLines
+  };
+  if (captureDir) {
+    writeJSON(path.join(captureDir, 'google-play-auth-diagnostic.json'), result);
+    fs.writeFileSync(path.join(captureDir, 'google-play-auth-logcat.txt'), `${authLines.join('\n')}\n`);
+  }
+  return result;
 }
 
 function recursiveSize(root) {
@@ -1183,6 +1449,12 @@ async function main() {
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
   if (action === 'status') { json(await status()); return; }
+  if (action === 'play-diagnose') { json(await playDiagnose()); return; }
+  if (action === 'google-account-ui') { json(await googleAccountUI()); return; }
+  if (action === 'image-check') { json(imageCheck()); return; }
+  if (action === 'image-upgrade-start') { json(imageUpgradeStart()); return; }
+  if (action === 'image-upgrade-status') { json(imageUpgradeStatus()); return; }
+  if (action === 'image-upgrade-worker') { json(await imageUpgradeWorker()); return; }
   if (action === 'marker') { json(marker('stutter')); return; }
   if (action === 'match-entry') { json(marker('match-entry')); return; }
   if (action === 'combat-start') { json(marker('combat-start')); return; }

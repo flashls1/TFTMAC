@@ -474,8 +474,8 @@ INSERT INTO host_facts VALUES
 ('host_macos_build','macos_build','25G83',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T04:32:04Z',NULL),
 ('control_emulator','control_emulator_version','37.1.11',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T04:32:04Z','Released Google emulator control.'),
 ('control_platform_tools','control_platform_tools_version','37.0.1',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T04:32:04Z',NULL),
-('control_image','control_system_image','system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T04:32:04Z','Official Play-enabled ARM64 image.'),
-('control_image_revision','control_system_image_revision','6',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T04:32:04Z',NULL),
+('control_image','control_system_image','system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T08:46:32Z','Current official Play-enabled ARM64 image selected after 37.0 rev 6 reproduced a Google GMS MinuteMaid account-flow crash.'),
+('control_image_revision','control_system_image_revision','9',NULL,'PROJECT_LOCK','ssot/STACK.lock.yaml','FROZEN','2026-08-28T08:46:32Z','Google SDK catalog current stable android-37.1 Play ps16k ARM64 revision.'),
 ('control_package','tft_package','com.riotgames.league.teamfighttactics',NULL,'USER_REQUIREMENT','ssot/TFTMAC_DIRECT_PLAY_CONTROL_BUILD.md','FROZEN','2026-08-28T07:50:00Z','Official Google Play/Riot package authority only.');
 
 INSERT INTO runtime_configs (
@@ -486,7 +486,7 @@ INSERT INTO runtime_configs (
 ) VALUES (
     'control_stock_direct_v0',
     'Stock Google direct-play control v0',
-    '37.1.11','37.0.1','system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a',6,
+    '37.1.11','37.0.1','system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a',9,
     'TFTMAC_Live_API37','emulator-5592',5040,5592,6,6144,
     1920,1080,320,60.0,'host',1,
     'direct_native_emulator','CONTROL','2026-08-28T07:50:00Z',

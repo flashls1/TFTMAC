@@ -132,9 +132,17 @@ Known installed Google components:
 Android Emulator: 37.1.11
 Platform Tools: 37.0.1
 Play system image:
-  system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a
-Image revision: 6
+  system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a
+Image revision: 9
 Architecture: arm64-v8a
+
+Observed control drift on 2026-08-28:
+
+- the earlier official `android-37.0` Play ps16k ARM64 revision 6 guest booted and had validated Google connectivity, correct clock/timezone, working Play unauthenticated APIs, and successful Google account pre-checks;
+- Google Play Services then launched `com.google.android.gms/.auth.uiflows.minutemaid.MinuteMaidActivity`, which crashed and was force-finished back to the unauthenticated Play Store screen before any Google account was created;
+- the Google SDK catalog exposed the newer stable official `android-37.1` Play ps16k ARM64 image at revision 9;
+- the control therefore advances only the official guest image from 37.0 rev 6 to 37.1 rev 9 while keeping Emulator 37.1.11 and the frozen resource/display profile unchanged;
+- the failed 37.0 session is preserved as diagnostic evidence and is not performance truth.
 ```
 
 Known production/control AVD identity from the current stack:

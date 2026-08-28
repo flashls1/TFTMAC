@@ -6,7 +6,7 @@ private enum TFTMACControl {
     static let package = "com.riotgames.league.teamfighttactics"
     static let avdName = "TFTMAC_Live_API37"
     static let emulatorVersion = "37.1.11"
-    static let image = "system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a"
+    static let image = "system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a"
     static let serial = "emulator-5592"
     static let adbPort = 5040
     static let consolePort = 5592

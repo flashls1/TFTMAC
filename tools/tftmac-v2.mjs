@@ -59,10 +59,10 @@ const EXPECTED = Object.freeze({
     'emulator',
     'platforms;android-37.1',
     'build-tools;37.0.0',
-    'system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a'
+    'system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a'
   ],
-  playImagePackage: 'system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a',
-  minimumPlayImageRevision: 5,
+  playImagePackage: 'system-images;android-37.1;google_apis_playstore_ps16k;arm64-v8a',
+  minimumPlayImageRevision: 9,
   avdName: 'TFTMAC_Live_API37',
   aemuBranch: 'emu-master-dev',
   vulkanSDKVersion: '1.4.357.0',
@@ -526,7 +526,7 @@ async function phase0Android() {
   const api37CatalogResult = run(androidCli, [`--sdk=${SDK}`, 'sdk', 'list', '.*(37|Cinnamon).*', '--all', '--all-versions', '--canary'], { env, allowFailure: true, maxBuffer: 128 * 1024 * 1024 });
   await atomicWrite(join(SSOT, 'android-api37-catalog.txt'), `${api37CatalogResult.stdout}${api37CatalogResult.stderr}`);
   run(androidCli, [`--sdk=${SDK}`, 'sdk', 'install', 'platform-tools', 'emulator', 'build-tools/37.0.0'], { env, maxBuffer: 128 * 1024 * 1024 });
-  run(androidCli, [`--sdk=${SDK}`, 'sdk', 'install', '--canary', 'platforms/android-37.1', 'system-images/android-37.0/google_apis_playstore_ps16k/arm64-v8a'], { env, maxBuffer: 128 * 1024 * 1024 });
+  run(androidCli, [`--sdk=${SDK}`, 'sdk', 'install', '--canary', 'platforms/android-37.1', 'system-images/android-37.1/google_apis_playstore_ps16k/arm64-v8a'], { env, maxBuffer: 128 * 1024 * 1024 });
 
   const revisionAt = async relative => {
     const propertiesPath = join(SDK, relative, 'source.properties');
@@ -552,7 +552,7 @@ async function phase0Android() {
     'emulator': await revisionAt('emulator'),
     'platforms;android-37.1': platform37?.revision ?? null,
     'build-tools;37.0.0': await revisionAt('build-tools/37.0.0'),
-    [EXPECTED.playImagePackage]: await revisionAt('system-images/android-37.0/google_apis_playstore_ps16k/arm64-v8a')
+    [EXPECTED.playImagePackage]: await revisionAt('system-images/android-37.1/google_apis_playstore_ps16k/arm64-v8a')
   };
   const missingPackages = Object.entries(requiredVersions).filter(([, version]) => !version).map(([path]) => path);
   if (missingPackages.length) throw new Error(`required Android packages missing after install: ${missingPackages.join(', ')}`);
@@ -1575,7 +1575,7 @@ function directControl(action) {
 async function consumeDirectControlRequest() {
   if (!existsSync(DIRECT_CONTROL_REQUEST)) return null;
   const request = JSON.parse(await readFile(DIRECT_CONTROL_REQUEST, 'utf8'));
-  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'start', 'play-action', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'stop', 'package-state']);
+  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'start', 'play-action', 'play-diagnose', 'google-account-ui', 'image-check', 'image-upgrade-start', 'image-upgrade-status', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'stop', 'package-state']);
   if (!allowed.has(request?.action)) throw new Error(`DIRECT_CONTROL_ACTION_INVALID: ${request?.action ?? '<missing>'}`);
   await rm(DIRECT_CONTROL_REQUEST, { force: true });
   const startedAt = new Date().toISOString();
