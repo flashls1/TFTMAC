@@ -968,7 +968,8 @@ function marker(kind = 'stutter') {
   const definitions = {
     stutter: { event: 'MANUAL_STUTTER_MARKER', source: 'F8' },
     'match-entry': { event: 'MATCH_ENTRY', source: 'control-observation' },
-    'combat-start': { event: 'COMBAT_START', source: 'control-observation' }
+    'combat-start': { event: 'COMBAT_START', source: 'control-observation' },
+    'first-place': { event: 'MATCH_RESULT', source: 'user-observation', placement: 1, result: 'WIN' }
   };
   const definition = definitions[kind];
   if (!definition) throw new Error(`Unsupported marker kind: ${kind}`);
@@ -979,6 +980,11 @@ function marker(kind = 'stutter') {
     const session = readJSON(sessionPath, {});
     if (kind === 'match-entry') session.matchEntryObserved = true;
     if (kind === 'combat-start') session.combatObserved = true;
+    if (kind === 'first-place') {
+      session.matchResultObserved = true;
+      session.placement = 1;
+      session.result = 'WIN';
+    }
     writeJSON(sessionPath, session);
   }
   return { action: 'MARKER_RECORDED', kind, captureDir: state.captureDir, marker: event };
@@ -2566,6 +2572,7 @@ async function main() {
   if (action === 'marker') { json(marker('stutter')); return; }
   if (action === 'match-entry') { json(marker('match-entry')); return; }
   if (action === 'combat-start') { json(marker('combat-start')); return; }
+  if (action === 'first-place') { json(marker('first-place')); return; }
   if (action === 'stop') { json(await stopControl()); return; }
   if (action === 'package-state') { const r = discover(); json(packageState(r)); return; }
   if (action === 'sampler') {
