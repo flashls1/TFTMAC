@@ -591,6 +591,13 @@ INSERT OR REPLACE INTO experiments VALUES
 ('exp_tft_fps_cap_ab',NULL,'TFT FPS cap A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold graphics preset and Performance Mode constant; compare 60 versus None first, with 30 retained as a diagnostic lower-load control if needed.','2026-08-28T20:11:18Z',NULL,'Do not combine FPS-cap changes with graphics-preset changes.'),
 ('exp_tft_graphics_preset_ab',NULL,'TFT graphics preset A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold FPS cap and Performance Mode constant; test Low, Medium, High, Ultra High one preset at a time with native frame timing.','2026-08-28T20:11:18Z',NULL,'Target is the highest preset that preserves stable 60-Hz frame pacing and acceptable memory/GPU pressure.');
 
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('latest_observed_match_2','placement=1; result=WIN; exact result at 2026-08-28T20:57:14.054Z'),
+('latest_observed_match_2_settings','graphics=Medium; fps_cap=60; performance_mode_beta=OFF'),
+('latest_observed_match_2_quality','User reported gameplay much better and graphics visibly improved versus Game 1.'),
+('latest_observed_match_2_boundary','PARTIAL: exact MATCH_ENTRY missing; resource comparison uses TFT_APP_RESTART_COMPLETE at 2026-08-28T20:17:03.528Z as a non-authoritative start proxy.'),
+('latest_observed_match_2_directional_memory','Approximate window vs Game1: host compressed mean -0.783 GiB, host available mean +0.443 GiB, pageout delta difference -2236; emulator CPU/RSS were higher despite better perceived quality.');
+
 COMMIT;
 
 -- Recommended first queries after ingestion:

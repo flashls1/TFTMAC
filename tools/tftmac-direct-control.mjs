@@ -1045,6 +1045,198 @@ function gameSettings(graphicsPreset = 'UNKNOWN', fpsCap = 'UNKNOWN', performanc
   return { action: 'GAME_SETTINGS_RECORDED', captureDir: state.captureDir, settings: event };
 }
 
+function qualityReport(summary = 'Gameplay quality improved', comparison = 'previous match') {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const markersPath = path.join(state.captureDir, 'markers.jsonl');
+  const markers = readJSONL(markersPath);
+  const matchOrdinal = Math.max(1, markers.filter(row => row.event === 'MATCH_RESULT').length);
+  const event = {
+    utc: nowISO(),
+    host_mono_ns: monoNs().toString(),
+    event: 'USER_QUALITY_REPORT',
+    source: 'user-observation',
+    matchOrdinal,
+    summary: String(summary),
+    comparison: String(comparison)
+  };
+  appendJSONL(markersPath, event);
+  return { action: 'USER_QUALITY_REPORT_RECORDED', captureDir: state.captureDir, report: event };
+}
+
+function matchBoundaryProbe() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const file = path.join(state.captureDir, 'logcat.raw.txt');
+  if (!exists(file)) return { action: 'MATCH_BOUNDARY_PROBE', candidates: [], reason: 'logcat missing' };
+  const stat = fs.statSync(file);
+  const maxBytes = 32 * 1024 * 1024;
+  const start = Math.max(0, stat.size - maxBytes);
+  const length = stat.size - start;
+  const fd = fs.openSync(file, 'r');
+  let text = '';
+  try {
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, start);
+    text = buffer.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+  const lifecycle = /(match|game.?start|game.?end|round|stage|combat|battle|loading|lobby|queue|reconnect|player.*ready|activity.*resum|foreground|session)/i;
+  const owner = /(teamfighttactics|riotgames|unreal|gameactivity|tft)/i;
+  const candidates = text.split(/\r?\n/)
+    .filter(line => owner.test(line) && lifecycle.test(line))
+    .slice(-800);
+  const result = { action: 'MATCH_BOUNDARY_PROBE', observedAt: nowISO(), bytesScanned: length, candidates };
+  writeJSON(path.join(state.captureDir, 'match-boundary-probe.json'), result);
+  return result;
+}
+
+function analyzeApproximateLatestMatch() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const captureDir = state.captureDir;
+  const markers = readJSONL(path.join(captureDir, 'markers.jsonl'));
+  const hostEvents = readJSONL(path.join(captureDir, 'host-events.jsonl'));
+  const result = [...markers].reverse().find(row => row.event === 'MATCH_RESULT' && Number(row.matchOrdinal ?? 0) >= 2);
+  if (!result) throw new Error('No later MATCH_RESULT is available for approximate analysis.');
+  const endHostNs = Number(result.host_mono_ns);
+  const startEvent = [...hostEvents].reverse().find(row => row.event === 'TFT_APP_RESTART_COMPLETE' && Number(row.host_mono_ns) < endHostNs);
+  if (!startEvent) throw new Error('No TFT_APP_RESTART_COMPLETE boundary exists before the latest match result.');
+  const startHostNs = Number(startEvent.host_mono_ns);
+  if (!Number.isFinite(startHostNs) || !Number.isFinite(endHostNs) || endHostNs <= startHostNs) throw new Error('Approximate match boundary is invalid.');
+
+  const processRows = readJSONL(path.join(captureDir, 'host-process.jsonl')).filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= startHostNs && mono <= endHostNs;
+  });
+  const emulatorRows = processRows.filter(row => /qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? '')));
+  const cpuPercent = summarizeNumbers(emulatorRows.map(row => Number(row.cpu_pct)));
+  const rssMiB = summarizeNumbers(emulatorRows.map(row => Number(row.rss_kb) / 1024));
+
+  const memoryRows = readJSONL(path.join(captureDir, 'host-memory.jsonl')).filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= startHostNs && mono <= endHostNs;
+  });
+  const gib = 1024 ** 3;
+  const hostAvailableGiB = summarizeNumbers(memoryRows.map(row => Number(row.host_available_bytes) / gib));
+  const hostCompressedGiB = summarizeNumbers(memoryRows.map(row => Number(row.host_compressed_bytes) / gib));
+  const hostSwapUsedGiB = summarizeNumbers(memoryRows.map(row => Number(row.host_swap_used_bytes) / gib));
+  const guestAvailableGiB = summarizeNumbers(memoryRows.map(row => Number(row.guest_available_bytes) / gib));
+  const pageouts = memoryRows.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+  const pageoutDelta = pageouts.length > 1 ? pageouts.at(-1) - pageouts[0] : null;
+
+  const settings = [...markers].reverse().find(row => row.event === 'GAME_SETTINGS' && Number(row.host_mono_ns) <= endHostNs) ?? null;
+  const qualityReports = markers.filter(row => row.event === 'USER_QUALITY_REPORT' && Number(row.matchOrdinal) === Number(result.matchOrdinal));
+  const game1 = readJSON(path.join(captureDir, 'gameplay-analysis-match-1.json'), readJSON(path.join(captureDir, 'gameplay-analysis.json'), null));
+  const delta = (candidate, baseline) => Number.isFinite(candidate) && Number.isFinite(baseline) ? candidate - baseline : null;
+  const comparison = game1 ? {
+    emulatorCpuMeanDeltaPctPoints: delta(cpuPercent.mean, game1.hostEmulator?.cpuPercent?.mean),
+    emulatorCpuP95DeltaPctPoints: delta(cpuPercent.p95, game1.hostEmulator?.cpuPercent?.p95),
+    emulatorRssMeanDeltaMiB: delta(rssMiB.mean, game1.hostEmulator?.rssMiB?.mean),
+    emulatorRssP95DeltaMiB: delta(rssMiB.p95, game1.hostEmulator?.rssMiB?.p95),
+    hostCompressedMeanDeltaGiB: delta(hostCompressedGiB.mean, game1.memory?.hostCompressedGiB?.mean),
+    hostAvailableMeanDeltaGiB: delta(hostAvailableGiB.mean, game1.memory?.hostAvailableGiB?.mean),
+    pageoutDeltaDifference: delta(pageoutDelta, game1.memory?.pageoutDelta)
+  } : null;
+
+  const analysis = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    matchOrdinal: Number(result.matchOrdinal ?? 2),
+    placement: result.placement ?? null,
+    result: result.result ?? null,
+    boundaryAuthority: 'APP_RESTART_PROXY_NOT_MATCH_ENTRY',
+    semanticValidForExactMatchTiming: false,
+    startProxy: startEvent,
+    matchResult: result,
+    windowSeconds: (endHostNs - startHostNs) / 1e9,
+    gameSettings: settings ? { graphicsPreset: settings.graphicsPreset, fpsCap: settings.fpsCap, performanceModeBeta: settings.performanceModeBeta, observedAt: settings.utc } : null,
+    qualityReports,
+    hostEmulator: { sampleCount: emulatorRows.length, cpuPercent, rssMiB },
+    memory: { sampleCount: memoryRows.length, hostAvailableGiB, hostCompressedGiB, hostSwapUsedGiB, guestAvailableGiB, pageoutDelta },
+    comparisonToGame1: comparison,
+    caution: 'Start boundary is the TFT app-only restart, not a proven match-entry event. Use resource deltas as directional evidence only.'
+  };
+  writeJSON(path.join(captureDir, `gameplay-analysis-match-${analysis.matchOrdinal}-approx.json`), analysis);
+  return analysis;
+}
+
+function ingestApproximateLatestMatch() {
+  const analysis = analyzeApproximateLatestMatch();
+  const captureDir = readJSON(CONTROL_STATE)?.captureDir;
+  const databasePath = path.join(DIAGNOSTICS_ROOT, 'TFTMAC_PERFORMANCE_LAB.sqlite');
+  const schemaPath = labSchemaPath();
+  if (!schemaPath) throw new Error('TFTMAC performance-lab schema is unavailable.');
+  ensureDir(DIAGNOSTICS_ROOT);
+  const initialize = !exists(databasePath) || fs.statSync(databasePath).size === 0;
+  const db = new DatabaseSync(databasePath);
+  try {
+    if (initialize) db.exec(fs.readFileSync(schemaPath, 'utf8'));
+    db.exec('PRAGMA foreign_keys = ON;');
+    const configId = 'mactician_compatible_official_v0';
+    const labSessionId = `${analysis.sessionId}-match-${analysis.matchOrdinal}-approx`;
+    const packageInfo = readJSON(path.join(captureDir, 'package-state.json'), {});
+    const packageFile = path.join(captureDir, 'package-state.json');
+    const rendererFile = path.join(captureDir, 'renderer-state.json');
+    const summaryText = analysis.qualityReports.map(row => row.summary).join(' | ') || 'No user quality report';
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.prepare(`INSERT INTO sessions(
+        id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
+        package_name,package_version_name,package_version_code,package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+        package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET ended_utc=excluded.ended_utc,host_end_mono_ns=excluded.host_end_mono_ns,
+        capture_state=excluded.capture_state,semantic_valid=excluded.semantic_valid,invalid_reason=excluded.invalid_reason,notes=excluded.notes`)
+        .run(labSessionId,configId,analysis.startProxy.utc,analysis.matchResult.utc,Number(analysis.startProxy.host_mono_ns),Number(analysis.matchResult.host_mono_ns),
+          'WARM','MIXED',PACKAGE,packageInfo.versionName ?? null,packageInfo.versionCode ?? null,
+          exists(packageFile) ? sha256File(packageFile) : null,exists(rendererFile) ? sha256File(rendererFile) : null,null,
+          0,'PARTIAL',0,'Exact MATCH_ENTRY was not recorded; start boundary is TFT_APP_RESTART_COMPLETE.',
+          `Match ${analysis.matchOrdinal} placement=${analysis.placement}; settings=${analysis.gameSettings?.graphicsPreset ?? 'UNKNOWN'}/${analysis.gameSettings?.fpsCap ?? 'UNKNOWN'}/performance-${analysis.gameSettings?.performanceModeBeta ?? 'UNKNOWN'}; user=${summaryText}`);
+
+      db.prepare('DELETE FROM metrics WHERE session_id=?').run(labSessionId);
+      const metric = db.prepare('INSERT INTO metrics(session_id,experiment_id,metric_scope,metric_name,metric_value,unit,source_artifact_id,semantic_valid,notes) VALUES(?,?,?,?,?,?,?,?,?)');
+      const add = (scope,name,value,unit,valid=0,notes='Approximate restart-to-result window; exact match entry missing.') => { if (Number.isFinite(Number(value))) metric.run(labSessionId,null,scope,name,Number(value),unit,null,valid,notes); };
+      add('MATCH','placement',analysis.placement,'rank',1,'Exact user-observed match result.');
+      add('WINDOW','restart_to_result_duration',analysis.windowSeconds,'seconds');
+      add('HOST_CPU','emulator_cpu_mean',analysis.hostEmulator.cpuPercent.mean,'percent');
+      add('HOST_CPU','emulator_cpu_p95',analysis.hostEmulator.cpuPercent.p95,'percent');
+      add('MEMORY','emulator_rss_mean',analysis.hostEmulator.rssMiB.mean,'MiB');
+      add('MEMORY','emulator_rss_p95',analysis.hostEmulator.rssMiB.p95,'MiB');
+      add('MEMORY','host_available_mean',analysis.memory.hostAvailableGiB.mean,'GiB');
+      add('MEMORY','host_compressed_mean',analysis.memory.hostCompressedGiB.mean,'GiB');
+      add('MEMORY','pageout_delta',analysis.memory.pageoutDelta,'pages');
+      add('COMPARISON','host_compressed_mean_delta_vs_game1',analysis.comparisonToGame1?.hostCompressedMeanDeltaGiB,'GiB');
+      add('COMPARISON','host_available_mean_delta_vs_game1',analysis.comparisonToGame1?.hostAvailableMeanDeltaGiB,'GiB');
+      add('COMPARISON','pageout_delta_difference_vs_game1',analysis.comparisonToGame1?.pageoutDeltaDifference,'pages');
+
+      const evidence = db.prepare('INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+      evidence.run(`ev_match_${analysis.matchOrdinal}_user_quality`,null,labSessionId,null,'CONFIG_OBSERVATION',summaryText,'NEUTRAL','MODERATE',null,nowISO(),'Direct user observation; subjective quality signal, not quantitative FPS evidence.');
+      evidence.run(`ev_match_${analysis.matchOrdinal}_memory_direction`,'h_memory_pressure',labSessionId,null,'DIRECT_MEASUREMENT',
+        `Approximate restart-to-result window had host compressed mean ${analysis.memory.hostCompressedGiB.mean?.toFixed(2)} GiB and pageout delta ${analysis.memory.pageoutDelta}; vs Game1 deltas were ${analysis.comparisonToGame1?.hostCompressedMeanDeltaGiB?.toFixed(2)} GiB compressed and ${analysis.comparisonToGame1?.pageoutDeltaDifference} pageouts while user reported better gameplay.`,
+        'SUPPORTS','WEAK',null,nowISO(),'Directional only because exact Match2 entry marker is missing.');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('latest_partial_match_session', labSessionId);
+      db.exec('COMMIT;');
+    } catch (error) {
+      try { db.exec('ROLLBACK;'); } catch {}
+      throw error;
+    }
+    const summary = {
+      databasePath,
+      databaseSHA256: sha256File(databasePath),
+      session: db.prepare('SELECT id,capture_state,semantic_valid,invalid_reason,notes FROM sessions WHERE id=?').get(labSessionId),
+      metrics: db.prepare('SELECT metric_scope,metric_name,metric_value,unit,semantic_valid FROM metrics WHERE session_id=? ORDER BY metric_scope,metric_name').all(labSessionId),
+      evidence: db.prepare('SELECT id,hypothesis_id,claim,relation,strength FROM evidence WHERE session_id=? ORDER BY id').all(labSessionId)
+    };
+    writeJSON(path.join(captureDir, `lab-ingest-match-${analysis.matchOrdinal}-approx.json`), summary);
+    return summary;
+  } finally {
+    try { db.close(); } catch {}
+  }
+}
+
 function marker(kind = 'stutter') {
   const state = readJSON(CONTROL_STATE);
   if (!state?.captureDir) throw new Error('No active direct-control session.');
@@ -3207,6 +3399,10 @@ async function main() {
   if (action === 'image-upgrade-worker') { json(await imageUpgradeWorker()); return; }
   if (action === 'marker') { json(marker('stutter')); return; }
   if (action === 'game-settings') { json(gameSettings(args[0], args[1], args[2])); return; }
+  if (action === 'quality-report') { json(qualityReport(args[0], args[1])); return; }
+  if (action === 'match-boundary-probe') { json(matchBoundaryProbe()); return; }
+  if (action === 'analyze-approx-match') { json(analyzeApproximateLatestMatch()); return; }
+  if (action === 'ingest-approx-match') { json(ingestApproximateLatestMatch()); return; }
   if (action === 'match-entry') { json(marker('match-entry')); return; }
   if (action === 'combat-start') { json(marker('combat-start')); return; }
   if (action === 'first-place') { json(marker('first-place')); return; }

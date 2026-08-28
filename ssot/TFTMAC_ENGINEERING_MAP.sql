@@ -1228,6 +1228,26 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T19:57:30Z','Always-on logger guard','Made telemetry fail-closed for product-controlled gameplay: sampler survival is checked at startup, launch-game runs a growth test, match-entry/combat require fresh streams, and status exposes LOGGER_FAULT.',NULL),
 ('2026-08-28T19:57:30Z','Multi-match evidence retention','Changed continuous-capture analysis to pair each match independently and ingest later games as separate SQL sub-sessions instead of overwriting the first baseline.',NULL);
 
+-- ---------------------------------------------------------------------------
+-- Match 2 observation: second 1st-place result with improved perceived quality
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('latest_match_result','Match 2: placement 1 / WIN at 2026-08-28T20:57:14.054Z'),
+('latest_match_settings','Medium graphics / 60 FPS cap / Performance Mode Beta OFF'),
+('latest_match_quality','User reported gameplay much better and graphics visibly improved versus Game 1.'),
+('latest_match_boundary_quality','PARTIAL: exact MATCH_ENTRY was missed; restart-to-result window begins at TFT_APP_RESTART_COMPLETE 2026-08-28T20:17:03.528Z and must not be treated as exact match timing.'),
+('latest_match_directional_signal','Compared with Game1, the approximate Match2 window had host compressed-memory mean -0.783 GiB, host available-memory mean +0.443 GiB, and 2236 fewer pageouts, while emulator CPU/RSS were higher. Directional evidence supports host memory pressure as a candidate, not CPU saturation.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_game2_result','2026-08-28T20:57:14.054Z','gameplay_result','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/markers.jsonl',NULL,'Match 2 completed in 1st place; result marker is exact and logger gate was healthy at the finish.','DIRECT','Second consecutive observed 1st-place result on the TFTMAC runtime.'),
+('ev_game2_quality','2026-08-28T20:59:39.181Z','user_observation','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/markers.jsonl',NULL,'User reported Game 2 gameplay was much better and graphics were visibly improved versus Game 1.','DIRECT','Subjective quality signal; not quantitative FPS evidence.'),
+('ev_game2_memory_direction','2026-08-28T21:02:36Z','gameplay_telemetry','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis-match-2-approx.json',NULL,'Approximate app-restart-to-result window: host compressed mean 3.36 GiB and pageout delta 10640; versus Game1 this is -0.783 GiB compressed memory, +0.443 GiB available memory, and -2236 pageouts. Emulator CPU/RSS were higher despite better perceived gameplay.','STRONG','Directional only because Match2 exact entry marker is missing. Supports memory-pressure investigation and argues against aggregate CPU/RSS magnitude alone explaining quality.');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T20:57:14.054Z','Match 2 result','Recorded second 1st-place TFT result with logger healthy at finish.','ev_game2_result'),
+('2026-08-28T20:59:39.181Z','Match 2 user quality','Recorded materially better gameplay and graphics versus Game 1.','ev_game2_quality'),
+('2026-08-28T21:02:36Z','Match 2 directional resource comparison','Recorded lower host compression/pageouts alongside better perceived quality; exact match timing remains partial because MATCH_ENTRY was missed.','ev_game2_memory_direction');
+
 COMMIT;
 
 -- Recommended queries during every future work session:
