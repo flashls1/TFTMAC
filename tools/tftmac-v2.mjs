@@ -45,6 +45,7 @@ const PHASE1_BUILD_LOG_ROOT = join(BUILD, 'logs');
 const PHASE1_BUILD_STDOUT = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stdout.log');
 const PHASE1_BUILD_STDERR = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stderr.log');
 const PHASE1_AEMU_ALIAS = '/private/tmp/tftmac-aemu';
+const DIRECT_CONTROL_REQUEST = join(REPO, '.tftmac-direct-control-request.json');
 
 const EXPECTED = Object.freeze({
   architecture: 'arm64',
@@ -582,12 +583,12 @@ async function phase0Android() {
     'hw.device.name': 'pixel_tablet',
     'hw.initialOrientation': 'Landscape',
     'hw.cpu.arch': 'arm64',
-    'hw.cpu.ncore': '8',
-    'hw.ramSize': '8192',
+    'hw.cpu.ncore': '6',
+    'hw.ramSize': '6144',
     'hw.vmHeapSize': '768',
     'hw.lcd.width': '1920',
     'hw.lcd.height': '1080',
-    'hw.lcd.density': '280',
+    'hw.lcd.density': '320',
     'hw.gpu.enabled': 'yes',
     'hw.gpu.mode': 'host',
     'hw.audioInput': 'yes',
@@ -1567,8 +1568,48 @@ async function validateEngineeringMap() {
   }
 }
 
+function directControl(action) {
+  return runInherited(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), action]);
+}
+
+async function consumeDirectControlRequest() {
+  if (!existsSync(DIRECT_CONTROL_REQUEST)) return null;
+  const request = JSON.parse(await readFile(DIRECT_CONTROL_REQUEST, 'utf8'));
+  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'start', 'play-action', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'stop', 'package-state']);
+  if (!allowed.has(request?.action)) throw new Error(`DIRECT_CONTROL_ACTION_INVALID: ${request?.action ?? '<missing>'}`);
+  await rm(DIRECT_CONTROL_REQUEST, { force: true });
+  const startedAt = new Date().toISOString();
+  const result = run(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), request.action], {
+    allowFailure: true,
+    timeout: 900000,
+    maxBuffer: 128 * 1024 * 1024
+  });
+  let parsed = null;
+  try { parsed = JSON.parse(result.stdout); } catch {}
+  return {
+    action: request.action,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    exitCode: result.status,
+    result: parsed,
+    stdout: parsed ? null : result.stdout.trim() || null,
+    stderr: result.stderr.trim() || null
+  };
+}
+
 async function status() {
   await ensureRoots();
+  const directControlResult = await consumeDirectControlRequest();
+  if (directControlResult) {
+    console.log(JSON.stringify({
+      appRoot: APP,
+      buildRoot: BUILD,
+      runtimeRoot: RUNTIME,
+      repository: REPO,
+      directControlResult
+    }, null, 2));
+    return;
+  }
   const paths = [
     'STACK.lock.yaml', 'host-preflight.json', 'android-sdk-packages.txt', 'tool-versions.txt',
     'source-hashes.txt', 'guestangle-authority.json', 'vulkan-required-cases.txt', 'preflight-report.md',
@@ -1676,6 +1717,7 @@ async function status() {
     runtimeRoot: RUNTIME,
     runtimeRootSource: process.env.TFTMAC_RUNTIME_ROOT ? 'TFTMAC_RUNTIME_ROOT' : 'default-external',
     repository: REPO,
+    directControlResult,
     sourceWorker: sourceWorker ? { ...sourceWorker, alive: sourceWorkerAlive, observedStatus: sourceWorkerObservedStatus } : null,
     phase1BuildWorker: phase1BuildWorker ? { ...phase1BuildWorker, alive: phase1BuildAlive, observedStatus: phase1BuildObservedStatus } : null,
     phase1BuildLogTail,
@@ -1699,6 +1741,15 @@ try {
     case 'phase1-build': await phase1Build(); break;
     case 'phase1-build-worker': await phase1BuildWorker(); break;
     case 'cleanup-sandbox-bootstrap': await cleanupSandboxBootstrap(); break;
+    case 'direct-inventory': directControl('inventory'); break;
+    case 'direct-build': directControl('build'); break;
+    case 'direct-launch-app': directControl('launch-app'); break;
+    case 'direct-start': directControl('start'); break;
+    case 'direct-play-action': directControl('play-action'); break;
+    case 'direct-launch-game': directControl('launch-game'); break;
+    case 'direct-status': directControl('status'); break;
+    case 'direct-stop': directControl('stop'); break;
+    case 'direct-package-state': directControl('package-state'); break;
     case 'status': await status(); break;
     default: die(`unknown action: ${action}`);
   }

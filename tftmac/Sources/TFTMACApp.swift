@@ -2,318 +2,210 @@ import AppKit
 import Foundation
 import SwiftUI
 
-private enum TFTMACRuntime {
+private enum TFTMACControl {
     static let package = "com.riotgames.league.teamfighttactics"
-    static let component = "com.riotgames.league.teamfighttactics/com.riotgames.leagueoflegends.RiotNativeActivity"
-    static let avdName = "TftHighEndTablet"
+    static let avdName = "TFTMAC_Live_API37"
+    static let emulatorVersion = "37.1.11"
+    static let image = "system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a"
     static let serial = "emulator-5592"
-    static let adbPort = "5040"
-
-    static var root: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
-    }
-
-    static var sdk: URL { root.appendingPathComponent("sdk", isDirectory: true) }
-    static var avdHome: URL { root.appendingPathComponent("avd", isDirectory: true) }
-    static var adb: URL { sdk.appendingPathComponent("platform-tools/adb") }
-    static var emulator: URL { sdk.appendingPathComponent("emulator/emulator") }
-    static var log: URL { root.appendingPathComponent("TFTMAC.log") }
+    static let adbPort = 5040
+    static let consolePort = 5592
+    static let vCPU = 6
+    static let memoryMB = 6144
+    static let width = 1920
+    static let height = 1080
+    static let density = 320
+    static let refreshHz = 60
+    static let runtimeRoot = "/Volumes/MAC MINI M4/TFTMAC/Runtime"
 }
 
-enum TFTMACRendererProfile: String, CaseIterable, Identifiable {
-    case enhanced
-    case compatibility
+private struct HelperResponse {
+    let action: String
+    let values: [String: Any]
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .enhanced: "Enhanced — ES 3.2 / ANGLE / Metal"
-        case .compatibility: "Compatibility — Stock Google Emulator"
+    var actionValue: String? { values["action"] as? String }
+    var captureDir: String? { values["captureDir"] as? String }
+    var packageState: String? {
+        if let package = values["package"] as? [String: Any] {
+            return package["state"] as? String
         }
+        return values["packageState"] as? String
     }
+}
 
-    var emulatorFlags: [String] {
+private enum ControlError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
         switch self {
-        case .enhanced:
-            return [
-                "-feature", "GLESDynamicVersion,Vulkan,GuestAngle,-GLPipeChecksum,AsyncComposeSupport,VirtioGpuFenceContexts",
-                "-append-userspace-opt", "androidboot.opengles.version=196610"
-            ]
-        case .compatibility:
-            return []
+        case let .message(value): return value
         }
     }
 }
 
-enum TFTMACGraphicsPreset: String, CaseIterable, Identifiable {
-    case balanced
-    case quality
-    case ultra
-    case fourK
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .balanced: "Enhanced 1080p — Target"
-        case .quality: "1440p — Experimental"
-        case .ultra: "1800p — Experimental"
-        case .fourK: "4K — Experimental"
-        }
+private enum DirectControlHelper {
+    static var script: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("tftmac-direct-control.mjs")
     }
 
-    var size: String {
-        switch self {
-        case .balanced: "1920x1080"
-        case .quality: "2560x1440"
-        case .ultra: "3200x1800"
-        case .fourK: "3840x2160"
-        }
+    static var node: URL? {
+        let candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node"]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map(URL.init(fileURLWithPath:))
     }
 
-    var density: Int {
-        switch self {
-        case .balanced: 280
-        case .quality: 416
-        case .ultra: 520
-        case .fourK: 640
+    static func run(_ action: String) throws -> HelperResponse {
+        guard FileManager.default.fileExists(atPath: TFTMACControl.runtimeRoot) else {
+            throw ControlError.message("External TFTMAC runtime volume is not mounted: \(TFTMACControl.runtimeRoot)")
         }
-    }
+        guard let script, FileManager.default.fileExists(atPath: script.path) else {
+            throw ControlError.message("TFTMAC direct-control helper is missing from the app bundle.")
+        }
+        guard let node else {
+            throw ControlError.message("Node.js is required by this control build and was not found.")
+        }
 
-    var cpuCores: Int {
-        switch self {
-        case .balanced: 8
-        case .quality: 6
-        case .ultra, .fourK: 8
-        }
-    }
+        let process = Process()
+        let output = Pipe()
+        let errors = Pipe()
+        process.executableURL = node
+        process.arguments = [script.path, action]
+        process.standardOutput = output
+        process.standardError = errors
+        process.environment = ProcessInfo.processInfo.environment
+        try process.run()
+        process.waitUntilExit()
 
-    var memoryMB: Int {
-        switch self {
-        case .balanced: 8192
-        case .quality: 6144
-        case .ultra, .fourK: 8192
+        let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ControlError.message(detail.isEmpty ? "Direct-control action failed with status \(process.terminationStatus)." : detail)
         }
+        guard let data = stdout.data(using: .utf8),
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ControlError.message("Direct-control helper returned invalid state.")
+        }
+        return HelperResponse(action: action, values: object)
     }
 }
 
 @MainActor
 final class TFTMACModel: ObservableObject {
-    @Published var status = "Ready"
-    @Published var detail = "TFTMAC runs Riot's official Google Play client in a high-end tablet runtime tuned for Apple Silicon."
+    @Published var status = "Direct-play control ready"
+    @Published var detail = "Stock Google Emulator + official Google Play/Riot TFT. Capture starts before Android and before TFT."
     @Published var busy = false
+    @Published var captureActive = false
     @Published var gameRunning = false
-    @Published var selectedGraphicsPreset: TFTMACGraphicsPreset = .balanced
-    @Published var selectedRendererProfile: TFTMACRendererProfile = .enhanced
+    @Published var capturePath: String?
 
-    private let worker = DispatchQueue(label: "com.flashls1.tftmac.runtime", qos: .userInitiated)
+    private let worker = DispatchQueue(label: "com.flashls1.tftmac.direct-control", qos: .userInitiated)
 
-    func launch() {
-        guard !busy else { return }
-        let preset = selectedGraphicsPreset
-        let renderer = selectedRendererProfile
-        busy = true
-        status = "Starting Android…"
-        detail = "Booting \(preset.title) with \(renderer.title)."
-        worker.async { [weak self] in
-            do {
-                try Self.ensureRuntime()
-                try Self.startADBServer()
-                if !Self.deviceIsReady() {
-                    try Self.startEmulator(preset: preset, renderer: renderer)
-                }
-                try Self.waitFor("Android device", timeout: 240) { Self.deviceIsReady() }
-                try Self.waitFor("Android boot", timeout: 240) {
-                    Self.adbOutput(["shell", "getprop", "sys.boot_completed"])
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == "1"
-                }
-                _ = try Self.runADB(["shell", "wm", "size", preset.size])
-                _ = try Self.runADB(["shell", "wm", "density", "\(preset.density)"])
-                guard Self.adbOutput(["shell", "pm", "path", TFTMACRuntime.package]).contains("package:") else {
-                    throw RuntimeError.message("TFT is not installed. Open Google Play and install TFT from Riot Games.")
-                }
-                _ = try Self.runADB(["shell", "pm", "enable", "--user", "0", TFTMACRuntime.package])
-                _ = try Self.runADB(["shell", "am", "start", "-W", "--user", "0", "-n", TFTMACRuntime.component])
-                try Self.waitFor("TFT", timeout: 120) {
-                    !Self.adbOutput(["shell", "pidof", TFTMACRuntime.package]).isEmpty
-                }
-                DispatchQueue.main.async {
-                    self?.busy = false
-                    self?.gameRunning = true
-                    self?.status = "TFT is running"
-                    self?.detail = "Sign into Riot inside TFT. Your Google and Riot credentials stay inside the Android/TFT environment."
-                }
-            } catch {
-                Self.appendLog("Launch failed: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self?.busy = false
-                    self?.gameRunning = false
-                    self?.status = "Couldn’t start TFT"
-                    self?.detail = error.localizedDescription
-                }
+    func refresh() {
+        perform(action: "status", working: "Reading control state…") { response in
+            self.captureActive = (response.values["activeSession"] as? [String: Any]) != nil
+            self.gameRunning = response.values["tftPid"] != nil && !(response.values["tftPid"] is NSNull)
+            if let active = response.values["activeSession"] as? [String: Any] {
+                self.capturePath = active["captureDir"] as? String
             }
+            self.status = self.gameRunning ? "TFT is running — capture active" : (self.captureActive ? "Control capture active" : "Direct-play control ready")
+            self.detail = self.captureActive
+                ? "Telemetry is append-only and active. Use Google Play / Update before Play TFT if an update is offered."
+                : "Start Control before opening Google Play or TFT so the full session is captured."
+        }
+    }
+
+    func startControl() {
+        perform(action: "start", working: "Starting capture before Android…") { response in
+            self.captureActive = true
+            self.capturePath = response.captureDir
+            self.status = "Control capture active"
+            let packageState = response.packageState ?? "unknown"
+            self.detail = "Android is ready. Official TFT package state: \(packageState). Next: Google Play / Update."
         }
     }
 
     func openGooglePlay() {
-        guard !busy else { return }
-        busy = true
-        status = "Opening Google Play…"
-        detail = "Use Google Play to install or update Riot's official TFT client."
+        guard captureActive else {
+            status = "Start Control first"
+            detail = "The logger must be active before package/update and TFT launch for Control 0."
+            return
+        }
+        perform(action: "play-action", working: "Checking official TFT in Google Play…") { response in
+            switch response.actionValue {
+            case "AUTH_REQUIRED":
+                self.status = "Google authentication required"
+                self.detail = "Authenticate directly inside Google Play, then press Google Play / Update again. TFTMAC does not read or store your credentials."
+            case "INSTALLED", "UPDATED", "CURRENT_OBSERVED":
+                self.status = "Official TFT is current"
+                self.detail = "Google Play is authoritative and no Update action remains. You can launch TFT."
+            default:
+                self.status = "Google Play state: \(response.actionValue ?? "observed")"
+                self.detail = "The official Play flow is still resolving."
+            }
+        }
+    }
+
+    func launchTFT() {
+        guard captureActive else {
+            status = "Start Control first"
+            detail = "TFT launch is blocked until the logger is active."
+            return
+        }
+        perform(action: "launch-game", working: "Launching official TFT…") { response in
+            self.gameRunning = response.values["pid"] != nil
+            if response.actionValue == "RIOT_AUTH_POSSIBLE" {
+                self.status = "Riot authentication required"
+                self.detail = "Authenticate directly inside TFT. After authentication, enter a live match and keep this capture running."
+            } else {
+                self.status = "TFT is running — capture active"
+                self.detail = "Enter a current live match and play through combat. Press F8 for a manual stutter marker if needed."
+            }
+        }
+    }
+
+    func markStutter() {
+        guard captureActive else { return }
+        perform(action: "marker", working: nil, showBusy: false) { _ in
+            self.status = "Stutter marker recorded"
+            self.detail = "F8 marker written into the active control capture."
+        }
+    }
+
+    func stopAndSave() {
+        guard captureActive else { return }
+        perform(action: "stop", working: "Finalizing control capture…") { response in
+            self.captureActive = false
+            self.gameRunning = false
+            self.capturePath = response.captureDir ?? self.capturePath
+            self.status = "Control capture finalized"
+            self.detail = "Raw evidence, package/renderer state, frame metrics, manifest, and normalized lab state were saved."
+        }
+    }
+
+    private func perform(
+        action: String,
+        working: String?,
+        showBusy: Bool = true,
+        success: @escaping @MainActor (HelperResponse) -> Void
+    ) {
+        guard !busy || !showBusy else { return }
+        if showBusy { busy = true }
+        if let working { status = working }
         worker.async { [weak self] in
             do {
-                try Self.ensureRuntime()
-                try Self.startADBServer()
-                if !Self.deviceIsReady() { try Self.startEmulator() }
-                try Self.waitFor("Android device", timeout: 240) { Self.deviceIsReady() }
-                try Self.waitFor("Android boot", timeout: 240) {
-                    Self.adbOutput(["shell", "getprop", "sys.boot_completed"])
-                        .trimmingCharacters(in: .whitespacesAndNewlines) == "1"
-                }
-                _ = try Self.runADB([
-                    "shell", "am", "start", "-a", "android.intent.action.VIEW",
-                    "-d", "market://details?id=\(TFTMACRuntime.package)"
-                ])
+                let response = try DirectControlHelper.run(action)
                 DispatchQueue.main.async {
-                    self?.busy = false
-                    self?.status = "Google Play is open"
-                    self?.detail = "Install or update TFT from Riot Games, then press Play TFT."
+                    if showBusy { self?.busy = false }
+                    success(response)
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.busy = false
-                    self?.status = "Couldn’t open Google Play"
+                    if showBusy { self?.busy = false }
+                    self?.status = "Direct-control action failed"
                     self?.detail = error.localizedDescription
                 }
             }
         }
-    }
-
-    func stop() {
-        worker.async { [weak self] in
-            _ = try? Self.runADB(["emu", "kill"])
-            DispatchQueue.main.async {
-                self?.busy = false
-                self?.gameRunning = false
-                self?.status = "Android stopped"
-                self?.detail = "Press Play TFT to start it again."
-            }
-        }
-    }
-
-    nonisolated private static func ensureRuntime() throws {
-        let fm = FileManager.default
-        guard fm.isExecutableFile(atPath: TFTMACRuntime.adb.path),
-              fm.isExecutableFile(atPath: TFTMACRuntime.emulator.path),
-              fm.fileExists(atPath: TFTMACRuntime.avdHome.appendingPathComponent("\(TFTMACRuntime.avdName).ini").path) else {
-            throw RuntimeError.message("TFTMAC runtime is not installed. Re-run the local TFTMAC setup from the project.")
-        }
-    }
-
-    nonisolated private static func environment() -> [String: String] {
-        ProcessInfo.processInfo.environment.merging([
-            "ANDROID_SDK_ROOT": TFTMACRuntime.sdk.path,
-            "ANDROID_AVD_HOME": TFTMACRuntime.avdHome.path,
-            "ANDROID_ADB_SERVER_PORT": TFTMACRuntime.adbPort,
-            "ADB_MDNS_AUTO_CONNECT": ""
-        ]) { _, new in new }
-    }
-
-    nonisolated private static func startADBServer() throws {
-        _ = try run(TFTMACRuntime.adb, ["-P", TFTMACRuntime.adbPort, "start-server"])
-    }
-
-    nonisolated private static func startEmulator(
-        preset: TFTMACGraphicsPreset = .balanced,
-        renderer: TFTMACRendererProfile = .enhanced
-    ) throws {
-        let fm = FileManager.default
-        try fm.createDirectory(at: TFTMACRuntime.root, withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: TFTMACRuntime.log.path) {
-            fm.createFile(atPath: TFTMACRuntime.log.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: TFTMACRuntime.log)
-        try handle.seekToEnd()
-        let process = Process()
-        process.executableURL = TFTMACRuntime.emulator
-        process.arguments = [
-            "@\(TFTMACRuntime.avdName)", "-id", "TFTMAC-High-End-Tablet", "-port", "5592",
-            "-gpu", "host", "-skin", preset.size, "-cores", "\(preset.cpuCores)", "-memory", "\(preset.memoryMB)",
-            "-no-snapshot", "-no-metrics", "-no-boot-anim", "-crash-report-mode", "disabled"
-        ] + renderer.emulatorFlags
-        process.environment = environment()
-        process.standardOutput = handle
-        process.standardError = handle
-        try process.run()
-        appendLog("Emulator started pid=\(process.processIdentifier)")
-    }
-
-    nonisolated private static func deviceIsReady() -> Bool {
-        adbOutput(["get-state"]) == "device"
-    }
-
-    nonisolated private static func adbOutput(_ args: [String]) -> String {
-        (try? runADB(args))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    @discardableResult
-    nonisolated private static func runADB(_ args: [String]) throws -> String {
-        try run(TFTMACRuntime.adb, ["-P", TFTMACRuntime.adbPort, "-s", TFTMACRuntime.serial] + args)
-    }
-
-    nonisolated private static func run(_ executable: URL, _ args: [String]) throws -> String {
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.executableURL = executable
-        process.arguments = args
-        process.environment = environment()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        try process.run()
-        let out = stdout.fileHandleForReading.readDataToEndOfFile()
-        let err = stderr.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let output = String(data: out, encoding: .utf8) ?? ""
-        let errorOutput = String(data: err, encoding: .utf8) ?? ""
-        guard process.terminationStatus == 0 else {
-            throw RuntimeError.message(errorOutput.isEmpty ? "Command failed with status \(process.terminationStatus)." : errorOutput)
-        }
-        return output
-    }
-
-    nonisolated private static func waitFor(_ name: String, timeout: TimeInterval, condition: () -> Bool) throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return }
-            Thread.sleep(forTimeInterval: 1)
-        }
-        throw RuntimeError.message("Timed out waiting for \(name).")
-    }
-
-    nonisolated private static func appendLog(_ message: String) {
-        let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        let fm = FileManager.default
-        try? fm.createDirectory(at: TFTMACRuntime.root, withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: TFTMACRuntime.log.path) {
-            fm.createFile(atPath: TFTMACRuntime.log.path, contents: data)
-            return
-        }
-        if let handle = try? FileHandle(forWritingTo: TFTMACRuntime.log) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-        }
-    }
-}
-
-private enum RuntimeError: LocalizedError {
-    case message(String)
-    var errorDescription: String? {
-        switch self { case let .message(value): value }
     }
 }
 
@@ -321,16 +213,16 @@ struct TFTMACView: View {
     @ObservedObject var model: TFTMACModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text("TFTMAC")
                     .font(.system(size: 34, weight: .bold, design: .rounded))
-                Text("Live Teamfight Tactics on Apple Silicon")
+                Text("Direct Play Control 0")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(model.status)
                         .font(.system(size: 18, weight: .semibold))
@@ -341,9 +233,12 @@ struct TFTMACView: View {
                 }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("1920 × 1080")
+                    Text("1920 × 1080 @ 60")
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    Text("280 DPI · Tablet class · Metal accelerated")
+                    Text("320 DPI · 6 vCPU · 6144 MB")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text("Stock host GPU · direct window")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -353,36 +248,51 @@ struct TFTMACView: View {
             .background(.quaternary.opacity(0.35))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Graphics engine")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Frozen runtime")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Picker("Graphics engine", selection: $model.selectedRendererProfile) {
-                    Text("Enhanced 1080p").tag(TFTMACRendererProfile.enhanced)
-                    Text("Compatibility 1080p").tag(TFTMACRendererProfile.compatibility)
-                }
-                .pickerStyle(.segmented)
-                .disabled(model.busy || model.gameRunning)
+                Text("Google Emulator \(TFTMACControl.emulatorVersion) · API 37 Play ARM64 · \(TFTMACControl.avdName)")
+                    .font(.system(size: 12, design: .monospaced))
+                Text("Package authority: Google Play / Riot only")
+                    .font(.system(size: 12, weight: .medium))
             }
 
-            HStack(spacing: 12) {
-                Button("Play TFT") { model.launch() }
+            HStack(spacing: 10) {
+                Button("1  Start Control") { model.startControl() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.busy)
-                Button("Google Play / Update") { model.openGooglePlay() }
-                    .disabled(model.busy)
-                Button("Stop Android") { model.stop() }
+                    .disabled(model.busy || model.captureActive)
+                Button("2  Google Play / Update") { model.openGooglePlay() }
+                    .disabled(model.busy || !model.captureActive)
+                Button("3  Play TFT") { model.launchTFT() }
+                    .disabled(model.busy || !model.captureActive)
+                Button("Stop & Save") { model.stopAndSave() }
+                    .disabled(model.busy || !model.captureActive)
+            }
+
+            if let path = model.capturePath {
+                Text(path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
             }
 
             Spacer()
 
-            Text("Official Riot client • Installed by Google Play • No Riot binary modification")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.tertiary)
+            HStack {
+                Text("Official Riot client · no hosted feed · no bundled/community TFT package")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Text("F8 = stutter marker")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(28)
-        .frame(width: 650, height: 410)
-        .onAppear { model.launch() }
+        .frame(width: 760, height: 430)
+        .onAppear { model.refresh() }
     }
 }
 
@@ -393,7 +303,13 @@ struct TFTMACApp: App {
     var body: some Scene {
         WindowGroup("TFTMAC") {
             TFTMACView(model: model)
-                .frame(minWidth: 620, minHeight: 330)
+                .frame(minWidth: 720, minHeight: 390)
+        }
+        .commands {
+            CommandMenu("Control") {
+                Button("Mark Stutter") { model.markStutter() }
+                    .keyboardShortcut(KeyEquivalent(Character("\u{F70B}")), modifiers: [])
+            }
         }
     }
 }
