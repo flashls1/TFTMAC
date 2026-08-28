@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, existsSync, openSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -25,7 +25,8 @@ const APP = join(USER_HOME, 'Library', 'Application Support', 'TFTMAC');
 const DEFAULT_BUILD_VOLUME = '/Volumes/MAC MINI M4';
 const DEFAULT_BUILD_ROOT = join(DEFAULT_BUILD_VOLUME, 'TFTMAC', 'Build');
 const BUILD = resolve(process.env.TFTMAC_BUILD_ROOT ?? DEFAULT_BUILD_ROOT);
-const RUNTIME = join(APP, 'Runtime');
+const DEFAULT_RUNTIME_ROOT = join(DEFAULT_BUILD_VOLUME, 'TFTMAC', 'Runtime');
+const RUNTIME = resolve(process.env.TFTMAC_RUNTIME_ROOT ?? DEFAULT_RUNTIME_ROOT);
 const SDK = join(RUNTIME, 'SDK');
 const AVD_HOME = join(RUNTIME, 'AVD');
 const PACKAGES = join(RUNTIME, 'Packages');
@@ -49,7 +50,7 @@ const EXPECTED = Object.freeze({
   androidPackages: [
     'platform-tools',
     'emulator',
-    'platforms;android-37',
+    'platforms;android-37.1',
     'build-tools;37.0.0',
     'system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a'
   ],
@@ -148,8 +149,10 @@ async function atomicWrite(path, content) {
 }
 
 async function ensureRoots() {
-  if (!process.env.TFTMAC_BUILD_ROOT && !existsSync(DEFAULT_BUILD_VOLUME)) {
-    die(`TFTMAC_BUILD_VOLUME_REQUIRED: ${DEFAULT_BUILD_VOLUME} is not mounted; refusing to fall back to the internal disk.`, 17);
+  const usesDefaultExternalBuild = !process.env.TFTMAC_BUILD_ROOT;
+  const usesDefaultExternalRuntime = !process.env.TFTMAC_RUNTIME_ROOT;
+  if ((usesDefaultExternalBuild || usesDefaultExternalRuntime) && !existsSync(DEFAULT_BUILD_VOLUME)) {
+    die(`TFTMAC_EXTERNAL_VOLUME_REQUIRED: ${DEFAULT_BUILD_VOLUME} is not mounted; refusing to create Build or Runtime data on the internal disk.`, 17);
   }
   for (const path of [BUILD, SDK, AVD_HOME, PACKAGES, PROBES, MANIFESTS, LOGS, DIAGNOSTICS, ROLLBACK, SSOT]) {
     await mkdir(path, { recursive: true });
@@ -165,10 +168,18 @@ function parseXcode(text) {
 function discoverInstalledXcodes() {
   const applications = '/Applications';
   const listing = run('/bin/ls', ['-1', applications], { allowFailure: true }).stdout.split(/\r?\n/).filter(Boolean);
-  const candidates = listing.filter(name => /^Xcode.*\.app$/i.test(name));
+  const applicationCandidates = listing.filter(name => /^Xcode.*\.app$/i.test(name)).map(name => join(applications, name));
+  const spotlight = run('/usr/bin/mdfind', ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"], { allowFailure: true }).stdout
+    .split(/\r?\n/).map(value => value.trim()).filter(value => /Xcode.*\.app$/i.test(value));
+  const candidateApps = [...new Set([
+    ...applicationCandidates,
+    ...spotlight,
+    join(USER_HOME, 'Downloads', 'Xcode.app'),
+    join(USER_HOME, 'Applications', 'Xcode.app')
+  ])];
   const discovered = [];
-  for (const name of candidates) {
-    const app = join(applications, name);
+  for (const app of candidateApps) {
+    if (!existsSync(app)) continue;
     const developerDir = join(app, 'Contents', 'Developer');
     if (!existsSync(developerDir)) continue;
     const result = run('/usr/bin/xcodebuild', ['-version'], {
@@ -434,11 +445,14 @@ async function installCommandLineTools() {
 async function seedPreviouslyAcceptedAndroidLicenses() {
   const target = join(SDK, 'licenses');
   if (existsSync(join(target, 'android-sdk-license'))) return { seeded: false, source: 'already-local' };
-  const candidates = [
+  const spotlightLicenses = run('/usr/bin/mdfind', ["kMDItemFSName == 'android-sdk-license'"], { allowFailure: true }).stdout
+    .split(/\r?\n/).map(value => value.trim()).filter(Boolean).map(path => dirname(dirname(path)));
+  const candidates = [...new Set([
     process.env.ANDROID_SDK_ROOT,
     process.env.ANDROID_HOME,
-    join(homedir(), 'Library', 'Android', 'sdk')
-  ].filter(Boolean);
+    join(USER_HOME, 'Library', 'Android', 'sdk'),
+    ...spotlightLicenses
+  ].filter(Boolean))];
   for (const candidate of candidates) {
     const source = join(candidate, 'licenses');
     if (!existsSync(join(source, 'android-sdk-license'))) continue;
@@ -452,9 +466,26 @@ async function seedPreviouslyAcceptedAndroidLicenses() {
   return { seeded: false, source: null };
 }
 
+function resolveJavaHome() {
+  const tool = run('/usr/libexec/java_home', ['-v', '17'], { allowFailure: true }).stdout.trim();
+  const candidates = [
+    process.env.JAVA_HOME,
+    tool,
+    '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home',
+    '/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home',
+    '/Applications/Android Studio.app/Contents/jbr/Contents/Home',
+    '/Applications/Android Studio.app/Contents/jre/Contents/Home'
+  ].filter(Boolean);
+  return candidates.find(home => existsSync(join(home, 'bin', 'java'))) ?? null;
+}
+
 function androidEnv() {
+  const javaHome = resolveJavaHome();
+  if (!javaHome) throw new Error('JAVA_17_REQUIRED: no usable Java 17 runtime was found for Android sdkmanager.');
   return {
     ...process.env,
+    JAVA_HOME: javaHome,
+    PATH: `${join(javaHome, 'bin')}:${process.env.PATH ?? ''}`,
     ANDROID_SDK_ROOT: SDK,
     ANDROID_HOME: SDK,
     ANDROID_AVD_HOME: AVD_HOME,
@@ -468,18 +499,49 @@ async function phase0Android() {
   await installCommandLineTools();
   const license = await seedPreviouslyAcceptedAndroidLicenses();
   const sdkmanager = join(SDK, 'cmdline-tools', 'latest', 'bin', 'sdkmanager');
+  const androidCli = join(SDK, 'cmdline-tools', 'latest', 'bin', 'android');
   const avdmanager = join(SDK, 'cmdline-tools', 'latest', 'bin', 'avdmanager');
   if (!existsSync(join(SDK, 'licenses', 'android-sdk-license'))) {
     await atomicWrite(join(SSOT, 'android-license-status.json'), `${JSON.stringify({ acceptedLicenseEvidenceFound: false, checkedAt: new Date().toISOString() }, null, 2)}\n`);
     die('ANDROID_LICENSE_ACCEPTANCE_REQUIRED: no previously accepted Android SDK license evidence was found; no license was accepted automatically.', 3);
   }
-  run(sdkmanager, [`--sdk_root=${SDK}`, '--install', ...EXPECTED.androidPackages], { env: androidEnv(), maxBuffer: 128 * 1024 * 1024 });
-  const installed = run(sdkmanager, [`--sdk_root=${SDK}`, '--list_installed'], { env: androidEnv(), maxBuffer: 128 * 1024 * 1024 }).stdout;
-  await atomicWrite(join(SSOT, 'android-sdk-packages.txt'), installed);
-  const packages = parseInstalledPackages(installed);
-  const requiredVersions = Object.fromEntries(EXPECTED.androidPackages.map(path => [path, packages.get(path) ?? null]));
+  if (!existsSync(androidCli)) throw new Error(`ANDROID_CLI_REQUIRED: ${androidCli} was not found.`);
+  const env = androidEnv();
+  const api37CatalogResult = run(androidCli, [`--sdk=${SDK}`, 'sdk', 'list', '.*(37|Cinnamon).*', '--all', '--all-versions', '--canary'], { env, allowFailure: true, maxBuffer: 128 * 1024 * 1024 });
+  await atomicWrite(join(SSOT, 'android-api37-catalog.txt'), `${api37CatalogResult.stdout}${api37CatalogResult.stderr}`);
+  run(androidCli, [`--sdk=${SDK}`, 'sdk', 'install', 'platform-tools', 'emulator', 'build-tools/37.0.0'], { env, maxBuffer: 128 * 1024 * 1024 });
+  run(androidCli, [`--sdk=${SDK}`, 'sdk', 'install', '--canary', 'platforms/android-37.1', 'system-images/android-37.0/google_apis_playstore_ps16k/arm64-v8a'], { env, maxBuffer: 128 * 1024 * 1024 });
+
+  const revisionAt = async relative => {
+    const propertiesPath = join(SDK, relative, 'source.properties');
+    if (!existsSync(propertiesPath)) return null;
+    return parseProperties(await readFile(propertiesPath, 'utf8'))['Pkg.Revision'] ?? null;
+  };
+  const discoverPlatform37 = async () => {
+    const root = join(SDK, 'platforms');
+    if (!existsSync(root)) return null;
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const propertiesPath = join(root, entry.name, 'source.properties');
+      if (!existsSync(propertiesPath)) continue;
+      const properties = parseProperties(await readFile(propertiesPath, 'utf8'));
+      if (!String(properties['AndroidVersion.ApiLevel'] ?? '').startsWith('37')) continue;
+      return { directory: entry.name, revision: properties['Pkg.Revision'] ?? null, codeName: properties['AndroidVersion.CodeName'] ?? null };
+    }
+    return null;
+  };
+  const platform37 = await discoverPlatform37();
+  const requiredVersions = {
+    'platform-tools': await revisionAt('platform-tools'),
+    'emulator': await revisionAt('emulator'),
+    'platforms;android-37.1': platform37?.revision ?? null,
+    'build-tools;37.0.0': await revisionAt('build-tools/37.0.0'),
+    [EXPECTED.playImagePackage]: await revisionAt('system-images/android-37.0/google_apis_playstore_ps16k/arm64-v8a')
+  };
   const missingPackages = Object.entries(requiredVersions).filter(([, version]) => !version).map(([path]) => path);
   if (missingPackages.length) throw new Error(`required Android packages missing after install: ${missingPackages.join(', ')}`);
+  const installed = `${JSON.stringify({ schema: 1, observedAt: new Date().toISOString(), requiredVersions }, null, 2)}\n`;
+  await atomicWrite(join(SSOT, 'android-sdk-packages.txt'), installed);
   const playRevision = Number.parseInt(requiredVersions[EXPECTED.playImagePackage], 10);
   if (!Number.isFinite(playRevision) || playRevision < EXPECTED.minimumPlayImageRevision) {
     throw new Error(`Android Play image revision ${requiredVersions[EXPECTED.playImagePackage]} is below required ${EXPECTED.minimumPlayImageRevision}`);
@@ -536,7 +598,7 @@ async function phase0Android() {
     [['android', 'play_image_revision'], playRevision],
     [['android', 'platform_tools_revision'], requiredVersions['platform-tools']],
     [['android', 'emulator_revision'], requiredVersions['emulator']],
-    [['android', 'platform_revision'], requiredVersions['platforms;android-37']],
+    [['android', 'platform_revision'], requiredVersions['platforms;android-37.1']],
     [['android', 'build_tools_revision'], requiredVersions['build-tools;37.0.0']]
   ]);
   console.log(JSON.stringify({ phase: '0-android', pass: true, license, avd: EXPECTED.avdName, sdk: SDK, commandLineToolsRevision: cmdlineRevision, requiredVersions }, null, 2));
@@ -544,24 +606,61 @@ async function phase0Android() {
 
 async function phase0Vulkan() {
   await ensureRoots();
+  const externalSDKRoot = join(RUNTIME, 'VulkanSDK', EXPECTED.vulkanSDKVersion);
+  const externalVulkanInfo = join(externalSDKRoot, 'macOS', 'bin', 'vulkaninfo');
   const expectedUserSDKRoot = join(USER_HOME, 'VulkanSDK', EXPECTED.vulkanSDKVersion, 'macOS');
-  const vulkanInfo = firstExisting([
+  let vulkanInfo = firstExisting([
     process.env.VULKAN_SDK ? join(process.env.VULKAN_SDK, 'bin', 'vulkaninfo') : null,
+    externalVulkanInfo,
     join(expectedUserSDKRoot, 'bin', 'vulkaninfo'),
     '/opt/homebrew/bin/vulkaninfo',
     '/usr/local/bin/vulkaninfo'
   ]);
-  if (!vulkanInfo) die(`VULKAN_SDK_${EXPECTED.vulkanSDKVersion}_REQUIRED: vulkaninfo was not found in the active Vulkan SDK or expected paths.`, 4);
+
+  if (!vulkanInfo) {
+    const archive = join(PACKAGES, `vulkansdk-macos-${EXPECTED.vulkanSDKVersion}.zip`);
+    await downloadVerified(`https://sdk.lunarg.com/sdk/download/${EXPECTED.vulkanSDKVersion}/mac/vulkan_sdk.zip`, archive, EXPECTED.vulkanSDKSHA256);
+    const stage = join(PACKAGES, `vulkansdk-macos-${EXPECTED.vulkanSDKVersion}-installer`);
+    if (!existsSync(stage)) {
+      await mkdir(stage, { recursive: true });
+      run('/usr/bin/unzip', ['-q', archive, '-d', stage], { maxBuffer: 128 * 1024 * 1024 });
+    }
+    const installerApp = run('/usr/bin/find', [stage, '-maxdepth', '3', '-name', 'vulkansdk-macOS-*.app', '-print'], { allowFailure: true }).stdout
+      .split(/\r?\n/).map(value => value.trim()).find(Boolean) ?? null;
+    const installerBinary = installerApp ? join(installerApp, 'Contents', 'MacOS', installerApp.split('/').pop().replace(/\.app$/, '')) : null;
+    await atomicWrite(join(SSOT, 'vulkan-install-required.json'), `${JSON.stringify({
+      schema: 1,
+      version: EXPECTED.vulkanSDKVersion,
+      archive,
+      archiveSHA256: EXPECTED.vulkanSDKSHA256,
+      installerApp,
+      installerBinary,
+      installRoot: externalSDKRoot,
+      copyOnly: true,
+      licenseAcceptanceRequired: true
+    }, null, 2)}\n`);
+    die(`VULKAN_SDK_LICENSE_ACCEPTANCE_REQUIRED: verified installer staged at ${installerApp ?? stage}; install root must be ${externalSDKRoot}.`, 4);
+  }
+
   const versionOutput = run(vulkanInfo, ['--version'], { allowFailure: true }).stdout.trim();
-  const sdkPathVersionMatch = vulkanInfo.includes(`/VulkanSDK/${EXPECTED.vulkanSDKVersion}/`);
+  const sdkPathVersionMatch = vulkanInfo.includes(`/${EXPECTED.vulkanSDKVersion}/`);
   const envVersionMatch = Boolean(process.env.VULKAN_SDK?.includes(EXPECTED.vulkanSDKVersion));
   if (!sdkPathVersionMatch && !envVersionMatch) {
     die(`VULKAN_SDK_VERSION_NOT_PROVEN: found ${vulkanInfo}, but frozen ${EXPECTED.vulkanSDKVersion} identity is not proven.`, 16);
   }
-  const summary = run(vulkanInfo, ['--summary'], { maxBuffer: 64 * 1024 * 1024 }).stdout;
+  const sdkRoot = resolve(vulkanInfo, '..', '..');
+  const env = {
+    ...process.env,
+    VULKAN_SDK: sdkRoot,
+    PATH: `${join(sdkRoot, 'bin')}:${process.env.PATH ?? ''}`,
+    DYLD_LIBRARY_PATH: `${join(sdkRoot, 'lib')}:${process.env.DYLD_LIBRARY_PATH ?? ''}`,
+    VK_ICD_FILENAMES: join(sdkRoot, 'share', 'vulkan', 'icd.d', 'MoltenVK_icd.json'),
+    VK_LAYER_PATH: join(sdkRoot, 'share', 'vulkan', 'explicit_layer.d')
+  };
+  const summary = run(vulkanInfo, ['--summary'], { env, maxBuffer: 64 * 1024 * 1024 }).stdout;
   await atomicWrite(join(SSOT, 'vulkaninfo-summary.txt'), summary);
   await updateStackLock([[['vulkan_sdk', 'vulkaninfo_version'], versionOutput || EXPECTED.vulkanSDKVersion]]);
-  console.log(JSON.stringify({ phase: '0-vulkan', pass: true, vulkaninfo: vulkanInfo, version: versionOutput || null }, null, 2));
+  console.log(JSON.stringify({ phase: '0-vulkan', pass: true, vulkaninfo: vulkanInfo, sdkRoot, version: versionOutput || null }, null, 2));
 }
 
 async function ensureRepoTool() {
@@ -599,6 +698,34 @@ function resolveRemoteTag(url, tag) {
   return peeled?.[0] ?? direct?.[0] ?? null;
 }
 
+async function discoverIntegratedMoltenVK(components, commits) {
+  const probes = [];
+  for (const [component, path] of Object.entries(components)) {
+    const grep = run('/usr/bin/git', ['-C', path, 'grep', '-n', '-i', 'MoltenVK', '--', '.'], {
+      allowFailure: true,
+      maxBuffer: 32 * 1024 * 1024
+    });
+    const matches = grep.stdout.split(/\r?\n/).filter(Boolean);
+    const hashCandidates = [...new Set(matches.flatMap(line => line.match(/\b[0-9a-f]{40}\b/g) ?? []))];
+    probes.push({
+      component,
+      path,
+      commit: commits[component],
+      matchCount: matches.length,
+      hashCandidates,
+      matches: matches.slice(0, 80)
+    });
+  }
+  const artifact = {
+    schema: 1,
+    observedAt: new Date().toISOString(),
+    branchAuthority: EXPECTED.aemuBranch,
+    probes
+  };
+  await atomicWrite(join(SSOT, 'moltenvk-integration-discovery.json'), `${JSON.stringify(artifact, null, 2)}\n`);
+  return artifact;
+}
+
 async function phase0SourceForeground() {
   await ensureRoots();
   const repoTool = await ensureRepoTool();
@@ -628,12 +755,31 @@ async function phase0SourceForeground() {
     aemu: join(aemuRoot, 'hardware', 'google', 'aemu'),
     gfxstream: join(aemuRoot, 'hardware', 'google', 'gfxstream'),
     angle: join(aemuRoot, 'external', 'angle'),
-    moltenvk: join(aemuRoot, 'external', 'moltenvk')
+    moltenvkPrebuilt: join(aemuRoot, 'prebuilts', 'android-emulator')
   };
   for (const [name, path] of Object.entries(components)) {
     if (!existsSync(path)) throw new Error(`locked AEMU manifest is missing required component ${name}: ${path}`);
   }
   const commits = Object.fromEntries(Object.entries(components).map(([name, path]) => [name, gitCommit(path)]));
+  const moltenVKConfigPath = join(components.qemu, 'android', 'build', 'cmake', 'config', 'emu-vulkan-config.cmake');
+  const moltenVKConfigText = await readFile(moltenVKConfigPath, 'utf8');
+  const moltenVKPrebuiltEvidence = lineEvidence(moltenVKConfigText, [/PREBUILT_ROOT.*libMoltenVK\.dylib/, /PREBUILT_ROOT.*MoltenVK_icd\.json/]);
+  if (moltenVKPrebuiltEvidence.length < 2) {
+    throw new Error('MOLTENVK_PREBUILT_AUTHORITY_NOT_PROVEN: qemu does not prove MoltenVK is supplied from PREBUILT_ROOT/icds.');
+  }
+  const integratedMoltenVKCommit = commits.moltenvkPrebuilt;
+  await atomicWrite(join(SSOT, 'moltenvk-integration-discovery.json'), `${JSON.stringify({
+    schema: 2,
+    observedAt: new Date().toISOString(),
+    branchAuthority: EXPECTED.aemuBranch,
+    authorityType: 'resolved-manifest-prebuilt',
+    authorityPath: 'prebuilts/android-emulator',
+    authorityCommit: integratedMoltenVKCommit,
+    qemuCommit: commits.qemu,
+    qemuEvidencePath: 'external/qemu/android/build/cmake/config/emu-vulkan-config.cmake',
+    evidence: moltenVKPrebuiltEvidence,
+    pass: true
+  }, null, 2)}\n`);
 
   const guestAngleSource = join(components.qemu, 'android', 'android-emu', 'android', 'userspace-boot-properties.cpp');
   const sourceText = await readFile(guestAngleSource, 'utf8');
@@ -685,6 +831,7 @@ async function phase0SourceForeground() {
     manifestSHA256,
     commits,
     guestAnglePass,
+    moltenVKIntegration: { authority: 'prebuilts/android-emulator', commit: integratedMoltenVKCommit, discovery: 'ssot/moltenvk-integration-discovery.json' },
     moltenVKReference: { tag: EXPECTED.moltenVKReferenceTag, commit: moltenVKReferenceCommit },
     generality: {
       glesCTSTag: EXPECTED.glesCTSTag,
@@ -700,6 +847,7 @@ async function phase0SourceForeground() {
     `upstreams-aemu.lock.xml sha256=${manifestSHA256}`,
     `userspace-boot-properties.cpp sha256=${sourceSHA256}`,
     `repo sha256=${repoToolSHA256}`,
+    `integrated-moltenvk commit=${integratedMoltenVKCommit}`,
     `moltenvk-reference commit=${moltenVKReferenceCommit}`,
     `gles-cts commit=${glesCTSCommit}`
   ].join('\n') + '\n');
@@ -709,7 +857,7 @@ async function phase0SourceForeground() {
     [['aemu', 'aemu_commit'], commits.aemu],
     [['aemu', 'gfxstream_commit'], commits.gfxstream],
     [['aemu', 'integrated_angle_commit'], commits.angle],
-    [['aemu', 'integrated_moltenvk_commit'], commits.moltenvk],
+    [['aemu', 'integrated_moltenvk_commit'], integratedMoltenVKCommit],
     [['aemu', 'guestangle_authority'], guestAnglePass ? 'PASS' : 'FAIL'],
     [['moltenvk', 'reference_commit'], moltenVKReferenceCommit],
     [['generality', 'gles_cts_commit'], glesCTSCommit]
@@ -785,33 +933,26 @@ async function phase0Source() {
 
 const AUTHORITY_FILES = Object.freeze([
   {
-    source: '/mnt/data/TFTMAC_FULL_IMPLEMENTATION_PLAN_REVISED(1).md',
     path: join(REPO, 'TFTMAC_FULL_IMPLEMENTATION_PLAN.md'),
-    sha256: 'd074a0561d40813258c24bddb87a870a3bb62e634257674ebef55f0539492e4e'
+    sha256: '81bd386c1d9d47f26659c93af914ec9a92568ee689e7bed47eb0f2afd6dd5f1a'
   },
   {
-    source: '/mnt/data/TFTMAC_GPU_RUNTIME_SSOT_REVISED(1).md',
     path: join(REPO, 'TFTMAC_GPU_RUNTIME_SSOT.md'),
-    sha256: '6672347368c4adc007073a87a5b3dddda211f3c30bb80580f26de2d33d71dd7e'
+    sha256: '4c905ad35a676aa8f4ad0a22416e73d640120851ce9f41e742349ac61ceab1ea'
   }
 ]);
 
 async function importAuthorityFiles() {
-  const imported = [];
+  const verified = [];
   for (const entry of AUTHORITY_FILES) {
-    if (!existsSync(entry.source)) throw new Error(`approved authority source is unavailable: ${entry.source}`);
-    const sourceSHA256 = await sha256(entry.source);
-    if (sourceSHA256 !== entry.sha256) {
-      throw new Error(`approved authority source hash mismatch for ${entry.source}: expected ${entry.sha256}, got ${sourceSHA256}`);
+    if (!existsSync(entry.path)) throw new Error(`canonical authority document is unavailable: ${entry.path}`);
+    const actualSHA256 = await sha256(entry.path);
+    if (actualSHA256 !== entry.sha256) {
+      throw new Error(`canonical authority hash mismatch for ${entry.path}: expected ${entry.sha256}, got ${actualSHA256}`);
     }
-    await copyFile(entry.source, entry.path);
-    const destinationSHA256 = await sha256(entry.path);
-    if (destinationSHA256 !== entry.sha256) {
-      throw new Error(`authority destination hash mismatch for ${entry.path}: expected ${entry.sha256}, got ${destinationSHA256}`);
-    }
-    imported.push({ source: entry.source, destination: entry.path.replace(`${REPO}/`, ''), sha256: destinationSHA256 });
+    verified.push({ path: entry.path.replace(`${REPO}/`, ''), sha256: actualSHA256 });
   }
-  console.log(JSON.stringify({ phase: '0-authority-import', pass: true, imported }, null, 2));
+  console.log(JSON.stringify({ phase: '0-authority-verify', pass: true, verified }, null, 2));
 }
 
 async function phase0Policy() {
@@ -873,7 +1014,104 @@ async function phase0Policy() {
   if (!result.pass) die('PHASE_0_POLICY_FAILED: canonical authority documents are missing or do not match approved hashes.', 14);
 }
 
+async function ensureVulkanRequiredCases() {
+  await ensureRoots();
+  const outputPath = join(SSOT, 'vulkan-required-cases.txt');
+  const selectionPath = join(SSOT, 'vulkan-required-cases-selection.json');
+  const ctsRoot = join(BUILD, 'references', `VK-GL-CTS-${EXPECTED.vulkanCTSTag}`);
+
+  if (!existsSync(join(ctsRoot, '.git'))) {
+    await rm(ctsRoot, { recursive: true, force: true });
+    run('/usr/bin/git', [
+      'clone', '--filter=blob:none', '--no-checkout', '--depth', '1',
+      '--branch', EXPECTED.vulkanCTSTag,
+      'https://github.com/KhronosGroup/VK-GL-CTS.git', ctsRoot
+    ], { maxBuffer: 128 * 1024 * 1024 });
+  } else {
+    run('/usr/bin/git', ['-C', ctsRoot, 'fetch', '--depth', '1', 'origin', `refs/tags/${EXPECTED.vulkanCTSTag}:refs/tags/${EXPECTED.vulkanCTSTag}`], { allowFailure: true, maxBuffer: 128 * 1024 * 1024 });
+  }
+  run('/usr/bin/git', ['-C', ctsRoot, 'sparse-checkout', 'init', '--cone'], { allowFailure: true });
+  run('/usr/bin/git', ['-C', ctsRoot, 'sparse-checkout', 'set', 'external/vulkancts/mustpass/main']);
+  let checkout = run('/usr/bin/git', ['-C', ctsRoot, 'checkout', '--detach', EXPECTED.vulkanCTSCommit], { allowFailure: true, maxBuffer: 128 * 1024 * 1024 });
+  if (checkout.status !== 0) {
+    run('/usr/bin/git', ['-C', ctsRoot, 'fetch', '--depth', '1', 'origin', EXPECTED.vulkanCTSCommit], { maxBuffer: 128 * 1024 * 1024 });
+    run('/usr/bin/git', ['-C', ctsRoot, 'checkout', '--detach', EXPECTED.vulkanCTSCommit], { maxBuffer: 128 * 1024 * 1024 });
+  }
+  const observedCommit = gitCommit(ctsRoot);
+  if (observedCommit !== EXPECTED.vulkanCTSCommit) {
+    throw new Error(`VULKAN_CTS_COMMIT_MISMATCH: expected ${EXPECTED.vulkanCTSCommit}, got ${observedCommit}`);
+  }
+
+  const mustpassRoot = join(ctsRoot, 'external', 'vulkancts', 'mustpass', 'main');
+  const indexPath = join(mustpassRoot, 'vk-default.txt');
+  if (!existsSync(indexPath)) throw new Error(`VULKAN_CTS_MUSTPASS_MISSING: ${indexPath}`);
+
+  const visited = new Set();
+  const allCases = [];
+  async function collectList(path) {
+    const absolute = resolve(path);
+    if (visited.has(absolute)) return;
+    visited.add(absolute);
+    const text = await readFile(absolute, 'utf8');
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      if (line.startsWith('dEQP-VK.')) {
+        allCases.push(line);
+        continue;
+      }
+      const candidates = [join(dirname(absolute), line), join(mustpassRoot, line), join(mustpassRoot, 'vk-default', line)];
+      const nested = candidates.find(candidate => existsSync(candidate));
+      if (nested) await collectList(nested);
+    }
+  }
+  await collectList(indexPath);
+  const uniqueCases = [...new Set(allCases)].sort();
+  if (!uniqueCases.length) throw new Error('VULKAN_CTS_MUSTPASS_EMPTY: no dEQP-VK cases found in pinned mustpass tree.');
+
+  const boundaries = [
+    ['core-draw', [/^dEQP-VK\.draw\./i, /\.draw\./i]],
+    ['geometry', [/geometry/i]],
+    ['tessellation', [/tessellation/i]],
+    ['shader-cull-distance', [/cull_distance/i, /culldistance/i]],
+    ['compute', [/^dEQP-VK\.compute\./i, /\.compute\./i]],
+    ['images', [/copy_and_blit/i, /\.image/i, /images?/i]],
+    ['descriptors', [/binding_model/i, /descriptor/i]],
+    ['indirect-draw', [/indirect.*draw/i, /draw.*indirect/i, /indirect/i]],
+    ['timeline-semaphore', [/timeline.*semaphore/i, /semaphore.*timeline/i]],
+    ['synchronization2', [/synchronization2/i, /sync2/i]],
+    ['dynamic-rendering', [/dynamic_rendering/i]],
+    ['buffer-device-address', [/buffer_device_address/i]],
+    ['subgroups', [/subgroup/i]],
+    ['sampler-filter', [/sampler/i, /filter/i]],
+    ['wsi-presentation', [/^dEQP-VK\.wsi\./i, /present/i]]
+  ];
+  const selection = {};
+  for (const [id, patterns] of boundaries) {
+    const matches = uniqueCases.filter(test => patterns.some(pattern => pattern.test(test))).slice(0, 2);
+    if (!matches.length) throw new Error(`VULKAN_CTS_REQUIRED_BOUNDARY_UNRESOLVED: ${id}`);
+    selection[id] = matches;
+  }
+  const selectedCases = [...new Set(Object.values(selection).flat())].sort();
+  await atomicWrite(outputPath, `${selectedCases.join('\n')}\n`);
+  const outputSHA256 = await sha256(outputPath);
+  await atomicWrite(selectionPath, `${JSON.stringify({
+    schema: 1,
+    ctsTag: EXPECTED.vulkanCTSTag,
+    ctsCommit: EXPECTED.vulkanCTSCommit,
+    mustpassRoot: 'external/vulkancts/mustpass/main',
+    totalMustpassCasesObserved: uniqueCases.length,
+    selection,
+    selectedCaseCount: selectedCases.length,
+    output: 'ssot/vulkan-required-cases.txt',
+    outputSHA256
+  }, null, 2)}\n`);
+  await updateStackLock([[['generality', 'vulkan_required_cases_sha256'], outputSHA256]]);
+  return { outputPath, outputSHA256, selectedCaseCount: selectedCases.length, totalMustpassCasesObserved: uniqueCases.length };
+}
+
 async function preflightReport() {
+  await ensureVulkanRequiredCases();
   await ensureRoots();
   const artifactNames = [
     'AUTHORITY_INPUTS.sha256',
@@ -985,6 +1223,8 @@ async function status() {
     appRoot: APP,
     buildRoot: BUILD,
     buildRootSource: process.env.TFTMAC_BUILD_ROOT ? 'TFTMAC_BUILD_ROOT' : 'default-external',
+    runtimeRoot: RUNTIME,
+    runtimeRootSource: process.env.TFTMAC_RUNTIME_ROOT ? 'TFTMAC_RUNTIME_ROOT' : 'default-external',
     repository: REPO,
     sourceWorker: sourceWorker ? { ...sourceWorker, alive: sourceWorkerAlive, observedStatus: sourceWorkerObservedStatus } : null,
     artifacts

@@ -13,8 +13,13 @@ if [[ -z "$user_home" ]]; then
   exit 1
 fi
 
-sdk_root="$user_home/Library/Application Support/TFTMAC/Runtime/SDK"
+sdk_root="/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK"
 sdkmanager="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+
+if [[ ! -d "/Volumes/MAC MINI M4" ]]; then
+  print -u2 "TFTMAC: /Volumes/MAC MINI M4 is not mounted; refusing to use the internal disk."
+  exit 1
+fi
 
 if [[ ! -x "$sdkmanager" ]]; then
   print -u2 "TFTMAC: isolated sdkmanager is not installed at:"
@@ -23,6 +28,29 @@ if [[ ! -x "$sdkmanager" ]]; then
   exit 1
 fi
 
+java_home="${JAVA_HOME:-}"
+if [[ -z "$java_home" || ! -x "$java_home/bin/java" ]]; then
+  java_home="$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
+fi
+if [[ -z "$java_home" || ! -x "$java_home/bin/java" ]]; then
+  for candidate in \
+    "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home" \
+    "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home" \
+    "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+    "/Applications/Android Studio.app/Contents/jre/Contents/Home"; do
+    if [[ -x "$candidate/bin/java" ]]; then
+      java_home="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$java_home" || ! -x "$java_home/bin/java" ]]; then
+  print -u2 "TFTMAC: Java 17 runtime not found. Install with: brew install openjdk@17"
+  exit 1
+fi
+
+export JAVA_HOME="$java_home"
+export PATH="$JAVA_HOME/bin:$PATH"
 export ANDROID_SDK_ROOT="$sdk_root"
 export ANDROID_HOME="$sdk_root"
 

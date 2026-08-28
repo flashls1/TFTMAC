@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "observedAt": "2026-08-27T11:41:37.725Z",
+  "observedAt": "2026-08-28T04:07:47.479Z",
   "expected": {
     "architecture": "arm64",
     "xcodeVersion": "26.6",
@@ -14,12 +14,21 @@
       "buildVersion": "25G83"
     },
     "xcode": {
-      "version": "26.4",
-      "build": "17E192"
+      "version": "26.6",
+      "build": "17F113"
     },
-    "selectedXcodeBundle": null,
-    "selectedDeveloperDir": null,
+    "selectedXcodeBundle": "/Applications/Xcode-26.6.0.app",
+    "selectedDeveloperDir": "/Applications/Xcode-26.6.0.app/Contents/Developer",
     "installedXcodes": [
+      {
+        "app": "/Applications/Xcode-26.6.0.app",
+        "developerDir": "/Applications/Xcode-26.6.0.app/Contents/Developer",
+        "status": 0,
+        "version": {
+          "version": "26.6",
+          "build": "17F113"
+        }
+      },
       {
         "app": "/Applications/Xcode.app",
         "developerDir": "/Applications/Xcode.app/Contents/Developer",
@@ -30,7 +39,7 @@
         }
       }
     ],
-    "macosSDKPath": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+    "macosSDKPath": "/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
     "hardware": {
       "modelName": "Mac mini",
       "modelIdentifier": "Mac16,10",
@@ -40,11 +49,11 @@
   },
   "checks": {
     "architecture": true,
-    "xcodeVersion": false,
-    "xcodeBuild": false,
+    "xcodeVersion": true,
+    "xcodeBuild": true,
     "macosVersionPresent": true,
     "macosSDKPresent": true,
     "appleSiliconChip": true
   },
-  "pass": false
+  "pass": true
 }
