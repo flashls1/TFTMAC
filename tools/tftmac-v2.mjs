@@ -1568,19 +1568,20 @@ async function validateEngineeringMap() {
   }
 }
 
-function directControl(action) {
-  return runInherited(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), action]);
+function directControl(action, args = []) {
+  return runInherited(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), action, ...args]);
 }
 
 async function consumeDirectControlRequest() {
   if (!existsSync(DIRECT_CONTROL_REQUEST)) return null;
   const request = JSON.parse(await readFile(DIRECT_CONTROL_REQUEST, 'utf8'));
-  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'open-play-web', 'runtime-process-audit', 'cleanup-tftmac-adb-residue', 'single-runtime-preflight', 'launch-mactician-control', 'stop-mactician-control', 'mactician-runtime-audit', 'cleanup-observer-adb-5037', 'start', 'start-donor-control', 'play-action', 'play-probe', 'gles-capability-probe', 'launch-failure-probe', 'recover-anr-wait', 'logger-health', 'analyze-session', 'ingest-analysis', 'trace-capabilities', 'native-trace-smoke', 'native-trace-combat', 'presentation-probe', 'window-inventory', 'fit-window', 'play-certification', 'play-diagnose', 'google-account-ui', 'image-check', 'device-profiles', 'image-upgrade-start', 'image-upgrade-status', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'first-place', 'stop', 'package-state', 'auth-brief', 'install-diagnose', 'play-install-brief', 'play-store-repair']);
+  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'open-play-web', 'runtime-process-audit', 'cleanup-tftmac-adb-residue', 'single-runtime-preflight', 'launch-mactician-control', 'stop-mactician-control', 'mactician-runtime-audit', 'cleanup-observer-adb-5037', 'start', 'start-donor-control', 'play-action', 'play-probe', 'gles-capability-probe', 'launch-failure-probe', 'recover-anr-wait', 'logger-health', 'analyze-session', 'ingest-analysis', 'trace-capabilities', 'native-trace-smoke', 'native-trace-combat', 'presentation-probe', 'window-inventory', 'fit-window', 'play-certification', 'play-diagnose', 'google-account-ui', 'image-check', 'device-profiles', 'image-upgrade-start', 'image-upgrade-status', 'launch-game', 'status', 'marker', 'game-settings', 'match-entry', 'combat-start', 'first-place', 'stop', 'package-state', 'auth-brief', 'install-diagnose', 'play-install-brief', 'play-store-repair']);
   const placementAction = /^placement-[1-8]$/.test(request?.action ?? '');
   if (!allowed.has(request?.action) && !placementAction) throw new Error(`DIRECT_CONTROL_ACTION_INVALID: ${request?.action ?? '<missing>'}`);
   await rm(DIRECT_CONTROL_REQUEST, { force: true });
   const startedAt = new Date().toISOString();
-  const result = run(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), request.action], {
+  const requestArgs = Array.isArray(request?.args) ? request.args.map(value => String(value)).slice(0, 8) : [];
+  const result = run(process.execPath, [join(REPO, 'tools', 'tftmac-direct-control.mjs'), request.action, ...requestArgs], {
     allowFailure: true,
     timeout: 900000,
     maxBuffer: 128 * 1024 * 1024

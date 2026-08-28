@@ -135,7 +135,7 @@ CREATE TABLE markers (
     host_mono_ns INTEGER NOT NULL,
     guest_mono_ns INTEGER,
     marker_type TEXT NOT NULL CHECK (
-        marker_type IN ('USER_STUTTER','AUTO_JANK','AUTO_SEVERE_STALL','MATCH_ENTRY','MATCH_RESULT','COMBAT_START','TRANSITION','PACKAGE_UPDATE','USER_QUALITY_REPORT','CUSTOM')
+        marker_type IN ('USER_STUTTER','AUTO_JANK','AUTO_SEVERE_STALL','MATCH_ENTRY','MATCH_RESULT','COMBAT_START','TRANSITION','PACKAGE_UPDATE','GAME_SETTINGS','USER_QUALITY_REPORT','CUSTOM')
     ),
     label TEXT,
     payload_json TEXT
@@ -535,7 +535,12 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('current_trace_collector_smoke','5s smoke succeeded: 7479-byte raw pftrace, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, four lightweight SurfaceFlinger/GPU-memory sources, zero missed-frame counter delta during idle smoke'),
 ('logger_guard_policy','Sampler starts before emulator; sampler must survive startup; launch-game requires a live growth health check; MATCH_ENTRY and COMBAT_START require fresh process, memory and logcat streams; status reports LOGGER_FAULT when the gate is not ready.'),
 ('multi_match_policy','Keep raw telemetry continuous across games. Pair each MATCH_ENTRY with the next MATCH_RESULT; preserve per-match analysis artifacts; ingest match 2+ as distinct <capture-session>-match-N SQL sessions so later games never overwrite earlier evidence.'),
-('current_optimization_priority','1 native frame timing; 2 guest RAM 6144->4096 MB A/B; 3 only then renderer/transport/queue experiments');
+('current_tft_graphics_domain','Low | Medium | High | Ultra High'),
+('current_tft_fps_cap_domain','30 | 60 | None'),
+('current_tft_graphics_observed','Medium'),
+('current_tft_fps_cap_observed','60'),
+('current_tft_performance_mode_beta_observed','UNKNOWN'),
+('current_optimization_priority','1 record graphics preset/FPS cap/Performance Mode + native frame timing; 2 one-factor Performance Mode A/B; 3 one-factor FPS-cap A/B; 4 one-factor graphics-preset A/B; 5 guest RAM 6144->4096 MB A/B; 6 only then renderer/transport/queue experiments');
 
 INSERT OR REPLACE INTO host_facts VALUES
 ('control_image','control_system_image','system-images;android-36;google_apis_playstore;arm64-v8a',NULL,'DIRECT_OBSERVATION','gameplay-analysis.json','FROZEN','2026-08-28T18:30:59Z','First full official TFT match completed on this real Google Play image family.'),
@@ -580,6 +585,11 @@ WHERE id IN ('exp_control_repeat_warm','exp_transition_capture','exp_heavy_captu
 INSERT OR REPLACE INTO unknowns VALUES
 ('u_native_frame_timing','What is the real Unreal/Vulkan frame-time distribution and which boundary owns visible stalls?','FRAME_TIMING','OPEN',1,NULL,'2026-08-28T18:30:59Z',NULL,'gfxinfo returned zero gameplay frames. Exact available replacement sources: android.surfaceflinger.frame + frametimeline + layers + android.gpu.memory; linux.ftrace/process_stats/sys_stats are available for heavier correlation.'),
 ('u_drop_reproduction','Does the severe low-performance/laggy behavior reproduce under the clean official-package control?','PERFORMANCE','OPEN',0,NULL,'2026-08-28T07:50:00Z',NULL,'User reported the first full match as laggy/low-performance; resource pressure reproduced, but native frame timing is still missing for quantitative attribution.');
+
+INSERT OR REPLACE INTO experiments VALUES
+('exp_tft_performance_mode_ab',NULL,'TFT Performance Mode (Beta) A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Keep Medium graphics, 60 FPS cap, emulator/runtime/package identical; change only Performance Mode (Beta) ON/OFF and compare native frame timing + memory/GPU pressure.','2026-08-28T20:11:18Z',NULL,'First game-level intervention after the fully labeled Medium/60 baseline.'),
+('exp_tft_fps_cap_ab',NULL,'TFT FPS cap A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold graphics preset and Performance Mode constant; compare 60 versus None first, with 30 retained as a diagnostic lower-load control if needed.','2026-08-28T20:11:18Z',NULL,'Do not combine FPS-cap changes with graphics-preset changes.'),
+('exp_tft_graphics_preset_ab',NULL,'TFT graphics preset A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold FPS cap and Performance Mode constant; test Low, Medium, High, Ultra High one preset at a time with native frame timing.','2026-08-28T20:11:18Z',NULL,'Target is the highest preset that preserves stable 60-Hz frame pacing and acceptable memory/GPU pressure.');
 
 COMMIT;
 

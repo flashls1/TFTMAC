@@ -998,6 +998,32 @@ function loggerGameplayGate(state = readJSON(CONTROL_STATE)) {
   };
 }
 
+function gameSettings(graphicsPreset = 'UNKNOWN', fpsCap = 'UNKNOWN', performanceMode = 'UNKNOWN') {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const presetMap = new Map([
+    ['low','Low'], ['medium','Medium'], ['high','High'], ['ultra-high','Ultra High'], ['ultrahigh','Ultra High'], ['ultra high','Ultra High'], ['unknown','UNKNOWN']
+  ]);
+  const preset = presetMap.get(String(graphicsPreset).trim().toLowerCase());
+  const fpsRaw = String(fpsCap).trim().toLowerCase();
+  const fps = fpsRaw === '30' ? '30' : fpsRaw === '60' ? '60' : ['none','no-cap','no cap','uncapped'].includes(fpsRaw) ? 'None' : fpsRaw === 'unknown' ? 'UNKNOWN' : null;
+  const perfRaw = String(performanceMode).trim().toLowerCase();
+  const perf = ['on','enabled','true','1'].includes(perfRaw) ? 'ON' : ['off','disabled','false','0'].includes(perfRaw) ? 'OFF' : perfRaw === 'unknown' ? 'UNKNOWN' : null;
+  if (!preset) throw new Error(`GAME_SETTINGS_PRESET_INVALID: ${graphicsPreset}`);
+  if (!fps) throw new Error(`GAME_SETTINGS_FPS_INVALID: ${fpsCap}`);
+  if (!perf) throw new Error(`GAME_SETTINGS_PERFORMANCE_MODE_INVALID: ${performanceMode}`);
+  const event = {
+    utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'GAME_SETTINGS', source: 'user-observation',
+    graphicsPreset: preset, fpsCap: fps, performanceModeBeta: perf
+  };
+  appendJSONL(path.join(state.captureDir, 'markers.jsonl'), event);
+  const sessionPath = path.join(state.captureDir, 'session.json');
+  const session = readJSON(sessionPath, {});
+  session.currentGameSettings = { graphicsPreset: preset, fpsCap: fps, performanceModeBeta: perf, observedAt: event.utc };
+  writeJSON(sessionPath, session);
+  return { action: 'GAME_SETTINGS_RECORDED', captureDir: state.captureDir, settings: event };
+}
+
 function marker(kind = 'stutter') {
   const state = readJSON(CONTROL_STATE);
   if (!state?.captureDir) throw new Error('No active direct-control session.');
@@ -1261,6 +1287,10 @@ function analyzeSession() {
     activeMemoryPressureObserved: pageouts.length > 1 ? pageouts.at(-1) > pageouts[0] : null
   };
 
+  const gameSettingsMarker = markers
+    .filter(row => row?.event === 'GAME_SETTINGS' && Number(row.host_mono_ns ?? 0) <= window.startHostNs)
+    .sort((a, b) => Number(a.host_mono_ns ?? 0) - Number(b.host_mono_ns ?? 0))
+    .at(-1) ?? null;
   const logSignals = sessionLogSignals(captureDir);
   const renderer = readJSON(path.join(captureDir, 'renderer-state.json'), {});
   const runtime = readJSON(path.join(captureDir, 'runtime-state.json'), {});
@@ -1285,7 +1315,13 @@ function analyzeSession() {
       result: window.result.result ?? session.matchResult ?? null,
       durationSeconds: window.durationSeconds,
       matchEntryMarker: window.start,
-      matchResultMarker: window.result
+      matchResultMarker: window.result,
+      gameSettings: gameSettingsMarker ? {
+        graphicsPreset: gameSettingsMarker.graphicsPreset ?? 'UNKNOWN',
+        fpsCap: gameSettingsMarker.fpsCap ?? 'UNKNOWN',
+        performanceModeBeta: gameSettingsMarker.performanceModeBeta ?? 'UNKNOWN',
+        observedAt: gameSettingsMarker.utc ?? null
+      } : { graphicsPreset: 'UNKNOWN', fpsCap: 'UNKNOWN', performanceModeBeta: 'UNKNOWN', observedAt: null }
     },
     package: { versionName: packageInfo.versionName ?? null, versionCode: packageInfo.versionCode ?? null, installerPackage: packageInfo.installerPackage ?? null },
     runtime: {
@@ -1348,7 +1384,8 @@ function ingestAnalysisIntoLab() {
 
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_gameplay_ingest_at', now);
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_gameplay_baseline_session', labSessionId);
-      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 native frame timing; 2 guest RAM 6144->4096 A/B; 3 only then graphics transport/queue experiments');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 record graphics preset/FPS cap/Performance Mode + native frame timing; 2 one-factor Performance Mode A/B; 3 one-factor FPS-cap A/B; 4 one-factor graphics-preset A/B; 5 guest RAM 6144->4096 A/B; 6 only then graphics transport/queue experiments');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_game_settings', JSON.stringify(analysis.match.gameSettings));
       if (latestTraceMetadata) db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('native_trace_collector_smoke', JSON.stringify({ label: latestTraceMetadata.label, durationSeconds: latestTraceMetadata.durationSeconds, byteCount: latestTraceMetadata.byteCount, sha256: latestTraceMetadata.sha256, dataSources: latestTraceMetadata.dataSources, parseState: latestTraceMetadata.parseState }));
 
       const configStmt = db.prepare(`INSERT INTO runtime_configs(
@@ -2561,6 +2598,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
           : row.event === 'MATCH_RESULT' ? 'MATCH_RESULT'
           : row.event === 'COMBAT_START' ? 'COMBAT_START'
           : row.event === 'PACKAGE_UPDATE' ? 'PACKAGE_UPDATE'
+          : row.event === 'GAME_SETTINGS' ? 'GAME_SETTINGS'
           : 'CUSTOM';
         markerStmt.run(sessionId, asNumber(row.host_mono_ns) ?? asNumber(session.hostStartMonoNs) ?? 0, null, type, row.event ?? null, JSON.stringify(row));
       }
@@ -3146,6 +3184,7 @@ async function main() {
   if (action === 'image-upgrade-status') { json(imageUpgradeStatus()); return; }
   if (action === 'image-upgrade-worker') { json(await imageUpgradeWorker()); return; }
   if (action === 'marker') { json(marker('stutter')); return; }
+  if (action === 'game-settings') { json(gameSettings(args[0], args[1], args[2])); return; }
   if (action === 'match-entry') { json(marker('match-entry')); return; }
   if (action === 'combat-start') { json(marker('combat-start')); return; }
   if (action === 'first-place') { json(marker('first-place')); return; }
