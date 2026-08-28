@@ -1288,6 +1288,72 @@ INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,st
 INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T22:24:23.877Z','Graphics quiet baseline','Captured a bounded five-second 5 GiB idle/lobby native trace with zero SurfaceFlinger miss delta for subtraction against the next active-combat trace.','ev_5gb_idle_native_trace');
 
+-- ---------------------------------------------------------------------------
+-- 5 GiB full-run result + audio/network fault isolation
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('latest_5gb_result','5 GiB Medium/60/Performance OFF run completed in 1st place; user rated gameplay acceptable overall.'),
+('latest_5gb_memory_result','Medium/60/OFF segment: guest available min 1.584 GiB, mean 2.356 GiB; host available mean 5.476 GiB; host compressed mean 2.850 GiB, p95 3.800 GiB; 0 ANR, 0 fatal signal, 0 OOM. 5 GiB is viable for continued testing, not yet promoted as final.'),
+('latest_audio_fault','TFT OpenSL ES media track is active at 44.1 kHz stereo, STREAM_MUSIC is unmuted/full-volume, AudioFlinger actively mixes to speaker with zero mixer underruns, but ranchu audio HAL repeatedly fails pcm_writei with I/O error. Fault boundary is AudioFlinger -> ranchu/QEMU/macOS backend.'),
+('latest_audio_fix','Controlled emulator boots now request explicit -audio coreaudio instead of leaving macOS backend selection implicit. Requires post-reboot no-I/O-error verification and user audible-sound confirmation before promotion.'),
+('latest_disconnect_fault','Late-game disconnect did not change TFT PID 6021 and Android network 101 remained assigned. TFT requested fresh connectivity callbacks at ~18:11:59/18:12:00 and ~18:14:01 and was immediately reassigned to network 101. Treat as Riot/TFT socket/session reconnect, not Android network loss or app crash, until deeper app transport evidence says otherwise.'),
+('latest_graphics_run_delta','Pre-game pipeline audit 279 total/278 HWC/1 GPU missed; post-game 803 total/802 HWC/1 GPU. Delta +524 total, +524 HWC, +0 GPU across the broad run interval. Directionally prioritize producer->SurfaceFlinger/HWC pacing and 720p->1080p composition; bounded combat trace still required for causal attribution.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_5gb_full_run','2026-08-28T23:20:34.904Z','continuous_run_telemetry','~/Library/Application Support/TFTMAC/Captures/2026-08-28T21-40-53-459Z-d6d2f30b-ead9-47b8-8a81-16cc2551bd0e/continuous-run-analysis.json',NULL,'5 GiB Medium/60/OFF segment retained at least 1.584 GiB guest available memory, host compressed mean 2.850 GiB/p95 3.800 GiB, and completed with no ANR, fatal signal or OOM.','DIRECT','Supports continued 5 GiB testing; run durations differ from 6 GiB baseline so do not overstate raw pageout or CPU/RSS deltas.'),
+('ev_audio_ranchu_io','2026-08-28T23:17:48.393Z','audio_fault','~/Library/Application Support/TFTMAC/Captures/2026-08-28T21-40-53-459Z-d6d2f30b-ead9-47b8-8a81-16cc2551bd0e/runtime-fault-audit.json',NULL,'TFT PID 6021 had a started OpenSL ES media track routed to speaker; AudioFlinger primary mixer was active with zero raw underruns; ranchu audio HAL repeatedly returned pcm_writei I/O error -1.','DIRECT','Fault is below Android mixer and above/inside QEMU host audio output. Explicit CoreAudio backend is the next smallest repair.'),
+('ev_disconnect_same_pid','2026-08-28T23:19:31.418Z','network_fault','~/Library/Application Support/TFTMAC/Captures/2026-08-28T21-40-53-459Z-d6d2f30b-ead9-47b8-8a81-16cc2551bd0e/disconnect-window-audit.json',NULL,'TFT PID stayed 6021 across the user-observed disconnect. TFT requested fresh Android network callbacks around 18:11:59-18:12:00 and 18:14:01; each was immediately assigned to existing network 101 with no observed Android network loss.','STRONG','Supports Riot/TFT socket/session reconnect as owning layer; exact remote-side cause remains unresolved.'),
+('ev_5gb_presentation_delta','2026-08-28T23:21:18.835Z','graphics_pipeline_audit','~/Library/Application Support/TFTMAC/Captures/2026-08-28T21-40-53-459Z-d6d2f30b-ead9-47b8-8a81-16cc2551bd0e/graphics-pipeline-audit.json',NULL,'Across pre-game to post-game broad interval, SurfaceFlinger cumulative misses rose by 524, entirely HWC misses; GPU missed count stayed 1. TFT surface remained 1280x720 scaled 1.5x to 1920x1080.','STRONG','Broad interval includes non-combat time; use only to prioritize the next bounded combat trace, not to declare HWC root cause.');
+
+INSERT OR REPLACE INTO unknowns(id,question,owning_layer,blocking,next_probe,status,resolution) VALUES
+('unk_audio_coreaudio_fix','Does explicit CoreAudio backend eliminate ranchu pcm_writei I/O errors and restore audible TFT sound?','audio_host_backend',1,'Cold-restart the same 5 GiB runtime with -audio coreaudio, launch TFT, confirm no ranchu pcmWrite I/O errors, then obtain user audible confirmation.','TESTING',NULL),
+('unk_riot_session_disconnect','Why did TFT request fresh network callbacks and briefly disconnect while Android network 101 remained available?','application_network_session',0,'On next occurrence capture a narrow log window for TFT/Riot socket/Cronet/native transport events; do not change emulator network stack without Android-level loss evidence.','OPEN',NULL);
+
+INSERT OR REPLACE INTO failures(id,experiment_id,symptom,root_cause,owning_layer,workaround,permanent_fix,state) VALUES
+('fail_ranchu_audio_output',NULL,'TFT produced no audible sound despite active Android media playback.','Android mixer/routing is healthy, but ranchu virtual audio HAL cannot write PCM to the implicitly selected QEMU host backend and repeatedly reports I/O error -1.','audio_host_backend','Restart controlled emulator with explicit CoreAudio backend.','Pin and validate explicit macOS audio backend in TFTMAC startup; add audio health gate that detects repeated ranchu pcmWrite failures.','WORKAROUND');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T23:20:34.904Z','5 GiB runtime result','Recorded viable 5 GiB run with 1st-place completion, acceptable gameplay and no Android low-memory instability.','ev_5gb_full_run'),
+('2026-08-28T23:17:48.393Z','Audio fault isolation','Localized no-sound regression to ranchu/QEMU host audio output after proving TFT OpenSL and AudioFlinger speaker path healthy.','ev_audio_ranchu_io'),
+('2026-08-28T23:19:31.418Z','Disconnect isolation','Classified late-game disconnect as same-process app/session reconnect with Android network still available.','ev_disconnect_same_pid'),
+('2026-08-28T23:21:18.835Z','Presentation direction','Recorded +524 broad-interval HWC misses with zero additional GPU misses and persistent 720p->1080p scaling.','ev_5gb_presentation_delta');
+
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('latest_audio_coreaudio_validation','Fresh 5 GiB run launched emulator with explicit -audio coreaudio. With TFT PID 5276 active, audio-health observed an active 44.1 kHz stereo OpenSL ES media track, mixer underruns partial=0/empty=0, ranchu pcm_writei I/O error count=0 and ranchu pcmWrite failure count=0. Machine-side audio path is healthy; user audible confirmation remains the final acceptance check.'),
+('latest_lock_screen_repair','Cold boot black screen was Android power/keyguard state, not graphics: mWakefulness=Asleep and SCREEN_STATE_OFF while keyguard was healthy. Auto PIN-entry logic was removed. TFTMAC now wakes via the real power path only when asleep, enables stay-awake for the controlled session, and leaves PIN entry manual. Post-repair state reached mWakefulness=Awake, SCREEN_STATE_ON, then Nexus Launcher after user unlock.'),
+('latest_reconnect_pid_policy','Reconnect/fault diagnostics now record and compare the actual TFT launch PID per session instead of hard-coding a historical PID.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_audio_coreaudio_health','2026-08-28T23:40:00.797Z','audio_health','~/Library/Application Support/TFTMAC/Captures/2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619/audio-health.json',NULL,'Explicit CoreAudio run: TFT PID 5276 has active OpenSL ES 44.1 kHz stereo playback; AudioFlinger mixer underruns are 0/0; ranchu pcm_writei I/O errors=0 and pcmWrite failures=0.','DIRECT','Machine-side repair validated. Audible-output acceptance still requires user confirmation.'),
+('ev_lock_screen_power_state','2026-08-28T23:37:54.563Z','guest_power_state','~/Library/Application Support/TFTMAC/Captures/2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619/screen-state-probe.json',NULL,'Black emulator window was caused by Android guest being asleep with screenState OFF while keyguard/SystemUI remained healthy; explicit wake changed guest to Awake and SCREEN_STATE_ON.','DIRECT','Not a renderer/gfxstream/MoltenVK failure. Automatic PIN entry was removed; secure unlock remains manual.');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T23:40:00.797Z','CoreAudio repair validation','Validated explicit CoreAudio with active TFT playback and zero ranchu PCM write failures.','ev_audio_coreaudio_health'),
+('2026-08-28T23:37:54.563Z','Black-screen repair','Localized black screen to asleep guest display/keyguard state, restored display with power wake, and removed automatic PIN-entry behavior.','ev_lock_screen_power_state');
+
+-- ---------------------------------------------------------------------------
+-- Run-trend use, logger hardening, and next presentation experiment
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('current_logger_reliability','Raw telemetry is now the authority. Stop seals the raw capture and manifest before SQLite normalization. Normalization failure is written as normalization-error.json and cannot block emulator cleanup, AVD restore, control-state release, or preservation of the long gameplay capture.'),
+('current_continuous_run_validity','Continuous official-TFT runs are COMPLETE when process/memory/clock telemetry and Google Play package authority are present. Match-entry and gfxinfo native-frame visibility are no longer prerequisites for a valid run; frame timing remains an independent metric.'),
+('current_surfaceflinger_stream','New logger sessions sample SurfaceFlinger total/GPU/HWC missed-frame counters every 10 seconds for correlation against CPU, memory, settings and application events.'),
+('latest_5gb_trend','Latest closed 5 GiB run split into 10-minute windows: heavy-gameplay CPU ~245-277%, emulator RSS ~6.1-6.5 GiB, host available ~5.1-5.5 GiB, guest available ~1.64-1.75 GiB. Across the full ~106-minute run compressed memory rose ~2.72 GiB and host available fell ~2.62 GiB. Pressure accumulates over time, but disconnect did not coincide with guest-memory collapse.'),
+('latest_5gb_vs_6gb','Directional whole-run comparison: pageout rate 6 GiB ~207.18/min vs 5 GiB ~133.54/min (-35.55%); compressed mean ~0.45 GiB lower and compressed p95 ~1.65 GiB lower on 5 GiB. Workload mixes differ, so 5 GiB is retained but not promoted as a final causal fact.'),
+('current_ram_decision','KEEP 5 GiB for continued development; DO NOT cut to 4 GiB now. Heavy-gameplay guest available memory already reaches ~1.64 GiB, so another 1 GiB cut has insufficient safety margin without stronger evidence.'),
+('current_presentation_candidate','Stage one-factor gfxstream/ASG candidate mactician_compatible_5gb_flush400_v1: drawFlushInterval 800 -> 400 only. Motivation: broad prior run added +524 HWC misses with +0 GPU misses, and AOSP defines this parameter as balancing host-GPU starvation against notification overhead. Do not combine with RAM, graphics preset, FPS, Performance Mode or other transport changes.'),
+('current_preplay_pressure_thresholds','Between-game TFT app refresh threshold tightened to host compressed >=3.75 GiB or host available <=4.75 GiB based on the 5 GiB end-of-run trend; refresh preserves emulator and logger.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_5gb_run_trend','2026-08-28T23:43:51.134Z','continuous_run_trend','~/Library/Application Support/TFTMAC/Captures/2026-08-28T21-40-53-459Z-d6d2f30b-ead9-47b8-8a81-16cc2551bd0e/run-trend-analysis.json',NULL,'Ten-minute trend analysis shows progressive host compression/availability degradation across the 5 GiB run while heavy gameplay retains roughly 1.64-1.75 GiB guest available memory.','DIRECT','Supports between-game process refresh and retaining 5 GiB; does not support a 4 GiB cut.'),
+('ev_5gb_6gb_normalized','2026-08-28T23:45:40.943Z','normalized_run_comparison','runtime continuous-run analyses',NULL,'Normalized pageout rate was ~207.18/min on the long 6 GiB run and ~133.54/min on the 5 GiB run, a directional ~35.55% reduction; 5 GiB also reduced compressed-memory mean/p95.','STRONG','Runs differ in duration and workload mix; use directionally, not as a final controlled causal promotion.'),
+('ev_logger_raw_seal','2026-08-28T23:47:00Z','logger_design','tools/tftmac-direct-control.mjs',NULL,'Raw capture sealing and cleanup are independent from SQLite normalization; post-processing errors are non-fatal to capture preservation.','DIRECT','Prevents long gameplay sessions from being endangered by DB schema/migration failures.');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T23:43:51.134Z','5 GiB trend analysis','Used the full prior run to identify progressive host pressure, stable heavy-game guest headroom, and no memory-collapse signature at the disconnect.','ev_5gb_run_trend'),
+('2026-08-28T23:45:40.943Z','Normalized RAM comparison','Converted raw pageout totals to per-minute rates and retained 5 GiB while rejecting a 4 GiB cut for now.','ev_5gb_6gb_normalized'),
+('2026-08-28T23:47:00Z','Logger reliability hardening','Decoupled raw capture sealing and cleanup from SQLite normalization so post-processing cannot strand or invalidate a long run.','ev_logger_raw_seal');
+
 COMMIT;
 
 -- Recommended queries during every future work session:

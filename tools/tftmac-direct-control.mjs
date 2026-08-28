@@ -264,6 +264,62 @@ async function ensureGuestUnlocked(runtime, captureDir = null, timeoutMs = 20000
   throw new Error(`GUEST_USER_0_REMAINS_LOCKED: ${JSON.stringify({ observed, attempts })}`);
 }
 
+function wakeGuestScreen(runtime, captureDir = null) {
+  const powerBefore = adb(runtime, ['shell', 'dumpsys', 'power'], { allowFailure: true, timeout: 10000 }).stdout;
+  const asleep = /mWakefulness=Asleep|SCREEN_STATE_OFF/i.test(powerBefore);
+  adb(runtime, ['shell', 'svc', 'power', 'stayon', 'true'], { allowFailure: true, timeout: 10000 });
+  if (asleep) adb(runtime, ['shell', 'input', 'keyevent', 'KEYCODE_POWER'], { allowFailure: true, timeout: 10000 });
+  adb(runtime, ['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'], { allowFailure: true, timeout: 10000 });
+  const observed = guestUserState(runtime);
+  const result = { action: observed.unlocked ? 'GUEST_AWAKE_UNLOCKED' : 'GUEST_AWAKE_MANUAL_UNLOCK_REQUIRED', wasAsleep: asleep, ...observed };
+  if (captureDir) {
+    writeJSON(path.join(captureDir, 'guest-unlock.json'), result);
+    appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: result.action });
+  }
+  return result;
+}
+
+function wakeGuestScreenAction() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device to wake.');
+  return wakeGuestScreen(runtime, state?.captureDir ?? null);
+}
+
+function screenStateProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device for screen-state probe.');
+  const shell = args => adb(runtime, ['shell', ...args], { allowFailure: true, timeout: 15000 }).stdout;
+  const power = shell(['dumpsys', 'power']);
+  const policy = shell(['dumpsys', 'window', 'policy']);
+  const windows = shell(['dumpsys', 'window', 'windows']);
+  const xml = dumpUI(runtime);
+  const result = {
+    observedAt: nowISO(),
+    guestState: guestUserState(runtime),
+    power: power.split(/\r?\n/).filter(line => /Display Power|mWakefulness|mInteractive|screen|display|brightness|doze/i.test(line)).slice(0, 160),
+    keyguard: policy.split(/\r?\n/).filter(line => /keyguard|screen|interactive|dream|awake|showing|occluded/i.test(line)).slice(0, 200),
+    windows: windows.split(/\r?\n/).filter(line => /mCurrentFocus|mFocusedApp|StatusBar|NotificationShade|Keyguard|Bouncer|SystemUI|Dream|SurfaceView/i.test(line)).slice(0, 220),
+    uiText: xml.match(/text="([^"]*)"/g)?.slice(0, 120) ?? []
+  };
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'screen-state-probe.json'), result);
+  return result;
+}
+
+function revealLockScreen() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device to reveal lock screen.');
+  wakeGuestScreen(runtime, state?.captureDir ?? null);
+  command('/bin/sleep', ['1'], { allowFailure: true, timeout: 3000 });
+  adb(runtime, ['shell', 'input', 'swipe', '960', '900', '960', '250', '300'], { allowFailure: true, timeout: 10000 });
+  command('/bin/sleep', ['1'], { allowFailure: true, timeout: 3000 });
+  const result = screenStateProbe();
+  if (state?.captureDir) appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'LOCK_SCREEN_REVEAL_REQUESTED' });
+  return { action: 'LOCK_SCREEN_REVEALED_FOR_MANUAL_PIN', ...result };
+}
+
 function hostTimeZoneId() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
 }
@@ -496,7 +552,7 @@ function runtimeState(runtime, captureDir, bootClass) {
     systemImagePackage: REQUIRED_IMAGE, avdName: AVD_NAME, avdHome: runtime.avdHome, avdConfigSHA256: avdHash,
     adbSerial: SERIAL, adbServerPort: Number(ADB_PORT), emulatorConsolePort: Number(EMULATOR_PORT),
     vcpu: 6, ramMB: PLAY_RAM_MB, displayRequested: `${PLAY_DISPLAY_WIDTH}x${PLAY_DISPLAY_HEIGHT}`, densityRequested: PLAY_DISPLAY_DENSITY, refreshTargetHz: 60,
-    gpuMode: 'host', audioEnabled: true, deviceFrame: false, snapshotsRequired: false, bootClass,
+    gpuMode: 'host', audioEnabled: true, audioBackend: 'coreaudio', deviceFrame: false, snapshotsRequired: false, bootClass,
     observedDisplay: display, observedDensity: density
   };
   if (captureDir) writeJSON(path.join(captureDir, 'runtime-state.json'), state);
@@ -584,7 +640,7 @@ function startEmulator(runtime, captureDir) {
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
     `@${AVD_NAME}`, '-id', 'TFTMAC-Play-Authority', '-port', EMULATOR_PORT,
-    '-gpu', 'host', '-cores', '6', '-memory', String(PLAY_RAM_MB),
+    '-gpu', 'host', '-audio', 'coreaudio', '-cores', '6', '-memory', String(PLAY_RAM_MB),
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
   const timeZone = hostTimeZoneId();
@@ -601,7 +657,7 @@ function donorConfigBackupPath(runtime) {
   return path.join(runtime.avdDir, 'config.ini.tftmac-donor-backup');
 }
 
-function prepareDonorAVD(runtime) {
+function prepareDonorAVD(runtime, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
   if (!runtime.avdDir || !runtime.avdConfig) throw new Error('Donor control requires an existing official Play AVD.');
   if (!isUnder(runtime.avdDir, EXTERNAL_ROOT)) throw new Error('Donor control AVD must remain on the external runtime volume.');
   const configPath = path.join(runtime.avdDir, 'config.ini');
@@ -623,7 +679,7 @@ function prepareDonorAVD(runtime) {
     'hw.gpu.enabled': 'yes',
     'hw.gpu.mode': 'host',
     'hw.gltransport': DONOR_PROFILE.glTransport,
-    'hw.gltransport.drawFlushInterval': String(DONOR_PROFILE.drawFlushInterval),
+    'hw.gltransport.drawFlushInterval': String(drawFlushInterval),
     'hw.gltransport.asg.writeBufferSize': String(DONOR_PROFILE.asgWriteBufferSize),
     'hw.gltransport.asg.writeStepSize': String(DONOR_PROFILE.asgWriteStepSize),
     'hw.gltransport.asg.dataRingSize': String(DONOR_PROFILE.asgDataRingSize),
@@ -660,7 +716,7 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
     `@${AVD_NAME}`, '-id', 'TFTMAC-Mactician-Compatible', '-port', EMULATOR_PORT,
-    '-gpu', 'host', '-feature', DONOR_PROFILE.featureList,
+    '-gpu', 'host', '-audio', 'coreaudio', '-feature', DONOR_PROFILE.featureList,
     '-append-userspace-opt', 'androidboot.opengles.version=196610',
     '-append-userspace-opt', 'androidboot.tftmac.graphics_profile=mactician-compatible',
     '-skin', `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
@@ -697,7 +753,7 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
   return child.pid;
 }
 
-function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
+function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
   const display = adb(runtime, ['shell', 'wm', 'size'], { allowFailure: true }).stdout.trim();
   const density = adb(runtime, ['shell', 'wm', 'density'], { allowFailure: true }).stdout.trim();
   const state = {
@@ -734,9 +790,10 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DON
       writeBufferSize: DONOR_PROFILE.asgWriteBufferSize,
       writeStepSize: DONOR_PROFILE.asgWriteStepSize,
       dataRingSize: DONOR_PROFILE.asgDataRingSize,
-      drawFlushInterval: DONOR_PROFILE.drawFlushInterval
+      drawFlushInterval
     },
     audioEnabled: true,
+    audioBackend: 'coreaudio',
     deviceFrame: false,
     snapshotsRequired: false,
     bootClass,
@@ -747,14 +804,14 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DON
   return state;
 }
 
-async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
+async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
   singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
   if (!runtime.requiredImagePresent) throw new Error(`Required official Play image is missing: ${runtime.requiredImagePath}`);
   if (!runtime.avdIni || !runtime.avdConfig || !runtime.avdDir) throw new Error(`Required official Play AVD ${AVD_NAME} was not found.`);
   ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
-  const prepared = prepareDonorAVD(runtime);
+  const prepared = prepareDonorAVD(runtime, drawFlushInterval);
   const windowFit = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
@@ -777,10 +834,10 @@ async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId =
   const emulatorPid = startDonorEmulator(runtime, captureDir, ramMB, controlProfileId);
   try {
     await waitForBoot(runtime);
-    const guestUnlock = await ensureGuestUnlocked(runtime, captureDir);
+    const guestUnlock = wakeGuestScreen(runtime, captureDir);
     const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
     const clockPreflight = await ensureGuestClock(runtime, captureDir);
-    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD', ramMB, controlProfileId);
+    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD', ramMB, controlProfileId, drawFlushInterval);
     const pkg = packageState(runtime, captureDir, false);
     const renderer = rendererState(runtime, captureDir);
     const state = {
@@ -831,7 +888,7 @@ async function startControl() {
   const reusedRunningEmulator = deviceReady(runtime);
   const emulatorPid = reusedRunningEmulator ? null : startEmulator(runtime, captureDir);
   await waitForBoot(runtime);
-  const guestUnlock = await ensureGuestUnlocked(runtime, captureDir);
+  const guestUnlock = wakeGuestScreen(runtime, captureDir);
   const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
   const clockPreflight = await ensureGuestClock(runtime, captureDir);
   runtimeState(runtime, captureDir, reusedRunningEmulator ? 'WARM' : 'COLD');
@@ -1026,8 +1083,8 @@ async function preplayOptimize() {
   if (!loggerGate.healthy) throw new Error(`LOGGER_REQUIRED_BEFORE_PREPLAY_OPTIMIZE: ${JSON.stringify(loggerGate)}`);
   const before = latestMemoryPressure(state.captureDir);
   if (!before) throw new Error('PREPLAY_MEMORY_SAMPLE_UNAVAILABLE');
-  const compressionThresholdGiB = 4.5;
-  const availableThresholdGiB = 4.25;
+  const compressionThresholdGiB = 3.75;
+  const availableThresholdGiB = 4.75;
   const shouldRefresh = before.hostCompressedGiB >= compressionThresholdGiB || before.hostAvailableGiB <= availableThresholdGiB;
   let restart = null;
   if (shouldRefresh) {
@@ -1125,6 +1182,12 @@ async function launchGame() {
     await sleep(1000);
   }
   if (!pid) throw new Error(`TFT did not remain running. component=${resolved ?? 'unresolved'} launch=${(launchResult.stderr || launchResult.stdout || '').trim()}`);
+  const sessionPath = path.join(captureDir, 'session.json');
+  const launchSession = readJSON(sessionPath, {});
+  launchSession.lastTftLaunchPid = pid;
+  launchSession.lastTftLaunchObservedAt = nowISO();
+  writeJSON(sessionPath, launchSession);
+  appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_PROCESS_RUNNING', pid });
   await sleep(8000);
   const renderer = rendererState(runtime, captureDir);
   const xml = dumpUI(runtime);
@@ -2225,6 +2288,288 @@ duration_ms: ${durationMs}
 `;
 }
 
+function analyzeLatestClosedRunTrends() {
+  ensureDir(CAPTURE_ROOT);
+  const candidates = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const dir = path.join(CAPTURE_ROOT, entry.name);
+      const session = readJSON(path.join(dir, 'session.json'), null);
+      return { id: entry.name, dir, session };
+    })
+    .filter(row => row.session?.endedUTC && exists(path.join(row.dir, 'host-memory.jsonl')) && exists(path.join(row.dir, 'host-process.jsonl')))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const target = candidates.at(-1);
+  if (!target) throw new Error('NO_CLOSED_RUN_AVAILABLE_FOR_TREND_ANALYSIS');
+  const startNs = Number(target.session.hostStartMonoNs);
+  const endNs = Number(target.session.hostEndMonoNs);
+  if (!Number.isFinite(startNs) || !Number.isFinite(endNs) || endNs <= startNs) throw new Error('CLOSED_RUN_WINDOW_INVALID');
+  const processRows = readJSONL(path.join(target.dir, 'host-process.jsonl'));
+  const memoryRows = readJSONL(path.join(target.dir, 'host-memory.jsonl'));
+  const sfRows = readJSONL(path.join(target.dir, 'surfaceflinger', 'counters.jsonl'));
+  const emulatorRows = processRows.filter(row => /qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? '')));
+  const gib = 1024 ** 3;
+  const binSeconds = 600;
+  const binNs = binSeconds * 1e9;
+  const bins = [];
+  for (let binStart = startNs, index = 1; binStart < endNs; binStart += binNs, index += 1) {
+    const binEnd = Math.min(endNs, binStart + binNs);
+    const p = emulatorRows.filter(row => { const n = Number(row.host_mono_ns); return Number.isFinite(n) && n >= binStart && n < binEnd; });
+    const m = memoryRows.filter(row => { const n = Number(row.host_mono_ns); return Number.isFinite(n) && n >= binStart && n < binEnd; });
+    const s = sfRows.filter(row => { const n = Number(row.host_mono_ns); return Number.isFinite(n) && n >= binStart && n < binEnd; });
+    const pageouts = m.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+    const sfDelta = key => s.length > 1 && Number.isFinite(Number(s[0][key])) && Number.isFinite(Number(s.at(-1)[key])) ? Number(s.at(-1)[key]) - Number(s[0][key]) : null;
+    const durationMinutes = (binEnd - binStart) / 1e9 / 60;
+    const pageoutDelta = pageouts.length > 1 ? pageouts.at(-1) - pageouts[0] : null;
+    bins.push({
+      index,
+      startSeconds: (binStart - startNs) / 1e9,
+      durationSeconds: (binEnd - binStart) / 1e9,
+      emulatorCpuMeanPct: summarizeNumbers(p.map(row => Number(row.cpu_pct))).mean,
+      emulatorCpuP95Pct: summarizeNumbers(p.map(row => Number(row.cpu_pct))).p95,
+      emulatorRssMeanMiB: summarizeNumbers(p.map(row => Number(row.rss_kb) / 1024)).mean,
+      hostAvailableMeanGiB: summarizeNumbers(m.map(row => Number(row.host_available_bytes) / gib)).mean,
+      hostCompressedMeanGiB: summarizeNumbers(m.map(row => Number(row.host_compressed_bytes) / gib)).mean,
+      guestAvailableMeanGiB: summarizeNumbers(m.map(row => Number(row.guest_available_bytes) / gib)).mean,
+      pageoutDelta,
+      pageoutsPerMinute: Number.isFinite(pageoutDelta) && durationMinutes > 0 ? pageoutDelta / durationMinutes : null,
+      surfaceFlinger: {
+        samples: s.length,
+        totalMissDelta: sfDelta('totalMissedFrames'),
+        gpuMissDelta: sfDelta('gpuMissedFrames'),
+        hwcMissDelta: sfDelta('hwcMissedFrames')
+      }
+    });
+  }
+  const validBins = bins.filter(bin => Number.isFinite(bin.hostCompressedMeanGiB));
+  const first = validBins[0] ?? null;
+  const last = validBins.at(-1) ?? null;
+  const delta = (a, b) => Number.isFinite(a) && Number.isFinite(b) ? a - b : null;
+  const result = {
+    observedAt: nowISO(),
+    sessionId: target.id,
+    runDurationSeconds: (endNs - startNs) / 1e9,
+    binSeconds,
+    bins,
+    firstToLast: first && last ? {
+      emulatorCpuMeanPct: delta(last.emulatorCpuMeanPct, first.emulatorCpuMeanPct),
+      emulatorRssMeanMiB: delta(last.emulatorRssMeanMiB, first.emulatorRssMeanMiB),
+      hostAvailableMeanGiB: delta(last.hostAvailableMeanGiB, first.hostAvailableMeanGiB),
+      hostCompressedMeanGiB: delta(last.hostCompressedMeanGiB, first.hostCompressedMeanGiB),
+      guestAvailableMeanGiB: delta(last.guestAvailableMeanGiB, first.guestAvailableMeanGiB),
+      pageoutsPerMinute: delta(last.pageoutsPerMinute, first.pageoutsPerMinute)
+    } : null,
+    note: 'Ten-minute windows over the latest closed raw run. Use trends to identify progressive pressure; different workload intensity between windows can still affect CPU/RSS.'
+  };
+  writeJSON(path.join(target.dir, 'run-trend-analysis.json'), result);
+  return result;
+}
+
+function compareLatestRuns() {
+  ensureDir(CAPTURE_ROOT);
+  const rows = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const dir = path.join(CAPTURE_ROOT, entry.name);
+      const continuous = path.join(dir, 'continuous-run-analysis.json');
+      const gameplay = path.join(dir, 'gameplay-analysis.json');
+      return { id: entry.name, dir, analysisPath: exists(continuous) ? continuous : (exists(gameplay) ? gameplay : null) };
+    })
+    .filter(row => row.analysisPath)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(-4)
+    .map(row => {
+      const analysis = readJSON(row.analysisPath, {});
+      const runtimeInfo = readJSON(path.join(row.dir, 'runtime-state.json'), {});
+      const mem = analysis.memory ?? {};
+      const cpu = analysis.hostEmulator?.cpuPercent ?? {};
+      const rss = analysis.hostEmulator?.rssMiB ?? {};
+      return {
+        sessionId: row.id,
+        control: runtimeInfo.control ?? analysis.runtimeConfig ?? null,
+        ramMB: runtimeInfo.ramMB ?? null,
+        durationSeconds: analysis.run?.durationSeconds ?? analysis.match?.durationSeconds ?? null,
+        captureState: analysis.run?.captureState ?? analysis.captureState ?? null,
+        completedMatches: analysis.annotations?.completedMatches ?? (analysis.match ? 1 : 0),
+        wins: analysis.annotations?.wins ?? (analysis.match?.placement === 1 ? 1 : 0),
+        emulatorCpuMeanPct: cpu.mean ?? null,
+        emulatorCpuP95Pct: cpu.p95 ?? null,
+        emulatorRssMeanMiB: rss.mean ?? null,
+        emulatorRssP95MiB: rss.p95 ?? null,
+        hostAvailableMeanGiB: mem.hostAvailableGiB?.mean ?? null,
+        hostCompressedMeanGiB: mem.hostCompressedGiB?.mean ?? null,
+        hostCompressedP95GiB: mem.hostCompressedGiB?.p95 ?? null,
+        hostSwapMeanGiB: mem.hostSwapUsedGiB?.mean ?? null,
+        guestAvailableMeanGiB: mem.guestAvailableGiB?.mean ?? null,
+        guestAvailableMinGiB: mem.guestAvailableGiB?.min ?? null,
+        pageoutDelta: mem.pageoutDelta ?? null,
+        pageoutsPerMinute: Number.isFinite(Number(mem.pageoutDelta)) && Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds) > 0
+          ? Number(mem.pageoutDelta) / (Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds) / 60)
+          : null,
+        qualityReports: analysis.annotations?.qualityReports ?? []
+      };
+    });
+  const baseline6 = [...rows].reverse().find(row => Number(row.ramMB) === 6144) ?? null;
+  const candidate5 = [...rows].reverse().find(row => Number(row.ramMB) === 5120) ?? null;
+  const delta = baseline6 && candidate5 ? {
+    hostAvailableMeanGiB: candidate5.hostAvailableMeanGiB - baseline6.hostAvailableMeanGiB,
+    hostCompressedMeanGiB: candidate5.hostCompressedMeanGiB - baseline6.hostCompressedMeanGiB,
+    hostCompressedP95GiB: candidate5.hostCompressedP95GiB - baseline6.hostCompressedP95GiB,
+    hostSwapMeanGiB: candidate5.hostSwapMeanGiB - baseline6.hostSwapMeanGiB,
+    guestAvailableMeanGiB: candidate5.guestAvailableMeanGiB - baseline6.guestAvailableMeanGiB,
+    pageoutDelta: candidate5.pageoutDelta - baseline6.pageoutDelta,
+    pageoutsPerMinute: candidate5.pageoutsPerMinute - baseline6.pageoutsPerMinute,
+    pageoutsPerMinutePercent: Number.isFinite(candidate5.pageoutsPerMinute) && Number.isFinite(baseline6.pageoutsPerMinute) && baseline6.pageoutsPerMinute !== 0
+      ? 100 * (candidate5.pageoutsPerMinute - baseline6.pageoutsPerMinute) / baseline6.pageoutsPerMinute
+      : null,
+    emulatorCpuMeanPct: candidate5.emulatorCpuMeanPct - baseline6.emulatorCpuMeanPct,
+    emulatorRssMeanMiB: candidate5.emulatorRssMeanMiB - baseline6.emulatorRssMeanMiB
+  } : null;
+  return { observedAt: nowISO(), runs: rows, baseline6GiB: baseline6, candidate5GiB: candidate5, candidateMinusBaseline: delta };
+}
+
+function audioHealthCheck() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  if (!deviceReady(runtime)) throw new Error('No active Android device for audio health check.');
+  const captureDir = state.captureDir;
+  const logPath = path.join(captureDir, 'logcat.raw.txt');
+  const text = exists(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
+  const pcmWriteIoErrorCount = (text.match(/android\.hardware\.audio@7\.1-impl\.ranchu: pcmWrite:259 pcm_writei failed with 'cannot read\/write stream data: I\/O error'/g) ?? []).length;
+  const pcmWriteFailureCount = (text.match(/android\.hardware\.audio@7\.1-impl\.ranchu: pcmWrite:260 failure: -1/g) ?? []).length;
+  const audioDump = adb(runtime, ['shell', 'dumpsys', 'audio'], { allowFailure: true, timeout: 30000 }).stdout;
+  const audioFlinger = adb(runtime, ['shell', 'dumpsys', 'media.audio_flinger'], { allowFailure: true, timeout: 30000 }).stdout;
+  const pid = adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+  const tftPlayback = audioDump.split(/\r?\n/).filter(line => pid && line.includes(`/${pid}`) && /AudioPlaybackConfiguration/.test(line)).slice(-20);
+  const activeTftPlayback = tftPlayback.some(line => /state:started/.test(line));
+  const mixerUnderruns = audioFlinger.split(/\r?\n/).filter(line => /Normal mixer raw underrun counters/.test(line)).slice(-10);
+  const ps = state.emulatorPid ? command('/bin/ps', ['-p', String(state.emulatorPid), '-ww', '-o', 'command='], { allowFailure: true, timeout: 10000 }).stdout.trim() : '';
+  const explicitCoreAudio = /(?:^|\s)-audio\s+coreaudio(?:\s|$)/.test(ps);
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    tftPid: pid,
+    explicitCoreAudio,
+    pcmWriteIoErrorCount,
+    pcmWriteFailureCount,
+    activeTftPlayback,
+    tftPlayback,
+    mixerUnderruns,
+    healthy: explicitCoreAudio && pcmWriteIoErrorCount === 0 && pcmWriteFailureCount === 0
+  };
+  writeJSON(path.join(captureDir, 'audio-health.json'), result);
+  return result;
+}
+
+function audioBackendProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  const helpAudio = command(runtime.emulator, ['-help-audio'], { allowFailure: true, env: runtime.env, timeout: 30000 });
+  const helpAll = command(runtime.emulator, ['-help'], { allowFailure: true, env: runtime.env, timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+  const hostAudio = command('/usr/sbin/system_profiler', ['SPAudioDataType'], { allowFailure: true, timeout: 30000, maxBuffer: 8 * 1024 * 1024 });
+  const emulatorPs = state?.emulatorPid ? command('/bin/ps', ['-p', String(state.emulatorPid), '-ww', '-o', 'command='], { allowFailure: true, timeout: 10000 }) : { status: 1, stdout: '', stderr: '' };
+  const select = text => String(text ?? '').split(/\r?\n/).filter(line => /audio|coreaudio|sound|speaker|backend|out=|in=|no-audio/i.test(line)).slice(0, 240);
+  return {
+    observedAt: nowISO(),
+    emulatorPid: state?.emulatorPid ?? null,
+    emulatorCommand: emulatorPs.stdout.trim() || null,
+    helpAudio: { status: helpAudio.status, lines: select(`${helpAudio.stdout}\n${helpAudio.stderr}`) },
+    helpAudioRaw: `${helpAudio.stdout}${helpAudio.stderr}`.trim().slice(0, 16000),
+    helpRelevant: select(`${helpAll.stdout}\n${helpAll.stderr}`),
+    hostAudioProfile: select(`${hostAudio.stdout}\n${hostAudio.stderr}`)
+  };
+}
+
+function disconnectWindowAudit() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const captureDir = state.captureDir;
+  const logPath = path.join(captureDir, 'logcat.raw.txt');
+  const text = exists(logPath) ? fs.readFileSync(logPath, 'utf8').slice(-24 * 1024 * 1024) : '';
+  const lines = text.split(/\r?\n/);
+  const sessionInfo = readJSON(path.join(captureDir, 'session.json'), {});
+  const expectedPid = String(sessionInfo.lastTftLaunchPid ?? '').trim() || null;
+  const pidRx = expectedPid ? new RegExp(`\\b${expectedPid.replace(/[^0-9]/g, '')}\\b`) : null;
+  const tftLines = lines.filter(line => !/\bartd\b/.test(line) && (
+    /com\.riotgames\.league\.teamfighttactics/.test(line) ||
+    (pidRx ? pidRx.test(line) : false) ||
+    (/ConnectivityService/.test(line) && /(?:10215|RequestorPkg: com\.riotgames\.league\.teamfighttactics|LOST|UNAVAIL|NetReassign)/.test(line)) ||
+    (/(?:ActivityTaskManager|ActivityManager|WindowManager)/.test(line) && /teamfighttactics|GameActivity|SplashActivity/.test(line))
+  ));
+  const highSignal = tftLines.filter(line => /disconnect|reconnect|LOST|UNAVAIL|timeout|timed out|connection|NetReassign|requestNetwork|destroy|stop|start|resume|pause|GameActivity|SplashActivity|network/i.test(line)).slice(-300);
+  const networkRequests = highSignal.filter(line => /ConnectivityService.*(?:requestNetwork|NetReassign|LOST|UNAVAIL)/.test(line));
+  const activityTransitions = highSignal.filter(line => /ActivityTaskManager|ActivityManager|WindowManager/.test(line));
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    currentTftPid: (() => { try { const runtime = discover(); return adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true, timeout: 10000 }).stdout.trim() || null; } catch { return null; } })(),
+    networkRequests: networkRequests.slice(-120),
+    activityTransitions: activityTransitions.slice(-120),
+    highSignal: highSignal.slice(-220)
+  };
+  writeJSON(path.join(captureDir, 'disconnect-window-audit.json'), result);
+  return result;
+}
+
+function runtimeFaultAudit() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  if (!deviceReady(runtime)) throw new Error('No active Android device for runtime fault audit.');
+  const captureDir = state.captureDir;
+  const sessionInfo = readJSON(path.join(captureDir, 'session.json'), {});
+  const knownLaunchPid = String(sessionInfo.lastTftLaunchPid ?? '').trim() || null;
+  const currentPid = adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+  const audioDump = adb(runtime, ['shell', 'dumpsys', 'audio'], { allowFailure: true, timeout: 30000 }).stdout;
+  const audioFlinger = adb(runtime, ['shell', 'dumpsys', 'media.audio_flinger'], { allowFailure: true, timeout: 30000 }).stdout;
+  const audioPolicy = adb(runtime, ['shell', 'dumpsys', 'media.audio_policy'], { allowFailure: true, timeout: 30000 }).stdout;
+  const musicVolume = adb(runtime, ['shell', 'media', 'volume', '--stream', '3', '--get'], { allowFailure: true, timeout: 10000 });
+  const zenMode = adb(runtime, ['shell', 'settings', 'get', 'global', 'zen_mode'], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+  const logPath = path.join(captureDir, 'logcat.raw.txt');
+  const hostLogPath = path.join(captureDir, 'emulator.stdout.log');
+  const logText = exists(logPath) ? fs.readFileSync(logPath, 'utf8').slice(-20 * 1024 * 1024) : '';
+  const hostLog = exists(hostLogPath) ? fs.readFileSync(hostLogPath, 'utf8') : '';
+  const lines = logText.split(/\r?\n/);
+  const networkRx = /disconnect|reconnect|connection\s+(?:lost|closed|reset|failed|failure)|network\s+(?:lost|unavailable|disconnect|failed|failure)|socket.*(?:closed|reset|timeout|failed)|timed?\s*out|ECONN|ENET|ETIMEDOUT|UnknownHost|DNS|ConnectivityService|NetworkMonitor|Cronet|WebSocket|libcurl|curl.*error|ssl.*(?:error|fail)|tls.*(?:error|fail)/i;
+  const riotRx = /riotgames|teamfighttactics|riotclient|riot|league/i;
+  const audioRx = /AudioTrack|AudioFlinger|AudioPolicy|AAudio|OpenSL|audio.*(?:error|fail|underrun|dead|disconnect|mute)|CoreAudio|qemu.*audio/i;
+  const networkEvidence = lines.filter(line => networkRx.test(line) && (riotRx.test(line) || /ConnectivityService|NetworkMonitor|netd|Cronet|DNS|ssl|tls/i.test(line))).slice(-240);
+  const audioLogEvidence = lines.filter(line => audioRx.test(line)).slice(-180);
+  const hostAudioEvidence = hostLog.split(/\r?\n/).filter(line => /audio|coreaudio|sound|speaker/i.test(line)).slice(-120);
+  const pickLines = (text, rx, limit = 160) => text.split(/\r?\n/).filter(line => rx.test(line)).slice(-limit);
+  const result = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    controlProfile: state.controlProfile ?? null,
+    process: {
+      currentTftPid: currentPid,
+      knownLaunchPid,
+      pidUnchangedFromPreGameObservation: Boolean(knownLaunchPid && currentPid === knownLaunchPid)
+    },
+    audio: {
+      runtimeDeclaresAudioEnabled: readJSON(path.join(captureDir, 'runtime-state.json'), {})?.audioEnabled ?? null,
+      musicVolume: { status: musicVolume.status, text: `${musicVolume.stdout}${musicVolume.stderr}`.trim() },
+      zenMode,
+      audioService: pickLines(audioDump, /STREAM_MUSIC|speaker|device|mute|volume|AudioDevice|AUDIO_DEVICE_OUT|active/i, 180),
+      audioFlinger: pickLines(audioFlinger, /output|mixer|track|active|standby|device|underrun|sample rate|frame/i, 180),
+      audioPolicy: pickLines(audioPolicy, /output|speaker|device|route|active|strategy|AUDIO_DEVICE_OUT/i, 180),
+      logEvidence: audioLogEvidence,
+      hostBackendEvidence: hostAudioEvidence
+    },
+    network: {
+      evidence: networkEvidence,
+      tftProcessStayedAlive: Boolean(knownLaunchPid && currentPid === knownLaunchPid),
+      interpretation: knownLaunchPid && currentPid === knownLaunchPid
+        ? 'The observed late-game disconnect did not restart the TFT process; investigate Riot/session/network transport and Android connectivity before app-crash recovery.'
+        : 'TFT PID changed; process-level restart may have contributed and needs timeline reconstruction.'
+    }
+  };
+  writeJSON(path.join(captureDir, 'runtime-fault-audit.json'), result);
+  return result;
+}
+
 function graphicsPipelineAudit() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -3216,6 +3561,27 @@ function labSchemaPath() {
   return candidates.find(exists) ?? null;
 }
 
+function engineeringMapSelfTest() {
+  const schemaPath = path.join(repoRoot, 'ssot', 'TFTMAC_ENGINEERING_MAP.sql');
+  if (!exists(schemaPath)) throw new Error('TFTMAC engineering-map SQL is unavailable.');
+  const tempPath = `/private/tmp/tftmac-map-selftest-${process.pid}-${Date.now()}.sqlite`;
+  const db = new DatabaseSync(tempPath);
+  try {
+    db.exec(fs.readFileSync(schemaPath, 'utf8'));
+    const foreignKeyProblems = db.prepare('PRAGMA foreign_key_check').all();
+    const tableCount = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'").get()?.n ?? 0;
+    const viewCount = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='view'").get()?.n ?? 0;
+    const currentLoggerReliability = db.prepare("SELECT value FROM map_meta WHERE key='current_logger_reliability'").get()?.value ?? null;
+    const currentPresentationCandidate = db.prepare("SELECT value FROM map_meta WHERE key='current_presentation_candidate'").get()?.value ?? null;
+    if (foreignKeyProblems.length) throw new Error(`ENGINEERING_MAP_FOREIGN_KEY_FAILURE: ${JSON.stringify(foreignKeyProblems)}`);
+    if (!currentLoggerReliability) throw new Error('ENGINEERING_MAP_LOGGER_POLICY_MISSING');
+    return { schemaPath, tableCount, viewCount, foreignKeyProblems, currentLoggerReliability, currentPresentationCandidate };
+  } finally {
+    try { db.close(); } catch {}
+    try { fs.unlinkSync(tempPath); } catch {}
+  }
+}
+
 function labSelfTest() {
   const schemaPath = labSchemaPath();
   if (!schemaPath) throw new Error('TFTMAC performance-lab schema is unavailable.');
@@ -3266,18 +3632,42 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
     const sessionId = session.sessionId;
     const runtimeConfigId = session.runtimeConfig ?? runtime.control ?? 'control_stock_direct_v0';
     const matchResultObserved = session.matchResultObserved === true || markers.some(row => row.event === 'MATCH_RESULT');
-    const gameplaySemanticValid = session.matchEntryObserved === true && matchResultObserved && pkg.installerPackage === 'com.android.vending';
+    const gameplayOutcomeObserved = matchResultObserved && pkg.installerPackage === 'com.android.vending';
+    const rawTelemetryValid = clocks.length > 0 && processes.length > 0 && memories.length > 0;
+    const officialRuntimeValid = pkg.installerPackage === 'com.android.vending';
     const nativeFrameTimingValid = frames.some(frame => frame.intervalNs !== null);
-    const semanticValid = gameplaySemanticValid;
-    const captureState = gameplaySemanticValid && nativeFrameTimingValid ? 'COMPLETE' : 'PARTIAL';
-    const workloadClass = gameplaySemanticValid ? 'MIXED' : 'UNKNOWN';
+    const semanticValid = rawTelemetryValid && officialRuntimeValid;
+    const captureState = semanticValid ? 'COMPLETE' : 'PARTIAL';
+    const workloadClass = session.lastTftLaunchPid || matchResultObserved ? 'MIXED' : 'UNKNOWN';
     const packageStatePath = path.join(captureDir, 'package-state.json');
     const rendererStatePath = path.join(captureDir, 'renderer-state.json');
 
     db.exec('BEGIN IMMEDIATE;');
     try {
+      const observedConfigHash = runtime.avdConfigSHA256 ?? null;
+      const hashOwner = observedConfigHash ? db.prepare('SELECT id FROM runtime_configs WHERE config_sha256=?').get(observedConfigHash)?.id ?? null : null;
+      const safeConfigHash = !hashOwner || hashOwner === runtimeConfigId ? observedConfigHash : null;
+      const runtimeConfigExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(runtimeConfigId));
+      if (!runtimeConfigExists) {
+        const baselineId = 'mactician_compatible_official_v0';
+        const baselineExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(baselineId));
+        const parentConfigId = runtimeConfigId !== baselineId && baselineExists ? baselineId : null;
+        db.prepare(`INSERT INTO runtime_configs(
+          id,parent_config_id,name,config_sha256,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+          avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,display_width,display_height,density_dpi,refresh_hz,
+          gpu_mode,audio_enabled,graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(runtimeConfigId,parentConfigId,`Observed runtime ${runtimeConfigId}`,safeConfigHash,
+            '37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),
+            asNumber(runtime.vcpu),asNumber(runtime.ramMB),1920,1080,320,60,'host',runtime.audioEnabled === false ? 0 : 1,
+            runtime.graphicsTransportRequested ?? null,renderer?.angleSettings ? JSON.stringify(renderer.angleSettings) : null,
+            renderer?.properties?.['ro.hardware.vulkan'] ?? null,
+            (renderer?.hostGraphicsEvidence ?? []).some(line => /MoltenVK/i.test(line)) ? 'OBSERVED_IN_HOST_LOG' : null,
+            'direct emulator window',runtimeConfigId === baselineId ? 'CONTROL' : 'CANDIDATE',session.startedUTC ?? nowISO(),
+            `Auto-registered from runtime-state during normalization; audioBackend=${runtime.audioBackend ?? 'implicit'}.`);
+      }
       db.prepare("UPDATE runtime_configs SET config_sha256=COALESCE(config_sha256, ?), graphics_transport=COALESCE(graphics_transport, ?), angle_mode=COALESCE(angle_mode, ?), vulkan_mode=COALESCE(vulkan_mode, ?), moltenvk_mode=COALESCE(moltenvk_mode, ?) WHERE id=?")
-        .run(runtime.avdConfigSHA256 ?? null,
+        .run(safeConfigHash,
           runtime.graphicsTransportRequested ?? runtime.observedGraphicsTransport ?? null,
           renderer?.angleSettings ? JSON.stringify(renderer.angleSettings) : null,
           renderer?.properties?.['ro.hardware.vulkan'] ?? null,
@@ -3301,8 +3691,8 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
           exists(packageStatePath) ? sha256File(packageStatePath) : null,
           exists(rendererStatePath) ? sha256File(rendererStatePath) : null,
           manifestSHA256, session.packageUpdatedDuringSession ? 1 : 0, captureState, semanticValid ? 1 : 0,
-          gameplaySemanticValid ? (nativeFrameTimingValid ? null : 'Gameplay outcome is valid, but native Unreal/Vulkan frame timing is not visible through gfxinfo.') : 'Control capture did not prove a complete official Google-Play-installed match.',
-          `Google Play installer=${pkg.installerPackage ?? 'unknown'}; authority-ui-verified=${session.packageAuthorityVerified === true}; matchResult=${matchResultObserved}; nativeFrameTiming=${nativeFrameTimingValid}; signer=${pkg.signerCertificateSHA256 ?? 'unavailable'}`);
+          semanticValid ? (nativeFrameTimingValid ? null : 'Continuous raw run is valid; native Unreal/Vulkan frame timing remains a separate unresolved metric.') : 'Continuous run is missing required raw telemetry or official Google Play package authority.',
+          `model=CONTINUOUS_RUN_PRIMARY; Google Play installer=${pkg.installerPackage ?? 'unknown'}; rawTelemetry=${rawTelemetryValid}; matchResult=${matchResultObserved}; nativeFrameTiming=${nativeFrameTimingValid}; signer=${pkg.signerCertificateSHA256 ?? 'unavailable'}`);
 
       db.prepare("DELETE FROM evidence WHERE session_id=? AND id LIKE 'evidence_%'").run(sessionId);
       db.prepare('DELETE FROM experiment_sessions WHERE experiment_id=? AND session_id=?').run('exp_control_direct_play', sessionId);
@@ -3403,7 +3793,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       ];
       for (const [scope,name,value,unit] of metricRows) {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
-        const metricSemanticValid = scope === 'FRAME' ? (nativeFrameTimingValid ? 1 : 0) : (gameplaySemanticValid ? 1 : 0);
+        const metricSemanticValid = scope === 'FRAME' ? (nativeFrameTimingValid ? 1 : 0) : (semanticValid ? 1 : 0);
         metricStmt.run(sessionId, null, scope, name, Number(value), unit, scope === 'FRAME' ? (artifactByPath.get('frame-metrics.json') ?? frameArtifact) : (artifactByPath.get('storage-bom.json') ?? null), metricSemanticValid, scope === 'FRAME' && !nativeFrameTimingValid ? 'gfxinfo is not a valid native Unreal/Vulkan frame source for this session.' : null);
       }
 
@@ -3424,7 +3814,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       db.prepare("UPDATE unknowns SET status='RESOLVED', resolved_at=?, notes=? WHERE id='u_storage_bom'")
         .run(session.endedUTC ?? nowISO(), JSON.stringify(storage));
 
-      if (gameplaySemanticValid) {
+      if (gameplayOutcomeObserved) {
         db.prepare("INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES('exp_control_direct_play',?,'BASELINE')").run(sessionId);
         db.prepare("UPDATE experiments SET state='COMPLETE', completed_at=?, notes=? WHERE id='exp_control_direct_play'")
           .run(session.endedUTC ?? nowISO(), `Completed official Google-Play-installed live-match control session ${sessionId}; native frame timing available=${nativeFrameTimingValid}.`);
@@ -3512,18 +3902,44 @@ async function stopControl() {
   session.hostEndMonoNs = monoNs().toString();
   const markersAtStop = readJSONL(path.join(captureDir, 'markers.jsonl'));
   const matchResultObserved = session.matchResultObserved === true || markersAtStop.some(row => row.event === 'MATCH_RESULT');
-  session.semanticValid = session.matchEntryObserved === true && matchResultObserved && pkg.installerPackage === 'com.android.vending';
+  session.rawCaptureState = 'SEALED';
+  session.semanticValid = pkg.installerPackage === 'com.android.vending'
+    && exists(path.join(captureDir, 'host-process.jsonl'))
+    && exists(path.join(captureDir, 'host-memory.jsonl'))
+    && exists(path.join(captureDir, 'logcat.raw.txt'));
   session.nativeFrameTimingValid = frameMs.length > 0;
-  session.captureState = session.semanticValid && session.nativeFrameTimingValid ? 'COMPLETE' : 'PARTIAL';
+  session.captureState = session.semanticValid ? 'COMPLETE' : 'PARTIAL';
   writeJSON(sessionPath, session);
 
   const manifestSHA256 = finalizeManifest(captureDir);
-  const normalization = normalizePerformanceLab(captureDir, frames, metrics, storage, manifestSHA256);
-  const controlResult = { sessionId: state.sessionId, manifestSHA256, metrics, storage, normalization };
+  writeJSON(path.join(captureDir, 'capture-seal.json'), {
+    sessionId: state.sessionId,
+    sealedAt: nowISO(),
+    rawCaptureState: 'SEALED',
+    manifestSHA256,
+    semanticValid: session.semanticValid,
+    nativeFrameTimingValid: session.nativeFrameTimingValid,
+    note: 'Raw capture is sealed before SQLite/post-processing. Post-processing failure cannot invalidate or discard this capture.'
+  });
+
+  let normalization = null;
+  let normalizationError = null;
+  try {
+    normalization = normalizePerformanceLab(captureDir, frames, metrics, storage, manifestSHA256);
+  } catch (error) {
+    normalizationError = {
+      observedAt: nowISO(),
+      error: error instanceof Error ? error.message : String(error),
+      rawCapturePreserved: true,
+      manifestSHA256
+    };
+    writeJSON(path.join(captureDir, 'normalization-error.json'), normalizationError);
+  }
+  const controlResult = { sessionId: state.sessionId, manifestSHA256, rawCaptureState: 'SEALED', metrics, storage, normalization, normalizationError };
   writeJSON(path.join(captureDir, 'control-result.json'), controlResult);
   const result = { sessionId: state.sessionId, captureDir, ...controlResult };
   try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
-  if (state.controlProfile === DONOR_PROFILE.id) {
+  if (state.controlProfile === DONOR_PROFILE.id || String(state.controlProfile ?? '').startsWith('mactician_compatible_')) {
     try { result.donorAvdRestore = restoreDonorAVD(runtime); } catch (error) { result.donorAvdRestore = { restored: false, error: error instanceof Error ? error.message : String(error) }; }
   }
   try { fs.unlinkSync(CONTROL_STATE); } catch {}
@@ -3622,6 +4038,20 @@ async function sampler(captureDir, sessionId) {
         const err = fs.openSync(path.join(captureDir, 'logcat.stderr.log'), 'a');
         logcatProc = spawn(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-v', 'threadtime'], { env: runtime.env, stdio: ['ignore', fd, err] });
         appendJSONL(eventsFile, { utc: nowISO(), event: 'LOGCAT_STARTED', pid: logcatProc.pid });
+      }
+      if (tick % 5 === 0) {
+        try {
+          const sfCounters = surfaceFlingerCounters(runtime);
+          appendJSONL(path.join(captureDir, 'surfaceflinger', 'counters.jsonl'), {
+            utc,
+            host_mono_ns: hostMonoNs,
+            renderRateHz: sfCounters.renderRateHz,
+            totalMissedFrames: sfCounters.totalMissedFrames,
+            gpuMissedFrames: sfCounters.gpuMissedFrames,
+            hwcMissedFrames: sfCounters.hwcMissedFrames,
+            gameRequested60Hz: sfCounters.gameRequested60Hz
+          });
+        } catch {}
       }
       if (tick % 7 === 0) {
         const t0 = monoNs();
@@ -3897,6 +4327,7 @@ async function main() {
     return;
   }
   if (action === 'prepare') { json(prepareAVD()); return; }
+  if (action === 'engineering-map-selftest') { json(engineeringMapSelfTest()); return; }
   if (action === 'lab-selftest') { json(labSelfTest()); return; }
   if (action === 'build') { json(buildApp()); return; }
   if (action === 'launch-app') { json(launchApp()); return; }
@@ -3910,7 +4341,8 @@ async function main() {
   if (action === 'cleanup-observer-adb-5037') { json(cleanupObserverAdb5037()); return; }
   if (action === 'start') { json(await startControl()); return; }
   if (action === 'start-donor-control') { json(await startDonorControl()); return; }
-  if (action === 'start-donor-control-5gb') { json(await startDonorControl(5120, 'mactician_compatible_5gb_v1')); return; }
+  if (action === 'start-donor-control-5gb') { json(await startDonorControl(5120, 'mactician_compatible_5gb_v1', 800)); return; }
+  if (action === 'start-donor-control-5gb-flush400') { json(await startDonorControl(5120, 'mactician_compatible_5gb_flush400_v1', 400)); return; }
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'play-probe') { json(await playProbe()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
@@ -3924,6 +4356,15 @@ async function main() {
   if (action === 'analyze-session') { json(analyzeContinuousRun()); return; }
   if (action === 'ingest-analysis') { json(ingestContinuousRunIntoLab()); return; }
   if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
+  if (action === 'analyze-latest-closed-run-trends') { json(analyzeLatestClosedRunTrends()); return; }
+  if (action === 'compare-latest-runs') { json(compareLatestRuns()); return; }
+  if (action === 'screen-state-probe') { json(screenStateProbe()); return; }
+  if (action === 'reveal-lock-screen') { json(revealLockScreen()); return; }
+  if (action === 'wake-guest-screen') { json(wakeGuestScreenAction()); return; }
+  if (action === 'audio-health') { json(audioHealthCheck()); return; }
+  if (action === 'audio-backend-probe') { json(audioBackendProbe()); return; }
+  if (action === 'disconnect-window-audit') { json(disconnectWindowAudit()); return; }
+  if (action === 'runtime-fault-audit') { json(runtimeFaultAudit()); return; }
   if (action === 'graphics-pipeline-audit') { json(graphicsPipelineAudit()); return; }
   if (action === 'native-trace-smoke') { json(await captureNativeTrace(5, 'smoke')); return; }
   if (action === 'native-trace-combat') { json(await captureNativeTrace(20, 'combat')); return; }
