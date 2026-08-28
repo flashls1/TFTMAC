@@ -1,0 +1,131 @@
+schema: 2
+frozen_at: null
+phase0_status: PENDING
+
+authority:
+  ssot_version: "2.0"
+  implementation_plan_version: "2.0"
+  ssot_sha256: "6672347368c4adc007073a87a5b3dddda211f3c30bb80580f26de2d33d71dd7e"
+  implementation_plan_sha256: "d074a0561d40813258c24bddb87a870a3bb62e634257674ebef55f0539492e4e"
+  zengate_version: "2.3"
+  zengate_score: 93
+  zengate_result: "PASS"
+  aemu_branch: "emu-master-dev"
+  production_guest: "official Android 17 Google Play ARM64"
+  shipping_render_target: "1920x1080@60"
+
+host:
+  architecture: "arm64"
+  macos_version: "26.6.2"
+  macos_build: "25G83"
+  xcode_version: null
+  xcode_build: null
+  macos_sdk_path: null
+  hardware_model: "Mac16,10"
+
+android_command_line_tools:
+  archive: "commandlinetools-mac_arm64-15859902_latest.zip"
+  sha256: "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e"
+  archive_verified: true
+  installed_revision: null
+
+android:
+  api: 37
+  play_image_package: "system-images;android-37.0;google_apis_playstore_ps16k;arm64-v8a"
+  play_image_revision: null
+  avd_name: "TFTMAC_Live_API37"
+  emulator_console_port: 5592
+  adb_serial: "emulator-5592"
+  adb_server_port: 5040
+  platform_tools_revision: null
+  emulator_revision: null
+  platform_revision: null
+  build_tools_revision: null
+
+aemu:
+  authority_branch: "emu-master-dev"
+  resolved_manifest_sha256: null
+  qemu_commit: null
+  aemu_commit: null
+  gfxstream_commit: null
+  integrated_angle_commit: null
+  integrated_moltenvk_commit: null
+  guestangle_authority: null
+
+vulkan_sdk:
+  version: "1.4.357.0"
+  sha256: "539433589c83522e6f31b1c7b418a4167e21597a4a361ab119e1dc0760cf3865"
+  vulkaninfo_version: null
+
+moltenvk:
+  reference_tag: "v1.4.2"
+  reference_commit: null
+  selected_commit: null
+  patch_series_sha256: null
+
+generality:
+  gles_cts_tag: "opengl-es-cts-3.2.14.1"
+  gles_cts_commit: null
+  vulkan_cts_tag: "vulkan-cts-1.4.6.1"
+  vulkan_cts_commit: "5c8aae22885448d70a2873e94a93b24b49505c32"
+  vulkan_required_cases_sha256: null
+  vulkan_samples_commit: "89dd3af22d41f9244eeab6e0650460112285c0e1"
+
+resource_profiles:
+  A:
+    vcpu: 6
+    ram_mb: 6144
+  B:
+    vcpu: 8
+    ram_mb: 8192
+  selected: null
+
+phase0_evidence:
+  authority_hashes: "ssot/AUTHORITY_INPUTS.sha256"
+  policy: "ssot/phase0-policy.json"
+  remediation_inventory: "ssot/phase0-remediation-inventory.md"
+  preflight_report: "ssot/preflight-report.md"
+  vulkan_case_selection_spec: "ssot/vulkan-required-cases.spec.json"
+  legacy_runtime_acceptance_authorized: false
+
+performance:
+  refresh_hz: 60
+  fps_min: 58.0
+  p95_ms_max: 20.0
+  p99_ms_max: 33.334
+  jank_threshold_ms: 33.334
+  jank_pct_max: 1.0
+  severe_stall_ms: 100.0
+  severe_stalls_per_600s_max: 3
+  native_input_median_relative_ms_max: 5.0
+  native_input_p95_relative_ms_max: 8.334
+  native_input_median_absolute_ms_max: 50.0
+  native_input_p95_absolute_ms_max: 83.334
+
+critical_null_policy:
+  phase0_exit_requires_no_nulls:
+    - frozen_at
+    - host.architecture
+    - host.macos_version
+    - host.macos_build
+    - host.xcode_version
+    - host.xcode_build
+    - host.macos_sdk_path
+    - host.hardware_model
+    - android_command_line_tools.installed_revision
+    - android.play_image_revision
+    - android.platform_tools_revision
+    - android.emulator_revision
+    - android.platform_revision
+    - android.build_tools_revision
+    - aemu.resolved_manifest_sha256
+    - aemu.qemu_commit
+    - aemu.aemu_commit
+    - aemu.gfxstream_commit
+    - aemu.integrated_angle_commit
+    - aemu.integrated_moltenvk_commit
+    - aemu.guestangle_authority
+    - vulkan_sdk.vulkaninfo_version
+    - moltenvk.reference_commit
+    - generality.gles_cts_commit
+    - generality.vulkan_required_cases_sha256

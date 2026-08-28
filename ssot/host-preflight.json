@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "observedAt": "2026-08-27T11:41:37.725Z",
+  "expected": {
+    "architecture": "arm64",
+    "xcodeVersion": "26.6",
+    "xcodeBuild": "17F113"
+  },
+  "observed": {
+    "architecture": "arm64",
+    "macOS": {
+      "productName": "macOS",
+      "productVersion": "26.6.2",
+      "buildVersion": "25G83"
+    },
+    "xcode": {
+      "version": "26.4",
+      "build": "17E192"
+    },
+    "selectedXcodeBundle": null,
+    "selectedDeveloperDir": null,
+    "installedXcodes": [
+      {
+        "app": "/Applications/Xcode.app",
+        "developerDir": "/Applications/Xcode.app/Contents/Developer",
+        "status": 0,
+        "version": {
+          "version": "26.4",
+          "build": "17E192"
+        }
+      }
+    ],
+    "macosSDKPath": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+    "hardware": {
+      "modelName": "Mac mini",
+      "modelIdentifier": "Mac16,10",
+      "chip": "Apple M4",
+      "memory": "16 GB"
+    }
+  },
+  "checks": {
+    "architecture": true,
+    "xcodeVersion": false,
+    "xcodeBuild": false,
+    "macosVersionPresent": true,
+    "macosSDKPresent": true,
+    "appleSiliconChip": true
+  },
+  "pass": false
+}

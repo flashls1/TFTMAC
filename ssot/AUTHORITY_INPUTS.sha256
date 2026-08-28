@@ -1,0 +1,6 @@
+# TFTMAC GPU Runtime v2.0 authority inputs
+# Exact bytes uploaded and approved on 2026-08-26.
+# Canonical repository names are fixed; future revisions must update both documents together.
+
+d074a0561d40813258c24bddb87a870a3bb62e634257674ebef55f0539492e4e  TFTMAC_FULL_IMPLEMENTATION_PLAN.md
+6672347368c4adc007073a87a5b3dddda211f3c30bb80580f26de2d33d71dd7e  TFTMAC_GPU_RUNTIME_SSOT.md
