@@ -39,6 +39,10 @@ const SSOT = join(REPO, 'ssot');
 const SOURCE_WORKER_STATE = join(LOGS, 'phase0-source-worker.json');
 const SOURCE_WORKER_STDOUT = join(LOGS, 'phase0-source-worker.stdout.log');
 const SOURCE_WORKER_STDERR = join(LOGS, 'phase0-source-worker.stderr.log');
+const PHASE1_BUILD_STATE = join(MANIFESTS, 'phase1-build-worker.json');
+const PHASE1_BUILD_LOG_ROOT = join(BUILD, 'logs');
+const PHASE1_BUILD_STDOUT = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stdout.log');
+const PHASE1_BUILD_STDERR = join(PHASE1_BUILD_LOG_ROOT, 'phase1-build.stderr.log');
 
 const EXPECTED = Object.freeze({
   architecture: 'arm64',
@@ -124,6 +128,15 @@ async function readSourceWorkerState() {
     return JSON.parse(await readFile(SOURCE_WORKER_STATE, 'utf8'));
   } catch {
     return { schema: 1, status: 'INVALID_STATE_FILE', path: SOURCE_WORKER_STATE };
+  }
+}
+
+async function readPhase1BuildState() {
+  if (!existsSync(PHASE1_BUILD_STATE)) return null;
+  try {
+    return JSON.parse(await readFile(PHASE1_BUILD_STATE, 'utf8'));
+  } catch {
+    return { schema: 1, status: 'INVALID_STATE_FILE', path: PHASE1_BUILD_STATE };
   }
 }
 
@@ -1202,6 +1215,110 @@ async function discoverXcodes() {
   if (!match) die(`XCODE_${EXPECTED.xcodeVersion}_${EXPECTED.xcodeBuild}_NOT_FOUND`, 5);
 }
 
+async function phase1BuildWorker() {
+  await ensureRoots();
+  await mkdir(PHASE1_BUILD_LOG_ROOT, { recursive: true });
+  const qemuRoot = join(BUILD, 'aemu', 'external', 'qemu');
+  const outRoot = join(BUILD, 'aemu-out');
+  const startedAt = process.env.TFTMAC_PHASE1_BUILD_STARTED_AT ?? new Date().toISOString();
+  const stackText = await readFile(join(SSOT, 'STACK.lock.yaml'), 'utf8');
+  const stack = parseSimpleYamlScalars(stackText);
+  if (stack.get('phase0_status') !== 'PASS') throw new Error('PHASE1_REQUIRES_PHASE0_PASS');
+  const lockedQemuCommit = stack.get('aemu.qemu_commit');
+  if (!lockedQemuCommit) throw new Error('PHASE1_QEMU_LOCK_MISSING');
+  if (!existsSync(qemuRoot)) throw new Error(`PHASE1_QEMU_SOURCE_MISSING: ${qemuRoot}`);
+  const observedQemuCommit = gitCommit(qemuRoot);
+  if (observedQemuCommit !== lockedQemuCommit) {
+    throw new Error(`PHASE1_QEMU_COMMIT_MISMATCH: expected ${lockedQemuCommit}, got ${observedQemuCommit}`);
+  }
+  const xcode = findRequiredXcode(discoverInstalledXcodes());
+  if (!xcode) throw new Error(`PHASE1_XCODE_${EXPECTED.xcodeVersion}_${EXPECTED.xcodeBuild}_REQUIRED`);
+  const env = {
+    ...process.env,
+    DEVELOPER_DIR: xcode.developerDir,
+    ANDROID_SDK_ROOT: SDK,
+    ANDROID_HOME: SDK,
+    ANDROID_AVD_HOME: AVD_HOME,
+    ANDROID_ADB_SERVER_PORT: '5040'
+  };
+  const baseState = {
+    schema: 1,
+    pid: process.pid,
+    startedAt,
+    qemuCommit: observedQemuCommit,
+    xcode: { version: EXPECTED.xcodeVersion, build: EXPECTED.xcodeBuild, developerDir: xcode.developerDir },
+    sourceRoot: qemuRoot,
+    outRoot,
+    stdoutPath: PHASE1_BUILD_STDOUT,
+    stderrPath: PHASE1_BUILD_STDERR
+  };
+  const writeState = async state => atomicWrite(PHASE1_BUILD_STATE, `${JSON.stringify({ ...baseState, ...state }, null, 2)}\n`);
+  try {
+    await writeState({ status: 'RUNNING', stage: 'BUILD' });
+    runInherited('/bin/bash', [join(qemuRoot, 'android', 'rebuild.sh'), `--out-dir=${outRoot}`], { cwd: qemuRoot, env });
+
+    await writeState({ status: 'RUNNING', stage: 'CTEST' });
+    runInherited('/usr/bin/env', ['ctest', '-j8', '--output-on-failure'], { cwd: outRoot, env });
+
+    await writeState({ status: 'RUNNING', stage: 'GFXSTREAM_BUILD_CHECK' });
+    const python = firstExisting(['/opt/homebrew/bin/python3', '/usr/bin/python3', '/usr/local/bin/python3']);
+    if (!python) throw new Error('PHASE1_PYTHON3_REQUIRED');
+    runInherited(python, [join(qemuRoot, 'android', 'build', 'python', 'cmake.py'), '--gfxstream'], { cwd: qemuRoot, env });
+
+    const emulatorCandidates = run('/usr/bin/find', [outRoot, '-type', 'f', '-name', 'emulator', '-perm', '+111', '-print'], { allowFailure: true, maxBuffer: 8 * 1024 * 1024 }).stdout
+      .split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+    const emulatorBinary = emulatorCandidates[0] ?? null;
+    const artifact = {
+      schema: 1,
+      phase: 1,
+      pass: true,
+      completedAt: new Date().toISOString(),
+      qemuCommit: observedQemuCommit,
+      xcode: baseState.xcode,
+      sourceRoot: qemuRoot,
+      outRoot,
+      emulatorBinary,
+      checks: { build: 'PASS', ctest: 'PASS', gfxstreamBuildCheck: 'PASS' }
+    };
+    await atomicWrite(join(DIAGNOSTICS, 'phase1-build.json'), `${JSON.stringify(artifact, null, 2)}\n`);
+    await writeState({ status: 'SUCCEEDED', stage: 'COMPLETE', endedAt: new Date().toISOString(), emulatorBinary });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeState({ status: 'FAILED', endedAt: new Date().toISOString(), error: message });
+    throw error;
+  }
+}
+
+async function phase1Build() {
+  await ensureRoots();
+  await mkdir(PHASE1_BUILD_LOG_ROOT, { recursive: true });
+  const existing = await readPhase1BuildState();
+  if (existing?.pid && pidIsAlive(existing.pid)) {
+    console.log(JSON.stringify({ phase: '1-build', launched: false, alreadyRunning: true, worker: existing }, null, 2));
+    return;
+  }
+  const startedAt = new Date().toISOString();
+  const stdoutFd = openSync(PHASE1_BUILD_STDOUT, 'a');
+  const stderrFd = openSync(PHASE1_BUILD_STDERR, 'a');
+  try {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'phase1-build-worker'], {
+      cwd: REPO,
+      env: { ...process.env, TFTMAC_PHASE1_BUILD_STARTED_AT: startedAt },
+      detached: true,
+      stdio: ['ignore', stdoutFd, stderrFd]
+    });
+    child.unref();
+    console.log(JSON.stringify({
+      phase: '1-build', launched: true, pid: child.pid, startedAt,
+      sourceRoot: join(BUILD, 'aemu', 'external', 'qemu'), outRoot: join(BUILD, 'aemu-out'),
+      statePath: PHASE1_BUILD_STATE, stdoutPath: PHASE1_BUILD_STDOUT, stderrPath: PHASE1_BUILD_STDERR
+    }, null, 2));
+  } finally {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+  }
+}
+
 async function status() {
   await ensureRoots();
   const paths = [
@@ -1219,6 +1336,11 @@ async function status() {
   const sourceWorkerObservedStatus = sourceWorker?.status === 'RUNNING' && !sourceWorkerAlive
     ? 'INTERRUPTED'
     : sourceWorker?.status ?? 'NOT_STARTED';
+  const phase1BuildWorker = await readPhase1BuildState();
+  const phase1BuildAlive = Boolean(phase1BuildWorker?.pid && pidIsAlive(phase1BuildWorker.pid));
+  const phase1BuildObservedStatus = phase1BuildWorker?.status === 'RUNNING' && !phase1BuildAlive
+    ? 'INTERRUPTED'
+    : phase1BuildWorker?.status ?? 'NOT_STARTED';
   console.log(JSON.stringify({
     appRoot: APP,
     buildRoot: BUILD,
@@ -1227,6 +1349,7 @@ async function status() {
     runtimeRootSource: process.env.TFTMAC_RUNTIME_ROOT ? 'TFTMAC_RUNTIME_ROOT' : 'default-external',
     repository: REPO,
     sourceWorker: sourceWorker ? { ...sourceWorker, alive: sourceWorkerAlive, observedStatus: sourceWorkerObservedStatus } : null,
+    phase1BuildWorker: phase1BuildWorker ? { ...phase1BuildWorker, alive: phase1BuildAlive, observedStatus: phase1BuildObservedStatus } : null,
     artifacts
   }, null, 2));
 }
@@ -1243,6 +1366,8 @@ try {
     case 'phase0-policy': await phase0Policy(); break;
     case 'phase0-report': await preflightReport(); break;
     case 'phase0-xcode-discovery': await discoverXcodes(); break;
+    case 'phase1-build': await phase1Build(); break;
+    case 'phase1-build-worker': await phase1BuildWorker(); break;
     case 'cleanup-sandbox-bootstrap': await cleanupSandboxBootstrap(); break;
     case 'status': await status(); break;
     default: die(`unknown action: ${action}`);
