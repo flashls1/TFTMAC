@@ -540,7 +540,7 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('current_tft_graphics_observed','Medium'),
 ('current_tft_fps_cap_observed','60'),
 ('current_tft_performance_mode_beta_observed','UNKNOWN'),
-('current_optimization_priority','1 record graphics preset/FPS cap/Performance Mode + native frame timing; 2 one-factor Performance Mode A/B; 3 one-factor FPS-cap A/B; 4 one-factor graphics-preset A/B; 5 guest RAM 6144->4096 MB A/B; 6 only then renderer/transport/queue experiments');
+('current_optimization_priority','Continuous-run analysis is authoritative. Keep the logger running and analyze the whole capture; treat matches, placements, graphics preset, FPS cap, Performance Mode, app restarts, ANRs and user quality reports as timestamped annotations. Change one variable at a time, but do not require per-match start/stop boundaries.');
 
 INSERT OR REPLACE INTO host_facts VALUES
 ('control_image','control_system_image','system-images;android-36;google_apis_playstore;arm64-v8a',NULL,'DIRECT_OBSERVATION','gameplay-analysis.json','FROZEN','2026-08-28T18:30:59Z','First full official TFT match completed on this real Google Play image family.'),

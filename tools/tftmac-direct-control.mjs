@@ -1431,6 +1431,240 @@ function sessionLogSignals(captureDir) {
   };
 }
 
+function analyzeContinuousRun() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const captureDir = state.captureDir;
+  const session = readJSON(path.join(captureDir, 'session.json'), {});
+  const markers = readJSONL(path.join(captureDir, 'markers.jsonl'));
+  const hostEvents = readJSONL(path.join(captureDir, 'host-events.jsonl'));
+  const allProcessRows = readJSONL(path.join(captureDir, 'host-process.jsonl'));
+  const allMemoryRows = readJSONL(path.join(captureDir, 'host-memory.jsonl'));
+
+  const observedMonos = [
+    ...allProcessRows.map(row => Number(row.host_mono_ns)),
+    ...allMemoryRows.map(row => Number(row.host_mono_ns)),
+    ...markers.map(row => Number(row.host_mono_ns)),
+    ...hostEvents.map(row => Number(row.host_mono_ns))
+  ].filter(Number.isFinite);
+  const sessionStartNs = session.hostStartMonoNs === null || session.hostStartMonoNs === undefined || session.hostStartMonoNs === '' ? NaN : Number(session.hostStartMonoNs);
+  const sessionEndNs = session.hostEndMonoNs === null || session.hostEndMonoNs === undefined || session.hostEndMonoNs === '' ? NaN : Number(session.hostEndMonoNs);
+  const startHostNs = Number.isFinite(sessionStartNs) ? sessionStartNs : (observedMonos.length ? Math.min(...observedMonos) : Number(monoNs()));
+  const endHostNs = Number.isFinite(sessionEndNs) ? sessionEndNs : (observedMonos.length ? Math.max(...observedMonos) : Number(monoNs()));
+  if (!(endHostNs >= startHostNs)) throw new Error('CONTINUOUS_RUN_WINDOW_INVALID');
+
+  const processRows = allProcessRows.filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= startHostNs && mono <= endHostNs;
+  });
+  const emulatorRows = processRows.filter(row => /qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? '')));
+  const memoryRows = allMemoryRows.filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= startHostNs && mono <= endHostNs;
+  });
+  const gib = 1024 ** 3;
+  const pageouts = memoryRows.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+  const runMetrics = {
+    hostEmulator: {
+      sampleCount: emulatorRows.length,
+      cpuPercent: summarizeNumbers(emulatorRows.map(row => Number(row.cpu_pct))),
+      rssMiB: summarizeNumbers(emulatorRows.map(row => Number(row.rss_kb) / 1024))
+    },
+    memory: {
+      sampleCount: memoryRows.length,
+      hostAvailableGiB: summarizeNumbers(memoryRows.map(row => Number(row.host_available_bytes) / gib)),
+      hostCompressedGiB: summarizeNumbers(memoryRows.map(row => Number(row.host_compressed_bytes) / gib)),
+      hostSwapUsedGiB: summarizeNumbers(memoryRows.map(row => Number(row.host_swap_used_bytes) / gib)),
+      guestAvailableGiB: summarizeNumbers(memoryRows.map(row => Number(row.guest_available_bytes) / gib)),
+      pageoutDelta: pageouts.length > 1 ? pageouts.at(-1) - pageouts[0] : null
+    }
+  };
+
+  const settingsTimeline = markers
+    .filter(row => row.event === 'GAME_SETTINGS')
+    .filter(row => Number.isFinite(Number(row.host_mono_ns)))
+    .sort((a, b) => Number(a.host_mono_ns) - Number(b.host_mono_ns));
+  const matchResults = markers.filter(row => row.event === 'MATCH_RESULT').sort((a, b) => Number(a.host_mono_ns ?? 0) - Number(b.host_mono_ns ?? 0));
+  const qualityReports = markers.filter(row => row.event === 'USER_QUALITY_REPORT').sort((a, b) => Number(a.host_mono_ns ?? 0) - Number(b.host_mono_ns ?? 0));
+  const manualStutters = markers.filter(row => row.event === 'MANUAL_STUTTER_MARKER');
+  const appRestarts = hostEvents.filter(row => row.event === 'TFT_APP_RESTART_COMPLETE');
+  const logSignals = sessionLogSignals(captureDir);
+
+  const segmentStarts = [
+    { host_mono_ns: String(startHostNs), utc: session.startedUTC ?? state.startedUTC ?? null, graphicsPreset: 'UNKNOWN', fpsCap: 'UNKNOWN', performanceModeBeta: 'UNKNOWN', source: 'run-start' },
+    ...settingsTimeline.filter(row => Number(row.host_mono_ns) > startHostNs && Number(row.host_mono_ns) < endHostNs)
+  ];
+  const settingsSegments = segmentStarts.map((setting, index) => {
+    const segmentStartNs = Math.max(startHostNs, Number(setting.host_mono_ns));
+    const next = segmentStarts[index + 1];
+    const segmentEndNs = next ? Math.min(endHostNs, Number(next.host_mono_ns)) : endHostNs;
+    const pRows = emulatorRows.filter(row => Number(row.host_mono_ns) >= segmentStartNs && Number(row.host_mono_ns) < segmentEndNs);
+    const mRows = memoryRows.filter(row => Number(row.host_mono_ns) >= segmentStartNs && Number(row.host_mono_ns) < segmentEndNs);
+    const segmentPageouts = mRows.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+    return {
+      index: index + 1,
+      startedAt: setting.utc ?? null,
+      startHostNs: segmentStartNs,
+      endHostNs: segmentEndNs,
+      durationSeconds: Math.max(0, (segmentEndNs - segmentStartNs) / 1e9),
+      settings: {
+        graphicsPreset: setting.graphicsPreset ?? 'UNKNOWN',
+        fpsCap: setting.fpsCap ?? 'UNKNOWN',
+        performanceModeBeta: setting.performanceModeBeta ?? 'UNKNOWN'
+      },
+      hostEmulator: {
+        sampleCount: pRows.length,
+        cpuPercent: summarizeNumbers(pRows.map(row => Number(row.cpu_pct))),
+        rssMiB: summarizeNumbers(pRows.map(row => Number(row.rss_kb) / 1024))
+      },
+      memory: {
+        sampleCount: mRows.length,
+        hostAvailableGiB: summarizeNumbers(mRows.map(row => Number(row.host_available_bytes) / gib)),
+        hostCompressedGiB: summarizeNumbers(mRows.map(row => Number(row.host_compressed_bytes) / gib)),
+        hostSwapUsedGiB: summarizeNumbers(mRows.map(row => Number(row.host_swap_used_bytes) / gib)),
+        guestAvailableGiB: summarizeNumbers(mRows.map(row => Number(row.guest_available_bytes) / gib)),
+        pageoutDelta: segmentPageouts.length > 1 ? segmentPageouts.at(-1) - segmentPageouts[0] : null
+      }
+    };
+  }).filter(segment => segment.durationSeconds > 0);
+
+  const analysis = {
+    schema: 2,
+    analysisModel: 'CONTINUOUS_RUN_PRIMARY',
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    captureDir,
+    run: {
+      startedUTC: session.startedUTC ?? state.startedUTC ?? null,
+      snapshotUTC: nowISO(),
+      endedUTC: session.endedUTC ?? null,
+      startHostNs,
+      endHostNs,
+      durationSeconds: (endHostNs - startHostNs) / 1e9,
+      captureState: session.captureState ?? 'CAPTURING',
+      loggerStillActive: processAlive(state.samplerPid)
+    },
+    annotations: {
+      completedMatches: matchResults.length,
+      wins: matchResults.filter(row => Number(row.placement) === 1 || row.result === 'WIN').length,
+      placements: matchResults.map(row => ({ utc: row.utc ?? null, placement: row.placement ?? null, result: row.result ?? null, matchOrdinal: row.matchOrdinal ?? null })),
+      settingsTimeline: settingsTimeline.map(row => ({ utc: row.utc ?? null, graphicsPreset: row.graphicsPreset ?? 'UNKNOWN', fpsCap: row.fpsCap ?? 'UNKNOWN', performanceModeBeta: row.performanceModeBeta ?? 'UNKNOWN' })),
+      qualityReports: qualityReports.map(row => ({ utc: row.utc ?? null, summary: row.summary ?? null, comparison: row.comparison ?? null, matchOrdinal: row.matchOrdinal ?? null })),
+      appRestartCount: appRestarts.length,
+      manualStutterCount: manualStutters.length,
+      matchEntryMarkersPresent: markers.filter(row => row.event === 'MATCH_ENTRY').length
+    },
+    hostEmulator: runMetrics.hostEmulator,
+    memory: runMetrics.memory,
+    settingsSegments,
+    logSignals,
+    interpretationRule: 'The continuous logger run is authoritative. Match boundaries are optional annotations; setting-change timestamps and other events are used for correlation without requiring per-game segmentation.'
+  };
+  writeJSON(path.join(captureDir, 'continuous-run-analysis.json'), analysis);
+  return analysis;
+}
+
+function ingestContinuousRunIntoLab() {
+  const analysis = analyzeContinuousRun();
+  const captureDir = analysis.captureDir;
+  const labSessionId = `${analysis.sessionId}-continuous-run`;
+  const databasePath = path.join(DIAGNOSTICS_ROOT, 'TFTMAC_PERFORMANCE_LAB.sqlite');
+  const schemaPath = labSchemaPath();
+  if (!schemaPath) throw new Error('TFTMAC performance-lab schema is unavailable.');
+  ensureDir(DIAGNOSTICS_ROOT);
+  const initialize = !exists(databasePath) || fs.statSync(databasePath).size === 0;
+  const db = new DatabaseSync(databasePath);
+  try {
+    if (initialize) db.exec(fs.readFileSync(schemaPath, 'utf8'));
+    db.exec('PRAGMA foreign_keys = ON;');
+    const packageInfo = readJSON(path.join(captureDir, 'package-state.json'), {});
+    const sessionFile = readJSON(path.join(captureDir, 'session.json'), {});
+    const packageFile = path.join(captureDir, 'package-state.json');
+    const rendererFile = path.join(captureDir, 'renderer-state.json');
+    const currentConfigId = 'mactician_compatible_official_v0';
+    const now = nowISO();
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('analysis_model', 'CONTINUOUS_RUN_PRIMARY');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_continuous_run_session', labSessionId);
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_continuous_run_ingest_at', now);
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', 'Analyze the continuous logger run as the primary performance record. Matches and setting changes are annotations for correlation; do not require per-match start/stop boundaries.');
+      db.prepare(`INSERT INTO sessions(
+        id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
+        package_name,package_version_name,package_version_code,package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+        package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET ended_utc=excluded.ended_utc,host_end_mono_ns=excluded.host_end_mono_ns,
+        capture_state=excluded.capture_state,semantic_valid=excluded.semantic_valid,invalid_reason=excluded.invalid_reason,notes=excluded.notes`)
+        .run(labSessionId,currentConfigId,analysis.run.startedUTC,analysis.run.snapshotUTC,analysis.run.startHostNs,analysis.run.endHostNs,
+          'UNKNOWN','MIXED',PACKAGE,packageInfo.versionName ?? null,packageInfo.versionCode ?? null,
+          exists(packageFile) ? sha256File(packageFile) : null,exists(rendererFile) ? sha256File(rendererFile) : null,null,
+          sessionFile.packageUpdatedDuringSession ? 1 : 0,analysis.run.endedUTC ? 'COMPLETE' : 'CAPTURING',1,null,
+          `Continuous-run aggregate; ${analysis.annotations.completedMatches} completed match annotation(s), ${analysis.annotations.wins} win(s), ${analysis.settingsSegments.length} settings segment(s).`);
+
+      db.prepare('DELETE FROM metrics WHERE session_id=?').run(labSessionId);
+      const metric = db.prepare('INSERT INTO metrics(session_id,experiment_id,metric_scope,metric_name,metric_value,unit,source_artifact_id,semantic_valid,notes) VALUES(?,?,?,?,?,?,?,?,?)');
+      const add = (scope,name,value,unit,notes=null) => { if (Number.isFinite(Number(value))) metric.run(labSessionId,null,scope,name,Number(value),unit,null,1,notes); };
+      add('RUN','duration',analysis.run.durationSeconds,'seconds');
+      add('RUN','completed_matches',analysis.annotations.completedMatches,'count');
+      add('RUN','wins',analysis.annotations.wins,'count');
+      add('HOST_CPU','emulator_cpu_mean',analysis.hostEmulator.cpuPercent.mean,'percent');
+      add('HOST_CPU','emulator_cpu_p95',analysis.hostEmulator.cpuPercent.p95,'percent');
+      add('HOST_CPU','emulator_cpu_max',analysis.hostEmulator.cpuPercent.max,'percent');
+      add('MEMORY','emulator_rss_mean',analysis.hostEmulator.rssMiB.mean,'MiB');
+      add('MEMORY','emulator_rss_p95',analysis.hostEmulator.rssMiB.p95,'MiB');
+      add('MEMORY','emulator_rss_max',analysis.hostEmulator.rssMiB.max,'MiB');
+      add('MEMORY','host_available_mean',analysis.memory.hostAvailableGiB.mean,'GiB');
+      add('MEMORY','host_available_min',analysis.memory.hostAvailableGiB.min,'GiB');
+      add('MEMORY','host_compressed_mean',analysis.memory.hostCompressedGiB.mean,'GiB');
+      add('MEMORY','host_compressed_p95',analysis.memory.hostCompressedGiB.p95,'GiB');
+      add('MEMORY','host_compressed_max',analysis.memory.hostCompressedGiB.max,'GiB');
+      add('MEMORY','host_swap_mean',analysis.memory.hostSwapUsedGiB.mean,'GiB');
+      add('MEMORY','host_swap_max',analysis.memory.hostSwapUsedGiB.max,'GiB');
+      add('MEMORY','guest_available_min',analysis.memory.guestAvailableGiB.min,'GiB');
+      add('MEMORY','pageout_delta',analysis.memory.pageoutDelta,'pages');
+      add('EVENTS','app_restart_count',analysis.annotations.appRestartCount,'count');
+      add('EVENTS','manual_stutter_count',analysis.annotations.manualStutterCount,'count');
+      add('EVENTS','tft_anr_count',analysis.logSignals.android.tftAnrCount,'count');
+
+      for (const segment of analysis.settingsSegments) {
+        const scope = `SETTINGS_SEGMENT_${segment.index}`;
+        const note = JSON.stringify({ settings: segment.settings, startedAt: segment.startedAt, durationSeconds: segment.durationSeconds });
+        add(scope,'duration',segment.durationSeconds,'seconds',note);
+        add(scope,'emulator_cpu_mean',segment.hostEmulator.cpuPercent.mean,'percent',note);
+        add(scope,'emulator_rss_mean',segment.hostEmulator.rssMiB.mean,'MiB',note);
+        add(scope,'host_available_mean',segment.memory.hostAvailableGiB.mean,'GiB',note);
+        add(scope,'host_compressed_mean',segment.memory.hostCompressedGiB.mean,'GiB',note);
+        add(scope,'pageout_delta',segment.memory.pageoutDelta,'pages',note);
+      }
+
+      const evidence = db.prepare('INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+      evidence.run('ev_continuous_run_model',null,labSessionId,null,'CONFIG_OBSERVATION','Continuous-run telemetry is the primary performance record; match and settings events are annotations used for correlation rather than mandatory segmentation boundaries.','NEUTRAL','DECISIVE',null,now,'User-directed measurement model.');
+      if (Number(analysis.memory.pageoutDelta ?? 0) > 0) {
+        evidence.run('ev_continuous_run_memory','h_memory_pressure',labSessionId,null,'DIRECT_MEASUREMENT',`Across the continuous run, host pageouts increased by ${analysis.memory.pageoutDelta}; compressed memory mean=${analysis.memory.hostCompressedGiB.mean?.toFixed(2)} GiB and max=${analysis.memory.hostCompressedGiB.max?.toFixed(2)} GiB.`,'SUPPORTS','MODERATE',null,now,'Run-level resource envelope; setting segments provide finer correlation without requiring match boundaries.');
+      }
+      const quality = analysis.annotations.qualityReports.map(row => row.summary).filter(Boolean).join(' | ');
+      if (quality) evidence.run('ev_continuous_run_user_quality',null,labSessionId,null,'CONFIG_OBSERVATION',quality,'NEUTRAL','MODERATE',null,now,'Timestamped user quality observations inside the continuous run.');
+      db.exec('COMMIT;');
+    } catch (error) {
+      try { db.exec('ROLLBACK;'); } catch {}
+      throw error;
+    }
+    const summary = {
+      databasePath,
+      databaseSHA256: sha256File(databasePath),
+      session: db.prepare('SELECT id,capture_state,semantic_valid,notes FROM sessions WHERE id=?').get(labSessionId),
+      metrics: db.prepare('SELECT metric_scope,metric_name,metric_value,unit,semantic_valid,notes FROM metrics WHERE session_id=? ORDER BY metric_scope,metric_name').all(labSessionId),
+      evidence: db.prepare('SELECT id,hypothesis_id,claim,relation,strength FROM evidence WHERE session_id=? ORDER BY id').all(labSessionId),
+      settingsSegments: analysis.settingsSegments
+    };
+    writeJSON(path.join(captureDir, 'continuous-run-lab-ingest.json'), summary);
+    return summary;
+  } finally {
+    try { db.close(); } catch {}
+  }
+}
+
 function analyzeSession() {
   const state = readJSON(CONTROL_STATE);
   if (!state?.captureDir) throw new Error('No active direct-control session.');
@@ -3376,8 +3610,8 @@ async function main() {
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
   if (action === 'logger-health') { json(await loggerHealth()); return; }
-  if (action === 'analyze-session') { json(analyzeSession()); return; }
-  if (action === 'ingest-analysis') { json(ingestAnalysisIntoLab()); return; }
+  if (action === 'analyze-session') { json(analyzeContinuousRun()); return; }
+  if (action === 'ingest-analysis') { json(ingestContinuousRunIntoLab()); return; }
   if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
   if (action === 'native-trace-smoke') { json(await captureNativeTrace(5, 'smoke')); return; }
   if (action === 'native-trace-combat') { json(await captureNativeTrace(20, 'combat')); return; }
