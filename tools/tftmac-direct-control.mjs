@@ -925,6 +925,27 @@ function glesCapabilityProbe() {
   return result;
 }
 
+async function restartGame() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session. Run start first.');
+  const loggerGate = await loggerHealth();
+  if (!loggerGate.healthy) throw new Error(`LOGGER_REQUIRED_BEFORE_TFT_RESTART: ${JSON.stringify(loggerGate)}`);
+  const oldPid = adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
+  appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_APP_RESTART_REQUESTED', oldPid });
+  adb(runtime, ['shell', 'am', 'force-stop', PACKAGE], { allowFailure: true, timeout: 15000 });
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const pid = adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true, timeout: 10000 }).stdout.trim();
+    if (!pid) break;
+    await sleep(250);
+  }
+  await sleep(500);
+  const result = await launchGame();
+  appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_APP_RESTART_COMPLETE', oldPid, newPid: result.pid ?? null, action: result.action });
+  return { action: 'TFT_APP_RESTARTED', oldPid, newPid: result.pid ?? null, launch: result, loggerGate };
+}
+
 async function launchGame() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -3158,6 +3179,7 @@ async function main() {
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'play-probe') { json(await playProbe()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
+  if (action === 'restart-game') { json(await restartGame()); return; }
   if (action === 'gles-capability-probe') { json(glesCapabilityProbe()); return; }
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
