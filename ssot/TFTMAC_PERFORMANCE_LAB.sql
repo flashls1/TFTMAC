@@ -533,6 +533,8 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('current_measurement_gap','gfxinfo does not expose native Unreal/Vulkan gameplay frames; native frame timing is blocking before graphics tuning'),
 ('current_trace_sources','Perfetto proven available: android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats, linux.sys_stats'),
 ('current_trace_collector_smoke','5s smoke succeeded: 7479-byte raw pftrace, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, four lightweight SurfaceFlinger/GPU-memory sources, zero missed-frame counter delta during idle smoke'),
+('logger_guard_policy','Sampler starts before emulator; sampler must survive startup; launch-game requires a live growth health check; MATCH_ENTRY and COMBAT_START require fresh process, memory and logcat streams; status reports LOGGER_FAULT when the gate is not ready.'),
+('multi_match_policy','Keep raw telemetry continuous across games. Pair each MATCH_ENTRY with the next MATCH_RESULT; preserve per-match analysis artifacts; ingest match 2+ as distinct <capture-session>-match-N SQL sessions so later games never overwrite earlier evidence.'),
 ('current_optimization_priority','1 native frame timing; 2 guest RAM 6144->4096 MB A/B; 3 only then renderer/transport/queue experiments');
 
 INSERT OR REPLACE INTO host_facts VALUES

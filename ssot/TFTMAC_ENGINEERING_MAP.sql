@@ -1101,6 +1101,8 @@ INSERT OR REPLACE INTO map_meta(key,value) VALUES
 ('current_performance_priority','Native frame timing first; guest RAM 6144->4096 MB A/B second; renderer/transport tuning only after those measurements.'),
 ('current_trace_sources','Perfetto proven available: android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats, linux.sys_stats.'),
 ('current_trace_collector_smoke','5s raw Perfetto smoke succeeded: 7479 bytes, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, zero SurfaceFlinger missed-frame delta during idle smoke.'),
+('current_logger_guard','Sampler starts before emulator and must survive startup; TFT launch requires a live logger-growth health check; MATCH_ENTRY/COMBAT_START require fresh process, memory and logcat streams; status reports LOGGER_FAULT when not ready.'),
+('current_multi_match_capture','One uninterrupted raw capture may contain multiple games. MATCH_ENTRY/MATCH_RESULT pairs define each match; match 2+ receives a distinct SQL sub-session ID so prior match evidence is never overwritten.'),
 ('current_performance_truth','User-visible performance was poor/laggy. Resource telemetry shows active memory pressure; gfxinfo cannot quantify native Unreal frame pacing. SurfaceFlinger cumulative counters also nominate GPU-side missed frames, but they are not match-scoped.');
 
 INSERT OR REPLACE INTO components(id,name,kind,layer,ownership,status,purpose,notes) VALUES
@@ -1221,7 +1223,9 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T18:30:59Z','Optimization order','Made native frame tracing the blocking measurement and guest-RAM 4GiB A/B the first reversible performance intervention.','ev_native_frame_blindspot'),
 ('2026-08-28T18:42:01Z','Trace capability','Proved current guest exposes SurfaceFlinger frame/frametimeline/layers, GPU memory and Linux tracing data sources; native telemetry no longer requires guessing or external instrumentation.','ev_trace_capabilities'),
 ('2026-08-28T18:42:01Z','GPU miss nomination','Recorded cumulative SurfaceFlinger missed-frame counters as non-match-scoped nomination evidence only; requires TFT-specific frametimeline correlation before attribution.','ev_sf_cumulative_misses'),
-('2026-08-28T18:46:04Z','Native trace collector','Validated a bounded low-overhead Perfetto raw collector using the four required fast-path data sources; combat capture and normalization remain next.','ev_native_trace_smoke');
+('2026-08-28T18:46:04Z','Native trace collector','Validated a bounded low-overhead Perfetto raw collector using the four required fast-path data sources; combat capture and normalization remain next.','ev_native_trace_smoke'),
+('2026-08-28T19:57:30Z','Always-on logger guard','Made telemetry fail-closed for product-controlled gameplay: sampler survival is checked at startup, launch-game runs a growth test, match-entry/combat require fresh streams, and status exposes LOGGER_FAULT.',NULL),
+('2026-08-28T19:57:30Z','Multi-match evidence retention','Changed continuous-capture analysis to pair each match independently and ingest later games as separate SQL sub-sessions instead of overwriting the first baseline.',NULL);
 
 COMMIT;
 
