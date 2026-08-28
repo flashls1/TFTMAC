@@ -107,10 +107,24 @@ final class TFTMACModel: ObservableObject {
             if let active = response.values["activeSession"] as? [String: Any] {
                 self.capturePath = active["captureDir"] as? String
             }
-            self.status = self.gameRunning ? "TFT is running — capture active" : (self.captureActive ? "Control capture active" : "Direct-play control ready")
-            self.detail = self.captureActive
-                ? "Telemetry is append-only and active. Use Google Play / Update before Play TFT if an update is offered."
-                : "Start Control before opening Google Play or TFT so the full session is captured."
+            let gameState = response.values["gameState"] as? String
+            if gameState == "ANR_WAIT_REQUIRED" {
+                self.status = "TFT paused on Android ANR"
+                self.detail = "The Riot WebView stopped responding. Choose Wait, not Close App, so the live patched client can recover without restarting the emulator."
+            } else if gameState == "PATCHING_OR_INITIALIZING" {
+                self.status = "TFT is patching — capture active"
+                self.detail = "Riot's in-game patch service is active. Keep the emulator running; TFTMAC will not classify the client as ready until patching finishes."
+            } else if self.gameRunning {
+                self.status = "TFT is running — capture active"
+                self.detail = gameState == "RUNNING_POST_PATCH_OR_LOBBY"
+                    ? "Riot's patch service is no longer active. Confirm the lobby/party state before beginning the gameplay control."
+                    : "Telemetry is append-only and active while TFT is running."
+            } else {
+                self.status = self.captureActive ? "Control capture active" : "Direct-play control ready"
+                self.detail = self.captureActive
+                    ? "Telemetry is append-only and active. Use Google Play / Update before Play TFT if an update is offered."
+                    : "Start Control before opening Google Play or TFT so the full session is captured."
+            }
         }
     }
 

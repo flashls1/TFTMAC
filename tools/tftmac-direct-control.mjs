@@ -980,6 +980,39 @@ function marker(kind = 'stutter') {
   return { action: 'MARKER_RECORDED', kind, captureDir: state.captureDir, marker: event };
 }
 
+async function recoverAnrWait() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device for ANR recovery.');
+  const xml = dumpUI(runtime);
+  const waitNode = findNodeByText(xml, [/^Wait$/i]);
+  const anrText = findNodeByText(xml, [/isn['’]?t responding/i, /not responding/i]);
+  if (!waitNode?.bounds) {
+    return { action: 'ANR_WAIT_NOT_PRESENT', anrVisible: Boolean(anrText), postStatus: await status() };
+  }
+  adb(runtime, ['shell', 'input', 'tap', String(waitNode.bounds.x), String(waitNode.bounds.y)], { allowFailure: true, timeout: 10000 });
+  if (state?.captureDir) {
+    appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'ANR_WAIT_SELECTED', activity: 'MobileFREWebViewActivity' });
+  }
+  await sleep(2500);
+  return { action: 'ANR_WAIT_SELECTED', postStatus: await status() };
+}
+
+function riotPatchState(runtime) {
+  if (!deviceReady(runtime)) return { state: 'DEVICE_UNAVAILABLE', serviceActive: false, evidence: [] };
+  const services = adb(runtime, ['shell', 'dumpsys', 'activity', 'services', PACKAGE], { allowFailure: true, timeout: 30000 }).stdout;
+  const serviceLines = services.split(/\r?\n/).filter(line => /TFTPatchingFGService|com\.riotgames\.mobile/i.test(line)).slice(0, 80);
+  const serviceActive = serviceLines.some(line => /TFTPatchingFGService/.test(line));
+  const logcat = command(runtime.adb, ['-P', ADB_PORT, '-s', SERIAL, 'logcat', '-d', '-v', 'threadtime', '-t', '1800'], { env: runtime.env, allowFailure: true, timeout: 30000, maxBuffer: 32 * 1024 * 1024 }).stdout;
+  const evidence = logcat.split(/\r?\n/).filter(line => /TFTPatchingFGService|teamfighttactics.*(patch|download|asset|content)|riotgames.*(patch|download|asset|content)/i.test(line)).slice(-120);
+  return {
+    state: serviceActive ? 'PATCHING_OR_INITIALIZING' : 'NO_ACTIVE_PATCH_SERVICE',
+    serviceActive,
+    serviceLines,
+    evidence
+  };
+}
+
 async function status() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -990,7 +1023,17 @@ async function status() {
   const xml = ready ? dumpUI(runtime) : '';
   const googleAuth = xml ? findNodeByText(xml, [/sign in/i, /add account/i, /choose an account/i]) : null;
   const riotAuth = xml ? findNodeByText(xml, [/sign in/i, /log in/i, /riot account/i]) : null;
-  return { activeSession: state, deviceReady: ready, samplerAlive: processAlive(state?.samplerPid), emulatorProcessAlive: processAlive(state?.emulatorPid), package: pkg, tftPid: pid || null, resumedActivity: top, googleAuthPossible: Boolean(googleAuth), riotAuthPossible: Boolean(pid && riotAuth), uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 20) ?? [] };
+  const anrWait = xml ? findNodeByText(xml, [/^Wait$/i]) : null;
+  const anrText = xml ? findNodeByText(xml, [/isn['’]?t responding/i, /not responding/i]) : null;
+  const riotPatch = ready && pid ? riotPatchState(runtime) : { state: 'NOT_RUNNING', serviceActive: false, evidence: [] };
+  const gameState = anrWait
+    ? 'ANR_WAIT_REQUIRED'
+    : riotPatch.serviceActive
+    ? 'PATCHING_OR_INITIALIZING'
+    : pid && top.some(line => /teamfighttactics\/com\.epicgames\.unreal\.GameActivity/.test(line))
+      ? 'RUNNING_POST_PATCH_OR_LOBBY'
+      : pid ? 'RUNNING' : 'NOT_RUNNING';
+  return { activeSession: state, deviceReady: ready, samplerAlive: processAlive(state?.samplerPid), emulatorProcessAlive: processAlive(state?.emulatorPid), package: pkg, tftPid: pid || null, gameState, riotPatch, anr: { visible: Boolean(anrText || anrWait), waitAvailable: Boolean(anrWait) }, resumedActivity: top, googleAuthPossible: Boolean(googleAuth), riotAuthPossible: Boolean(pid && riotAuth), uiTextSample: xml.match(/text="([^"]+)"/g)?.slice(0, 20) ?? [] };
 }
 
 function androidToolEnv(runtime) {
@@ -2288,6 +2331,7 @@ async function main() {
   if (action === 'launch-game') { json(await launchGame()); return; }
   if (action === 'gles-capability-probe') { json(glesCapabilityProbe()); return; }
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
+  if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
   if (action === 'status') { json(await status()); return; }
   if (action === 'play-certification') { json(await playCertification()); return; }
   if (action === 'play-diagnose') { json(await playDiagnose()); return; }
