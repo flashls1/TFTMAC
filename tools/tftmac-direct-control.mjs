@@ -225,6 +225,45 @@ async function waitForBoot(runtime, timeoutMs = 240000) {
   throw new Error('Timed out waiting for Android boot completion.');
 }
 
+function guestUserState(runtime) {
+  const text = adb(runtime, ['shell', 'dumpsys', 'user'], { allowFailure: true, timeout: 10000 }).stdout;
+  const user0Block = text.split(/(?=\n\s*UserInfo\{)/).find(block => /UserInfo\{0:/.test(block)) ?? text;
+  const state = user0Block.match(/State:\s*(RUNNING_[A-Z_]+)/)?.[1] ?? null;
+  return {
+    state,
+    unlocked: state === 'RUNNING_UNLOCKED',
+    sample: user0Block.split(/\r?\n/).filter(line => /UserInfo\{|State:|Unlock time|Started users state/i.test(line)).slice(0, 40)
+  };
+}
+
+async function ensureGuestUnlocked(runtime, captureDir = null, timeoutMs = 20000) {
+  let observed = guestUserState(runtime);
+  if (observed.unlocked) return { action: 'GUEST_ALREADY_UNLOCKED', ...observed };
+  const attempts = [];
+  const runStep = args => {
+    const result = adb(runtime, ['shell', ...args], { allowFailure: true, timeout: 10000 });
+    attempts.push({ args, status: result.status, stdout: result.stdout.trim().slice(0, 1000), stderr: result.stderr.trim().slice(0, 1000) });
+  };
+  runStep(['input', 'keyevent', 'KEYCODE_WAKEUP']);
+  runStep(['wm', 'dismiss-keyguard']);
+  runStep(['input', 'keyevent', '82']);
+  runStep(['input', 'swipe', '960', '900', '960', '250', '250']);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    observed = guestUserState(runtime);
+    if (observed.unlocked) {
+      const result = { action: 'GUEST_UNLOCKED', ...observed, attempts };
+      if (captureDir) {
+        writeJSON(path.join(captureDir, 'guest-unlock.json'), result);
+        appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'GUEST_UNLOCKED', attempts: attempts.length });
+      }
+      return result;
+    }
+    await sleep(500);
+  }
+  throw new Error(`GUEST_USER_0_REMAINS_LOCKED: ${JSON.stringify({ observed, attempts })}`);
+}
+
 function hostTimeZoneId() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
 }
@@ -366,6 +405,42 @@ function packageState(runtime, captureDir = null, includeSigning = true) {
     fs.writeFileSync(path.join(captureDir, 'package-dumpsys.txt'), dump);
   }
   return state;
+}
+
+function packageLaunchProbe() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('No active Android device for package launch probe.');
+  const shell = (args, timeout = 30000) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout });
+  const dump = shell(['dumpsys', 'package', PACKAGE], 30000).stdout;
+  const launcherResolve = shell(['cmd', 'package', 'resolve-activity', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', PACKAGE]);
+  const launcherQuery = shell(['cmd', 'package', 'query-activities', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', PACKAGE]);
+  const packagePath = shell(['pm', 'path', PACKAGE]).stdout.trim();
+  const enabledPackages = shell(['pm', 'list', 'packages', '-e', PACKAGE]).stdout.trim();
+  const disabledPackages = shell(['pm', 'list', 'packages', '-d', PACKAGE]).stdout.trim();
+  const installedPackages = shell(['pm', 'list', 'packages', PACKAGE]).stdout.trim();
+  const currentUser = shell(['am', 'get-current-user']).stdout.trim();
+  const userState = shell(['dumpsys', 'user']).stdout.split(/\r?\n/).filter(line => /UserInfo\{|state=|RUNNING_|unlock/i.test(line)).slice(0, 120);
+  const user0Packages = shell(['pm', 'list', 'packages', '--user', '0', PACKAGE]).stdout.trim();
+  const packageLines = dump.split(/\r?\n/).filter(line =>
+    /SplashActivity|GameActivity|android\.intent\.action\.MAIN|android\.intent\.category\.LAUNCHER|enabled=|stopped=|suspended=|hidden=|installed=|archiv|pkgFlags|privateFlags/i.test(line)
+  ).slice(0, 500);
+  const result = {
+    observedAt: nowISO(),
+    packageName: PACKAGE,
+    packagePath,
+    installedPackages,
+    enabledPackages,
+    disabledPackages,
+    currentUser,
+    userState,
+    user0Packages,
+    launcherResolve: { status: launcherResolve.status, stdout: launcherResolve.stdout.trim(), stderr: launcherResolve.stderr.trim() },
+    launcherQuery: { status: launcherQuery.status, stdout: launcherQuery.stdout.trim(), stderr: launcherQuery.stderr.trim() },
+    packageLines
+  };
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'package-launch-probe.json'), result);
+  return result;
 }
 
 function rendererState(runtime, captureDir) {
@@ -579,7 +654,7 @@ function restoreDonorAVD(runtime) {
   return { restored: true, configPath, configSHA256: sha256File(configPath) };
 }
 
-function startDonorEmulator(runtime, captureDir) {
+function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
   if (!runtime.avdHome || !runtime.avdIni || !runtime.avdDir) throw new Error(`Official AVD ${AVD_NAME} is not present under the external runtime.`);
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
@@ -591,7 +666,7 @@ function startDonorEmulator(runtime, captureDir) {
     '-skin', `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
     '-vsync-rate', String(DONOR_PROFILE.refreshHz),
     '-dns-server', '1.1.1.1,8.8.8.8',
-    '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(DONOR_PROFILE.ramMB),
+    '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(ramMB),
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
   const timeZone = hostTimeZoneId();
@@ -610,7 +685,7 @@ function startDonorEmulator(runtime, captureDir) {
   child.unref();
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
     utc: nowISO(), event: 'DONOR_EMULATOR_STARTED', pid: child.pid, args,
-    profile: DONOR_PROFILE.id,
+    profile: controlProfileId,
     env: {
       ANGLE_FEATURE_OVERRIDES_ENABLED: env.ANGLE_FEATURE_OVERRIDES_ENABLED,
       ANGLE_FEATURE_OVERRIDES_DISABLED: env.ANGLE_FEATURE_OVERRIDES_DISABLED,
@@ -622,12 +697,12 @@ function startDonorEmulator(runtime, captureDir) {
   return child.pid;
 }
 
-function donorRuntimeState(runtime, captureDir, prepared, bootClass) {
+function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
   const display = adb(runtime, ['shell', 'wm', 'size'], { allowFailure: true }).stdout.trim();
   const density = adb(runtime, ['shell', 'wm', 'density'], { allowFailure: true }).stdout.trim();
   const state = {
     observedAt: nowISO(),
-    control: DONOR_PROFILE.id,
+    control: controlProfileId,
     compatibilityAdapter: true,
     compatibilitySource: 'Mactician 1.1.0 measured runtime on this host',
     externalRoot: runtime.externalRoot,
@@ -643,7 +718,8 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass) {
     adbServerPort: Number(ADB_PORT),
     emulatorConsolePort: Number(EMULATOR_PORT),
     vcpu: DONOR_PROFILE.vcpu,
-    ramMB: DONOR_PROFILE.ramMB,
+    ramMB,
+    ramSource: ramMB === DONOR_PROFILE.ramMB ? 'profile' : 'emulator-command-line-override',
     displayRequested: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
     densityRequested: DONOR_PROFILE.density,
     refreshTargetHz: DONOR_PROFILE.refreshHz,
@@ -671,7 +747,7 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass) {
   return state;
 }
 
-async function startDonorControl() {
+async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
   singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
@@ -684,11 +760,11 @@ async function startDonorControl() {
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
   for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
   for (const name of ['clock-sync.jsonl', 'markers.jsonl', 'logcat.raw.txt', 'logcat.filtered.txt', 'host-process.csv', 'host-process.jsonl', 'host-memory.csv', 'host-memory.jsonl']) fs.closeSync(fs.openSync(path.join(captureDir, name), 'a'));
-  appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'LOGGER_INITIALIZED', sessionId, profile: DONOR_PROFILE.id });
+  appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'LOGGER_INITIALIZED', sessionId, profile: controlProfileId });
   const session = {
     schema: 1, sessionId, startedUTC: nowISO(), endedUTC: null,
     hostStartMonoNs: monoNs().toString(), hostEndMonoNs: null, captureState: 'CAPTURING',
-    workloadLabel: 'mactician-compatible-official-control', appCommit: currentGitSha(), runtimeConfig: DONOR_PROFILE.id,
+    workloadLabel: controlProfileId, appCommit: currentGitSha(), runtimeConfig: controlProfileId,
     packageName: PACKAGE, packageUpdatedDuringSession: false, packageAuthorityVerified: false, packageCurrentObservedAt: null,
     matchEntryObserved: false, combatObserved: false
   };
@@ -698,18 +774,19 @@ async function startDonorControl() {
   await sleep(350);
   if (!processAlive(samplerPid)) throw new Error(`LOGGER_START_FAILED: sampler PID ${samplerPid} did not remain alive.`);
   adbServer(runtime);
-  const emulatorPid = startDonorEmulator(runtime, captureDir);
+  const emulatorPid = startDonorEmulator(runtime, captureDir, ramMB, controlProfileId);
   try {
     await waitForBoot(runtime);
+    const guestUnlock = await ensureGuestUnlocked(runtime, captureDir);
     const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
     const clockPreflight = await ensureGuestClock(runtime, captureDir);
-    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD');
+    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD', ramMB, controlProfileId);
     const pkg = packageState(runtime, captureDir, false);
     const renderer = rendererState(runtime, captureDir);
     const state = {
       schema: 1, sessionId, captureDir, samplerPid, emulatorPid, reusedRunningEmulator: false,
       sdkRoot: runtime.sdkRoot, avdHome: runtime.avdHome, startedUTC: session.startedUTC,
-      packageState: pkg.state, controlProfile: DONOR_PROFILE.id, donorConfigBackupPath: prepared.backupPath
+      packageState: pkg.state, controlProfile: controlProfileId, donorConfigBackupPath: prepared.backupPath
     };
     writeJSON(CONTROL_STATE, state);
     return { ...state, package: pkg, clockPreflight, runtime: runtimeObserved, renderer, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
@@ -754,6 +831,7 @@ async function startControl() {
   const reusedRunningEmulator = deviceReady(runtime);
   const emulatorPid = reusedRunningEmulator ? null : startEmulator(runtime, captureDir);
   await waitForBoot(runtime);
+  const guestUnlock = await ensureGuestUnlocked(runtime, captureDir);
   const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
   const clockPreflight = await ensureGuestClock(runtime, captureDir);
   runtimeState(runtime, captureDir, reusedRunningEmulator ? 'WARM' : 'COLD');
@@ -925,6 +1003,63 @@ function glesCapabilityProbe() {
   return result;
 }
 
+function latestMemoryPressure(captureDir) {
+  const rows = readJSONL(path.join(captureDir, 'host-memory.jsonl'));
+  const row = rows.at(-1) ?? null;
+  if (!row) return null;
+  const gib = 1024 ** 3;
+  return {
+    utc: row.utc ?? null,
+    hostMonoNs: row.host_mono_ns ?? null,
+    hostAvailableGiB: Number(row.host_available_bytes) / gib,
+    hostCompressedGiB: Number(row.host_compressed_bytes) / gib,
+    hostSwapUsedGiB: Number(row.host_swap_used_bytes) / gib,
+    guestAvailableGiB: Number(row.guest_available_bytes) / gib,
+    pageoutCount: Number(row.pageout_count)
+  };
+}
+
+async function preplayOptimize() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session. Run start first.');
+  const loggerGate = await loggerHealth();
+  if (!loggerGate.healthy) throw new Error(`LOGGER_REQUIRED_BEFORE_PREPLAY_OPTIMIZE: ${JSON.stringify(loggerGate)}`);
+  const before = latestMemoryPressure(state.captureDir);
+  if (!before) throw new Error('PREPLAY_MEMORY_SAMPLE_UNAVAILABLE');
+  const compressionThresholdGiB = 4.5;
+  const availableThresholdGiB = 4.25;
+  const shouldRefresh = before.hostCompressedGiB >= compressionThresholdGiB || before.hostAvailableGiB <= availableThresholdGiB;
+  let restart = null;
+  if (shouldRefresh) {
+    restart = await restartGame();
+    await sleep(8000);
+  }
+  const after = latestMemoryPressure(state.captureDir);
+  const result = {
+    action: shouldRefresh ? 'PREPLAY_TFT_REFRESHED' : 'PREPLAY_NO_REFRESH_NEEDED',
+    thresholds: { compressionGiB: compressionThresholdGiB, hostAvailableGiB: availableThresholdGiB },
+    reason: shouldRefresh
+      ? `Host pressure exceeded hygiene threshold: compressed=${before.hostCompressedGiB.toFixed(2)} GiB, available=${before.hostAvailableGiB.toFixed(2)} GiB.`
+      : `Host pressure within hygiene envelope: compressed=${before.hostCompressedGiB.toFixed(2)} GiB, available=${before.hostAvailableGiB.toFixed(2)} GiB.`,
+    before,
+    after,
+    delta: after ? {
+      hostAvailableGiB: after.hostAvailableGiB - before.hostAvailableGiB,
+      hostCompressedGiB: after.hostCompressedGiB - before.hostCompressedGiB,
+      hostSwapUsedGiB: after.hostSwapUsedGiB - before.hostSwapUsedGiB,
+      guestAvailableGiB: after.guestAvailableGiB - before.guestAvailableGiB
+    } : null,
+    restart,
+    loggerGate
+  };
+  appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), {
+    utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'PREPLAY_MEMORY_HYGIENE',
+    decision: result.action, thresholds: result.thresholds, before, after, delta: result.delta
+  });
+  writeJSON(path.join(state.captureDir, 'preplay-memory-hygiene.json'), result);
+  return result;
+}
+
 async function restartGame() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -954,6 +1089,7 @@ async function launchGame() {
   const loggerGate = await loggerHealth();
   if (!loggerGate.healthy) throw new Error(`LOGGER_REQUIRED_BEFORE_TFT_LAUNCH: ${JSON.stringify(loggerGate)}`);
   await waitForBoot(runtime, 60000);
+  await ensureGuestUnlocked(runtime, captureDir);
   await ensureGuestClock(runtime, captureDir);
   const pkg = packageState(runtime, captureDir, false);
   if (pkg.state === 'MISSING') throw new Error('Official TFT package is not installed. Run play-action first.');
@@ -962,14 +1098,26 @@ async function launchGame() {
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'GFXINFO_RESET_BEFORE_TFT_LAUNCH' });
   const resolvedRaw = adb(runtime, ['shell', 'cmd', 'package', 'resolve-activity', '--brief', PACKAGE], { allowFailure: true }).stdout.trim();
   const resolved = resolvedComponent(resolvedRaw);
-  let launchResult;
-  if (resolved) {
-    launchResult = adb(runtime, ['shell', 'am', 'start', '-W', '-n', resolved], { allowFailure: true, timeout: 30000 });
-  } else {
-    launchResult = adb(runtime, ['shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1'], { allowFailure: true, timeout: 120000 });
+  const verifiedSplashActivity = `${PACKAGE}/com.epicgames.unreal.SplashActivity`;
+  const verifiedGameActivity = `${PACKAGE}/com.epicgames.unreal.GameActivity`;
+  const launchCandidates = [...new Set([resolved, verifiedSplashActivity, verifiedGameActivity].filter(Boolean))];
+  let launchResult = null;
+  let launchedComponent = null;
+  for (const component of launchCandidates) {
+    const attempt = adb(runtime, ['shell', 'am', 'start', '--user', '0', '-n', component], { allowFailure: true, timeout: 10000 });
+    appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
+      utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_LAUNCH_ATTEMPT', component,
+      status: attempt.status, stdout: attempt.stdout.trim().slice(0, 1000), stderr: attempt.stderr.trim().slice(0, 1000)
+    });
+    if (attempt.status === 0 && !/Error:|does not exist|not exported|unable to resolve/i.test(`${attempt.stdout}\n${attempt.stderr}`)) {
+      launchResult = attempt;
+      launchedComponent = component;
+      break;
+    }
+    launchResult = attempt;
   }
-  appendJSONL(path.join(captureDir, 'markers.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_LAUNCH' });
-  const deadline = Date.now() + 120000;
+  appendJSONL(path.join(captureDir, 'markers.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'TFT_LAUNCH', resolvedActivity: resolved ?? null, launchedComponent });
+  const deadline = Date.now() + 45000;
   let pid = '';
   while (Date.now() < deadline) {
     pid = adb(runtime, ['shell', 'pidof', PACKAGE], { allowFailure: true }).stdout.trim();
@@ -1344,15 +1492,28 @@ async function loggerHealth() {
   }
   const expectedStreams = ['host-process.jsonl', 'host-memory.jsonl', 'logcat.raw.txt', 'gfxinfo/framestats.raw.txt'];
   const activeStreams = expectedStreams.filter(rel => (growth[rel]?.bytesAdded ?? 0) > 0 || growth[rel]?.mtimeAdvanced);
+  const samplerAlive = processAlive(state.samplerPid);
+  const processAdvancing = (growth['host-process.jsonl']?.bytesAdded ?? 0) > 0 || growth['host-process.jsonl']?.mtimeAdvanced;
+  const memoryAdvancing = (growth['host-memory.jsonl']?.bytesAdded ?? 0) > 0 || growth['host-memory.jsonl']?.mtimeAdvanced;
+  const logcatBytes = after['logcat.raw.txt']?.bytes ?? 0;
+  const logcatAgeMs = after['logcat.raw.txt']?.mtimeMs ? Math.max(0, Date.now() - after['logcat.raw.txt'].mtimeMs) : null;
+  const logcatPresent = logcatBytes > 0;
+  const logcatFresh = logcatAgeMs !== null && logcatAgeMs <= 15000;
   const result = {
     observedAt: nowISO(),
     sessionId: state.sessionId,
     captureDir: state.captureDir,
-    samplerAlive: processAlive(state.samplerPid),
+    samplerAlive,
     emulatorProcessAlive: processAlive(state.emulatorPid),
     activeStreams,
     expectedStreams,
-    healthy: processAlive(state.samplerPid) && activeStreams.length >= 3,
+    processAdvancing,
+    memoryAdvancing,
+    logcatPresent,
+    logcatFresh,
+    logcatAgeMs,
+    gfxinfoRequiredForHealth: false,
+    healthy: samplerAlive && processAdvancing && memoryAdvancing && logcatPresent && logcatFresh,
     before,
     after,
     growth
@@ -1429,6 +1590,76 @@ function sessionLogSignals(captureDir) {
       relevantSamples: samples(emulatorText, /(?:ANGLE|gfxstream|MoltenVK|Vulkan|Metal).*(?:warn|error|fail|stall|timeout|unsupported)/i)
     }
   };
+}
+
+function analyzeRestartEffect() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const captureDir = state.captureDir;
+  const hostEvents = readJSONL(path.join(captureDir, 'host-events.jsonl'));
+  const restart = [...hostEvents].reverse().find(row => row.event === 'TFT_APP_RESTART_COMPLETE');
+  if (!restart?.host_mono_ns) throw new Error('No TFT_APP_RESTART_COMPLETE event is available.');
+  const restartNs = Number(restart.host_mono_ns);
+  const processRows = readJSONL(path.join(captureDir, 'host-process.jsonl'));
+  const memoryRows = readJSONL(path.join(captureDir, 'host-memory.jsonl'));
+  const gib = 1024 ** 3;
+  const select = (rows, startNs, endNs) => rows.filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= startNs && mono < endNs;
+  });
+  const procSummary = rows => {
+    const emulatorRows = rows.filter(row => /qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? '')));
+    return {
+      sampleCount: emulatorRows.length,
+      cpuPercent: summarizeNumbers(emulatorRows.map(row => Number(row.cpu_pct))),
+      rssMiB: summarizeNumbers(emulatorRows.map(row => Number(row.rss_kb) / 1024))
+    };
+  };
+  const memSummary = rows => {
+    const pageouts = rows.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+    return {
+      sampleCount: rows.length,
+      hostAvailableGiB: summarizeNumbers(rows.map(row => Number(row.host_available_bytes) / gib)),
+      hostCompressedGiB: summarizeNumbers(rows.map(row => Number(row.host_compressed_bytes) / gib)),
+      hostSwapUsedGiB: summarizeNumbers(rows.map(row => Number(row.host_swap_used_bytes) / gib)),
+      guestAvailableGiB: summarizeNumbers(rows.map(row => Number(row.guest_available_bytes) / gib)),
+      pageoutDelta: pageouts.length > 1 ? pageouts.at(-1) - pageouts[0] : null
+    };
+  };
+  const delta = (post, pre) => Number.isFinite(post) && Number.isFinite(pre) ? post - pre : null;
+  const windows = {};
+  for (const seconds of [600, 1200, 1800]) {
+    const span = seconds * 1e9;
+    const preProc = procSummary(select(processRows, restartNs - span, restartNs));
+    const postProc = procSummary(select(processRows, restartNs, restartNs + span));
+    const preMem = memSummary(select(memoryRows, restartNs - span, restartNs));
+    const postMem = memSummary(select(memoryRows, restartNs, restartNs + span));
+    windows[String(seconds)] = {
+      seconds,
+      pre: { hostEmulator: preProc, memory: preMem },
+      post: { hostEmulator: postProc, memory: postMem },
+      delta: {
+        emulatorCpuMeanPctPoints: delta(postProc.cpuPercent.mean, preProc.cpuPercent.mean),
+        emulatorCpuP95PctPoints: delta(postProc.cpuPercent.p95, preProc.cpuPercent.p95),
+        emulatorRssMeanMiB: delta(postProc.rssMiB.mean, preProc.rssMiB.mean),
+        hostAvailableMeanGiB: delta(postMem.hostAvailableGiB.mean, preMem.hostAvailableGiB.mean),
+        hostCompressedMeanGiB: delta(postMem.hostCompressedGiB.mean, preMem.hostCompressedGiB.mean),
+        hostSwapMeanGiB: delta(postMem.hostSwapUsedGiB.mean, preMem.hostSwapUsedGiB.mean),
+        guestAvailableMeanGiB: delta(postMem.guestAvailableGiB.mean, preMem.guestAvailableGiB.mean),
+        pageoutDeltaDifference: delta(postMem.pageoutDelta, preMem.pageoutDelta)
+      }
+    };
+  }
+  const result = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    restart,
+    windows,
+    interpretationRule: 'Equal-duration pre/post app-restart windows. Positive host-available and negative compressed/pageout deltas support restart-related pressure relief; CPU/RSS changes alone do not establish causality.'
+  };
+  writeJSON(path.join(captureDir, 'restart-effect-analysis.json'), result);
+  return result;
 }
 
 function analyzeContinuousRun() {
@@ -1827,11 +2058,11 @@ function ingestAnalysisIntoLab() {
         if (metas[0]) latestTraceMetadata = readJSON(metas[0].path, null);
       } catch {}
       const currentConfigId = 'mactician_compatible_official_v0';
-      const candidateConfigId = 'mactician_compatible_4gb_v1';
+      const candidateConfigId = 'mactician_compatible_5gb_v1';
 
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_gameplay_ingest_at', now);
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_gameplay_baseline_session', labSessionId);
-      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 record graphics preset/FPS cap/Performance Mode + native frame timing; 2 one-factor Performance Mode A/B; 3 one-factor FPS-cap A/B; 4 one-factor graphics-preset A/B; 5 guest RAM 6144->4096 A/B; 6 only then graphics transport/queue experiments');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 preserve continuous-run logger; 2 use pre-play app refresh when memory-pressure thresholds fire; 3 one-factor guest RAM 6144->5120 A/B; 4 test Performance Mode/FPS/graphics by setting timestamps; 5 only then graphics transport/queue experiments');
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_game_settings', JSON.stringify(analysis.match.gameSettings));
       if (latestTraceMetadata) db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('native_trace_collector_smoke', JSON.stringify({ label: latestTraceMetadata.label, durationSeconds: latestTraceMetadata.durationSeconds, byteCount: latestTraceMetadata.byteCount, sha256: latestTraceMetadata.sha256, dataSources: latestTraceMetadata.dataSources, parseState: latestTraceMetadata.parseState }));
 
@@ -1851,7 +2082,7 @@ function ingestAnalysisIntoLab() {
         moltenvk_mode=excluded.moltenvk_mode,presentation_mode=excluded.presentation_mode,state=excluded.state,notes=excluded.notes`);
       const currentNotes = 'First playable official TFT control: API36 Play ARM64, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream, MoltenVK/Metal. First full match placed 1st.';
       configStmt.run(currentConfigId,null,'Mactician-compatible official TFT control v0',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,6144,1920,1080,320,60,'host',1,'virtio-gpu-asg','GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
-      configStmt.run(candidateConfigId,currentConfigId,'RAM 4 GiB candidate',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,4096,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE',now,'One-factor candidate: only guest RAM changes from 6144 MB to 4096 MB.');
+      configStmt.run(candidateConfigId,currentConfigId,'RAM 5 GiB candidate',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,5120,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE',now,'One-factor candidate: only guest RAM changes from 6144 MB to 5120 MB; 4096 MB is deferred because observed guest headroom makes a 2 GiB cut too aggressive.');
 
       db.prepare(`INSERT INTO sessions(
         id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
@@ -1900,7 +2131,7 @@ function ingestAnalysisIntoLab() {
       db.prepare(`INSERT INTO hypotheses(id,title,boundary,statement,predicted_signature,falsification_condition,status,confidence,nominated_from_session_id,created_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET status=excluded.status,confidence=excluded.confidence,nominated_from_session_id=excluded.nominated_from_session_id,notes=excluded.notes`)
-        .run('h_guest_ram_host_pressure','Guest RAM allocation amplifies host memory pressure','MEMORY','The 6144 MB Android guest contributes enough host RSS/compression/pageout pressure to worsen gameplay responsiveness on the 16 GiB M4 host.','A 4096 MB one-factor run materially lowers emulator RSS, host compression/pageouts, and user-visible stalls without guest OOM or app instability.','4096 MB does not reduce memory pressure or worsens stability/performance under comparable gameplay.','QUEUED',0.60,labSessionId,now,`Baseline: RSS mean ${analysis.hostEmulator.rssMiB.mean.toFixed(0)} MiB, max ${analysis.hostEmulator.rssMiB.max.toFixed(0)} MiB; host compressed mean ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB; pageout delta ${analysis.memory.pageoutDelta}.`);
+        .run('h_guest_ram_host_pressure','Guest RAM allocation amplifies host memory pressure','MEMORY','The 6144 MB Android guest contributes enough host RSS/compression/pageout pressure to worsen gameplay responsiveness on the 16 GiB M4 host.','A 5120 MB one-factor run materially lowers emulator RSS/host compression while preserving adequate guest headroom without OOM/LMK instability.','5120 MB does not reduce memory pressure, materially degrades guest headroom, or worsens stability/performance under comparable gameplay.','QUEUED',0.60,labSessionId,now,`Baseline: RSS mean ${analysis.hostEmulator.rssMiB.mean.toFixed(0)} MiB, max ${analysis.hostEmulator.rssMiB.max.toFixed(0)} MiB; host compressed mean ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB; pageout delta ${analysis.memory.pageoutDelta}.`);
       db.prepare(`UPDATE hypotheses SET status='TESTING',confidence=?,nominated_from_session_id=?,notes=? WHERE id='h_memory_pressure'`)
         .run(0.60,labSessionId,`Match ${analysis.match.matchOrdinal} showed active host pageouts (+${analysis.memory.pageoutDelta}) with compressed memory mean ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB; causal attribution still requires A/B.`);
       db.prepare(`INSERT INTO hypotheses(id,title,boundary,statement,predicted_signature,falsification_condition,status,confidence,nominated_from_session_id,created_at,notes)
@@ -1935,7 +2166,7 @@ function ingestAnalysisIntoLab() {
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,candidate_config_id=excluded.candidate_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
-        .run('exp_ram_4gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 4096 MB A/B','INTERVENTION',currentConfigId,candidateConfigId,'HEAVY',1,'PLANNED',1,'Same official TFT version, same renderer/transport/display/vCPU; compare full-match or matched heavy-combat resource pressure plus native frame timing once available.',now,null,'Highest-priority reversible performance experiment from first-win data.');
+        .run('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION',currentConfigId,candidateConfigId,'HEAVY',1,'PLANNED',1,'Same official TFT version, same renderer/transport/display/vCPU; compare full-match or matched heavy-combat resource pressure plus native frame timing once available.',now,null,'Safer first RAM intervention selected after Game 2: reduce one GiB only and compare continuous-run pressure.');
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
@@ -3038,6 +3269,8 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
         clockStmt.run(sessionId, asNumber(row.host_t0_ns), asNumber(row.guest_mono_ns), asNumber(row.host_t1_ns), asNumber(row.host_midpoint_ns), asNumber(row.rtt_ns), asNumber(row.estimated_offset_ns), row.source ?? '/proc/uptime');
       }
 
+      const markerTableSql = String(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='markers'").get()?.sql ?? '');
+      const markerTypeSupported = type => markerTableSql.includes(`'${type}'`);
       const markerStmt = db.prepare('INSERT INTO markers(session_id,host_mono_ns,guest_mono_ns,marker_type,label,payload_json) VALUES(?,?,?,?,?,?)');
       for (const row of markers) {
         const type = row.event === 'MANUAL_STUTTER_MARKER' ? 'USER_STUTTER'
@@ -3047,7 +3280,8 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
           : row.event === 'PACKAGE_UPDATE' ? 'PACKAGE_UPDATE'
           : row.event === 'GAME_SETTINGS' ? 'GAME_SETTINGS'
           : 'CUSTOM';
-        markerStmt.run(sessionId, asNumber(row.host_mono_ns) ?? asNumber(session.hostStartMonoNs) ?? 0, null, type, row.event ?? null, JSON.stringify(row));
+        const normalizedType = markerTypeSupported(type) ? type : 'CUSTOM';
+        markerStmt.run(sessionId, asNumber(row.host_mono_ns) ?? asNumber(session.hostStartMonoNs) ?? 0, null, normalizedType, row.event ?? null, JSON.stringify({ ...row, normalizedMarkerType: normalizedType, originalMarkerType: type }));
       }
 
       const frameArtifact = artifactByPath.get('gfxinfo/framestats.raw.txt') ?? null;
@@ -3602,6 +3836,7 @@ async function main() {
   if (action === 'cleanup-observer-adb-5037') { json(cleanupObserverAdb5037()); return; }
   if (action === 'start') { json(await startControl()); return; }
   if (action === 'start-donor-control') { json(await startDonorControl()); return; }
+  if (action === 'start-donor-control-5gb') { json(await startDonorControl(5120, 'mactician_compatible_5gb_v1')); return; }
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'play-probe') { json(await playProbe()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
@@ -3610,6 +3845,8 @@ async function main() {
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
   if (action === 'logger-health') { json(await loggerHealth()); return; }
+  if (action === 'preplay-optimize') { json(await preplayOptimize()); return; }
+  if (action === 'restart-effect-analysis') { json(analyzeRestartEffect()); return; }
   if (action === 'analyze-session') { json(analyzeContinuousRun()); return; }
   if (action === 'ingest-analysis') { json(ingestContinuousRunIntoLab()); return; }
   if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
@@ -3643,6 +3880,7 @@ async function main() {
   if (/^placement-[1-8]$/.test(action)) { json(marker(action)); return; }
   if (action === 'stop') { json(await stopControl()); return; }
   if (action === 'package-state') { const r = discover(); json(packageState(r)); return; }
+  if (action === 'package-launch-probe') { json(packageLaunchProbe()); return; }
   if (action === 'sampler') {
     const captureIndex = args.indexOf('--capture');
     const sessionIndex = args.indexOf('--session');
