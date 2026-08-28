@@ -2225,6 +2225,80 @@ duration_ms: ${durationMs}
 `;
 }
 
+function graphicsPipelineAudit() {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  if (!deviceReady(runtime)) throw new Error('No active Android device for graphics pipeline audit.');
+  const captureDir = state.captureDir;
+  const sf = adb(runtime, ['shell', 'dumpsys', 'SurfaceFlinger'], { allowFailure: true, timeout: 30000 }).stdout;
+  const counters = surfaceFlingerCounters(runtime);
+  const runtimeInfo = readJSON(path.join(captureDir, 'runtime-state.json'), {});
+  const session = readJSON(path.join(captureDir, 'session.json'), {});
+  const emulatorLogPath = path.join(captureDir, 'emulator.stdout.log');
+  const emulatorText = exists(emulatorLogPath) ? fs.readFileSync(emulatorLogPath, 'utf8') : '';
+  const cropMatches = [...sf.matchAll(/sourceCrop=\[\s*([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\]/gi)]
+    .map(match => ({ width: Math.max(0, Number(match[3]) - Number(match[1])), height: Math.max(0, Number(match[4]) - Number(match[2])) }))
+    .filter(item => item.width > 0 && item.height > 0)
+    .sort((a, b) => (a.width * a.height) - (b.width * b.height));
+  const frameMatches = [...sf.matchAll(/displayFrame=\[\s*([0-9.-]+)\s+([0-9.-]+)\s+([0-9.-]+)\s+([0-9.-]+)\]/gi)]
+    .map(match => ({ width: Math.max(0, Number(match[3]) - Number(match[1])), height: Math.max(0, Number(match[4]) - Number(match[2])) }))
+    .filter(item => item.width > 0 && item.height > 0)
+    .sort((a, b) => (b.width * b.height) - (a.width * a.height));
+  const renderWidth = cropMatches[0]?.width ?? null;
+  const renderHeight = cropMatches[0]?.height ?? null;
+  const displayWidth = frameMatches[0]?.width ?? null;
+  const displayHeight = frameMatches[0]?.height ?? null;
+  const scaleX = renderWidth && displayWidth ? displayWidth / renderWidth : null;
+  const scaleY = renderHeight && displayHeight ? displayHeight / renderHeight : null;
+  const count = rx => (emulatorText.match(rx) ?? []).length;
+  const recentWarnings = emulatorText.split(/\r?\n/).filter(line => /(?:ANGLE|gfxstream|MoltenVK|Vulkan|Metal|virtio-gpu|ASG).*(?:warn|error|fail|stall|timeout|unsupported)/i.test(line)).slice(-80);
+  const pipeline = [
+    {
+      boundary: 'UNREAL_TO_ANDROID_SURFACE',
+      state: renderWidth && displayWidth && (renderWidth < displayWidth || renderHeight < displayHeight) ? 'ATTENTION' : 'OBSERVED',
+      evidence: { renderBuffer: renderWidth && renderHeight ? `${renderWidth}x${renderHeight}` : null, displayFrame: displayWidth && displayHeight ? `${displayWidth}x${displayHeight}` : null, scaleX, scaleY },
+      interpretation: renderWidth && displayWidth && renderWidth < displayWidth ? 'TFT is producing a lower-resolution game SurfaceView that Android composition scales to the display. This is an image-quality boundary and may also be an intentional performance tradeoff.' : 'No lower-resolution game-surface upscale was proven in this snapshot.'
+    },
+    {
+      boundary: 'ANGLE_TO_GUEST_VULKAN',
+      state: /Created VkInstance:.*com\.riotgames\.league\.teamfighttactics.*ANGLE/i.test(emulatorText) ? 'PROVEN_ACTIVE' : 'UNKNOWN',
+      evidence: { tftAngleVkInstanceCreates: count(/Created VkInstance:.*com\.riotgames\.league\.teamfighttactics.*ANGLE/gi), angleWarningsOrErrors: count(/ANGLE.*(?:warn|error|fail|stall|timeout|unsupported)/gi), glesCompatibilityExposure: runtimeInfo.glesCompatibilityExposure ?? null },
+      interpretation: 'ANGLE is active for TFT. Translation cost is not yet measured per frame; absence of warnings does not prove zero overhead.'
+    },
+    {
+      boundary: 'GUEST_VULKAN_TO_GFXSTREAM_ASG',
+      state: /Gfxstream initialized successfully!/i.test(emulatorText) ? 'PROVEN_ACTIVE' : 'UNKNOWN',
+      evidence: { graphicsTransport: runtimeInfo.graphicsTransportRequested ?? null, asg: runtimeInfo.asg ?? null, gfxstreamWarningsOrErrors: count(/gfxstream.*(?:warn|error|fail|stall|timeout|unsupported)/gi), virtualQueueGuestFlagIgnored: count(/Guest usage of host flag 'VulkanVirtualQueue' will be ignored/gi) },
+      interpretation: 'virtio-gpu-asg/gfxstream is active. Current logs do not expose queue/ring wait time, so transport backpressure remains unmeasured rather than cleared.'
+    },
+    {
+      boundary: 'HOST_VULKAN_TO_MOLTENVK',
+      state: /Selecting Vulkan device:\s*Apple M4/i.test(emulatorText) ? 'PROVEN_ACTIVE' : 'UNKNOWN',
+      evidence: { vulkanComposition: /useVulkanComposition:\s*true/i.test(emulatorText), nativeSwapchain: /useVulkanNativeSwapchain:\s*true/i.test(emulatorText), moltenVkWarningsOrErrors: count(/MoltenVK.*(?:warn|error|fail|stall|timeout|unsupported)/gi) },
+      interpretation: 'gfxstream host Vulkan is reaching MoltenVK on Apple M4. Queue-submit and command-buffer latency are not yet measured.'
+    },
+    {
+      boundary: 'METAL_TO_SURFACEFLINGER_PRESENT',
+      state: 'OBSERVED',
+      evidence: { renderRateHz: counters.renderRateHz ?? null, totalMissedFrames: counters.totalMissedFrames ?? null, gpuMissedFrames: counters.gpuMissedFrames ?? null, hwcMissedFrames: counters.hwcMissedFrames ?? null, gameRequested60Hz: counters.gameRequested60Hz ?? null, usesDeviceComposition: /usesDeviceComposition=true/i.test(sf), usesClientComposition: /usesClientComposition=true/i.test(sf) },
+      interpretation: 'Presentation is 60 Hz and currently uses device composition. Missed-frame counters are cumulative since boot; only bounded deltas during gameplay can assign a bottleneck.'
+    }
+  ];
+  const result = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    controlProfile: state.controlProfile ?? runtimeInfo.control ?? null,
+    gameSettings: session.currentGameSettings ?? null,
+    pipeline,
+    recentGraphicsWarnings: recentWarnings,
+    nextProbe: 'Run native-trace-combat during active combat and take graphics-pipeline-audit immediately before/after. Attribute the first boundary whose bounded timing/miss counters diverge; patch only that connector.'
+  };
+  writeJSON(path.join(captureDir, 'graphics-pipeline-audit.json'), result);
+  return result;
+}
+
 async function captureNativeTrace(durationSeconds = 5, label = 'smoke') {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -3850,6 +3924,7 @@ async function main() {
   if (action === 'analyze-session') { json(analyzeContinuousRun()); return; }
   if (action === 'ingest-analysis') { json(ingestContinuousRunIntoLab()); return; }
   if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
+  if (action === 'graphics-pipeline-audit') { json(graphicsPipelineAudit()); return; }
   if (action === 'native-trace-smoke') { json(await captureNativeTrace(5, 'smoke')); return; }
   if (action === 'native-trace-combat') { json(await captureNativeTrace(20, 'combat')); return; }
   if (action === 'presentation-probe') { json(presentationProbe()); return; }
