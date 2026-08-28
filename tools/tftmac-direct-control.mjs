@@ -1073,6 +1073,436 @@ async function loggerHealth() {
   return result;
 }
 
+function percentileNumber(values, p) {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!finite.length) return null;
+  const index = Math.min(finite.length - 1, Math.max(0, Math.ceil(finite.length * p) - 1));
+  return finite[index];
+}
+
+function summarizeNumbers(values) {
+  const finite = values.filter(Number.isFinite);
+  if (!finite.length) return { count: 0, min: null, mean: null, p50: null, p95: null, p99: null, max: null };
+  return {
+    count: finite.length,
+    min: Math.min(...finite),
+    mean: finite.reduce((sum, value) => sum + value, 0) / finite.length,
+    p50: percentileNumber(finite, 0.50),
+    p95: percentileNumber(finite, 0.95),
+    p99: percentileNumber(finite, 0.99),
+    max: Math.max(...finite)
+  };
+}
+
+function matchWindowFromMarkers(markers) {
+  const start = markers.find(row => row.event === 'MATCH_ENTRY');
+  const result = [...markers].reverse().find(row => row.event === 'MATCH_RESULT');
+  if (!start || !result) return null;
+  const startHostNs = Number(start.host_mono_ns);
+  const endHostNs = Number(result.host_mono_ns);
+  if (!Number.isFinite(startHostNs) || !Number.isFinite(endHostNs) || endHostNs <= startHostNs) return null;
+  return { start, result, startHostNs, endHostNs, durationSeconds: (endHostNs - startHostNs) / 1e9 };
+}
+
+function sessionLogSignals(captureDir) {
+  const logPath = path.join(captureDir, 'logcat.raw.txt');
+  const emulatorPath = path.join(captureDir, 'emulator.stdout.log');
+  const androidText = exists(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
+  const emulatorText = exists(emulatorPath) ? fs.readFileSync(emulatorPath, 'utf8') : '';
+  const count = (text, rx) => (text.match(rx) ?? []).length;
+  const samples = (text, rx, maximum = 20) => text.split(/\r?\n/).filter(line => rx.test(line)).slice(-maximum);
+  return {
+    scope: 'whole capture; startup/patch/login lines may precede match-entry',
+    android: {
+      tftAnrCount: count(androidText, /ANR in com\.riotgames\.league\.teamfighttactics/g),
+      inputDispatchTimeoutCount: count(androidText, /teamfighttactics.*Input dispatching timed out/gi),
+      fatalSignalCount: count(androidText, /teamfighttactics.*Fatal signal|Fatal signal.*teamfighttactics/gi),
+      outOfMemoryCount: count(androidText, /teamfighttactics.*(?:OutOfMemory|low memory|lmkd)|(?:OutOfMemory|low memory|lmkd).*teamfighttactics/gi),
+      choreographerSkippedFrameEvents: count(androidText, /Choreographer.*Skipped\s+\d+\s+frames/gi),
+      patchServiceMentions: count(androidText, /TFTPatchingFGService/g),
+      angleWarningOrErrorCount: count(androidText, /ANGLE.*(?:warn|error|fail|unsupported)/gi),
+      vulkanWarningOrErrorCount: count(androidText, /Vulkan.*(?:warn|error|fail|unsupported)/gi),
+      relevantSamples: samples(androidText, /teamfighttactics.*(?:ANR|timeout|Fatal signal|OutOfMemory|low memory)|ANGLE.*(?:warn|error|fail|unsupported)|Vulkan.*(?:warn|error|fail|unsupported)/i)
+    },
+    emulator: {
+      graphicsWarningOrErrorCount: count(emulatorText, /(?:ANGLE|gfxstream|MoltenVK|Vulkan|Metal).*(?:warn|error|fail|stall|timeout|unsupported)/gi),
+      relevantSamples: samples(emulatorText, /(?:ANGLE|gfxstream|MoltenVK|Vulkan|Metal).*(?:warn|error|fail|stall|timeout|unsupported)/i)
+    }
+  };
+}
+
+function analyzeSession() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const captureDir = state.captureDir;
+  const markers = readJSONL(path.join(captureDir, 'markers.jsonl'));
+  const clocks = readJSONL(path.join(captureDir, 'clock-sync.jsonl'));
+  const window = matchWindowFromMarkers(markers);
+  if (!window) throw new Error('A complete MATCH_ENTRY -> MATCH_RESULT window is required before gameplay analysis.');
+
+  const framePath = path.join(captureDir, 'gfxinfo', 'framestats.raw.txt');
+  const frameText = exists(framePath) ? fs.readFileSync(framePath, 'utf8') : '';
+  const frames = parseFrameStats(frameText);
+  const relevantClocks = clocks.filter(row => {
+    const midpoint = Number(row.host_midpoint_ns);
+    return Number.isFinite(midpoint) && midpoint >= window.startHostNs - 30e9 && midpoint <= window.endHostNs + 30e9;
+  });
+  const offsets = relevantClocks.map(row => Number(row.estimated_offset_ns)).filter(Number.isFinite);
+  const estimatedOffsetNs = percentileNumber(offsets, 0.50);
+  const matchedFrames = estimatedOffsetNs === null ? [] : frames.filter(frame => {
+    const hostNs = Number(frame.completedNs) + estimatedOffsetNs;
+    return hostNs >= window.startHostNs && hostNs <= window.endHostNs;
+  });
+  const frameIntervalsMs = matchedFrames
+    .map(frame => frame.intervalNs === null ? null : Number(frame.intervalNs) / 1e6)
+    .filter(value => Number.isFinite(value) && value > 0 && value < 10000);
+  const frameSummary = summarizeNumbers(frameIntervalsMs);
+  const frameMetrics = {
+    ...frameSummary,
+    fpsFromMeanInterval: frameSummary.mean ? 1000 / frameSummary.mean : null,
+    jankFramesOver33_334ms: frameIntervalsMs.filter(value => value > 33.334).length,
+    jankPercentOver33_334ms: frameIntervalsMs.length ? 100 * frameIntervalsMs.filter(value => value > 33.334).length / frameIntervalsMs.length : null,
+    severeFramesOver100ms: frameIntervalsMs.filter(value => value > 100).length,
+    stallsOver250ms: frameIntervalsMs.filter(value => value > 250).length,
+    stallsOver500ms: frameIntervalsMs.filter(value => value > 500).length,
+    stallsOver1000ms: frameIntervalsMs.filter(value => value > 1000).length,
+    estimatedClockOffsetNs: estimatedOffsetNs,
+    clockSamplesInWindow: relevantClocks.length,
+    coverageSeconds: matchedFrames.length > 1 ? (Number(matchedFrames.at(-1).completedNs) - Number(matchedFrames[0].completedNs)) / 1e9 : 0,
+    caution: 'gfxinfo framestats is a presentation proxy; native Unreal/Vulkan GPU timing still requires Perfetto/AGI or equivalent tracing.'
+  };
+
+  const processRows = readJSONL(path.join(captureDir, 'host-process.jsonl')).filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= window.startHostNs && mono <= window.endHostNs;
+  });
+  const emulatorRows = processRows.filter(row => /qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? '')));
+  const emulatorCpu = summarizeNumbers(emulatorRows.map(row => Number(row.cpu_pct)));
+  const emulatorRssMiB = summarizeNumbers(emulatorRows.map(row => Number(row.rss_kb) / 1024));
+
+  const memoryRows = readJSONL(path.join(captureDir, 'host-memory.jsonl')).filter(row => {
+    const mono = Number(row.host_mono_ns);
+    return Number.isFinite(mono) && mono >= window.startHostNs && mono <= window.endHostNs;
+  });
+  const gib = 1024 ** 3;
+  const hostAvailableGiB = memoryRows.map(row => Number(row.host_available_bytes) / gib);
+  const hostCompressedGiB = memoryRows.map(row => Number(row.host_compressed_bytes) / gib);
+  const hostSwapGiB = memoryRows.map(row => Number(row.host_swap_used_bytes) / gib);
+  const guestAvailableGiB = memoryRows.map(row => Number(row.guest_available_bytes) / gib);
+  const pageouts = memoryRows.map(row => Number(row.pageout_count)).filter(Number.isFinite);
+  const memoryMetrics = {
+    sampleCount: memoryRows.length,
+    hostAvailableGiB: summarizeNumbers(hostAvailableGiB),
+    hostCompressedGiB: summarizeNumbers(hostCompressedGiB),
+    hostSwapUsedGiB: summarizeNumbers(hostSwapGiB),
+    guestAvailableGiB: summarizeNumbers(guestAvailableGiB),
+    pageoutDelta: pageouts.length > 1 ? pageouts.at(-1) - pageouts[0] : null,
+    activeMemoryPressureObserved: pageouts.length > 1 ? pageouts.at(-1) > pageouts[0] : null
+  };
+
+  const logSignals = sessionLogSignals(captureDir);
+  const renderer = readJSON(path.join(captureDir, 'renderer-state.json'), {});
+  const runtime = readJSON(path.join(captureDir, 'runtime-state.json'), {});
+  const packageInfo = readJSON(path.join(captureDir, 'package-state.json'), {});
+  const session = readJSON(path.join(captureDir, 'session.json'), {});
+  const findings = [];
+  if ((frameMetrics.jankPercentOver33_334ms ?? 0) > 10) findings.push({ severity: 'HIGH', boundary: 'FRAME_PACING', finding: `Measured jank exceeds 10% of captured gameplay frames (${frameMetrics.jankPercentOver33_334ms.toFixed(2)}%).` });
+  if ((frameMetrics.p95 ?? 0) > 33.334) findings.push({ severity: 'HIGH', boundary: 'FRAME_PACING', finding: `Gameplay p95 frame interval is ${frameMetrics.p95.toFixed(2)} ms, beyond a smooth 30 FPS cadence.` });
+  if ((memoryMetrics.pageoutDelta ?? 0) > 0) findings.push({ severity: 'MEDIUM', boundary: 'MEMORY', finding: `Host pageouts increased by ${memoryMetrics.pageoutDelta} during the match; memory pressure is a live candidate, not yet proven causal.` });
+  if ((emulatorCpu.p95 ?? 0) >= 500) findings.push({ severity: 'MEDIUM', boundary: 'HOST_CPU', finding: `Emulator p95 CPU reached ${emulatorCpu.p95.toFixed(1)}% across macOS cores; CPU scheduling/translation overhead deserves controlled testing.` });
+  if (logSignals.android.tftAnrCount > 0) findings.push({ severity: 'MEDIUM', boundary: 'ANDROID_UI', finding: `${logSignals.android.tftAnrCount} TFT ANR event(s) occurred in the full capture, including startup/WebView behavior; isolate from gameplay before attributing.` });
+  if (!findings.length) findings.push({ severity: 'INFO', boundary: 'MEASUREMENT', finding: 'No single dominant cause is proven by the current low-overhead capture. Use one-factor experiments plus deeper tracing.' });
+
+  const analysis = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    captureDir,
+    match: {
+      placement: window.result.placement ?? session.matchPlacement ?? null,
+      result: window.result.result ?? session.matchResult ?? null,
+      durationSeconds: window.durationSeconds,
+      matchEntryMarker: window.start,
+      matchResultMarker: window.result
+    },
+    package: { versionName: packageInfo.versionName ?? null, versionCode: packageInfo.versionCode ?? null, installerPackage: packageInfo.installerPackage ?? null },
+    runtime: {
+      control: runtime.control ?? state.controlProfile ?? null,
+      display: runtime.observedDisplay ?? null,
+      density: runtime.observedDensity ?? null,
+      vcpu: runtime.vcpu ?? null,
+      ramMB: runtime.ramMB ?? null,
+      graphicsTransport: runtime.graphicsTransportRequested ?? runtime.observedGraphicsTransport ?? null
+    },
+    renderer: {
+      properties: renderer.properties ?? {},
+      angleSettings: renderer.angleSettings ?? {},
+      hostGraphicsEvidenceTail: (renderer.hostGraphicsEvidence ?? []).slice(-30)
+    },
+    frameMetrics,
+    hostEmulator: { sampleCount: emulatorRows.length, cpuPercent: emulatorCpu, rssMiB: emulatorRssMiB },
+    memory: memoryMetrics,
+    logSignals,
+    findings,
+    nextExperimentRule: 'Change one reversible variable at a time; compare against this match baseline; KEEP only measured improvements that survive confirmation.'
+  };
+  writeJSON(path.join(captureDir, 'gameplay-analysis.json'), analysis);
+  return analysis;
+}
+
+function ingestAnalysisIntoLab() {
+  const analysis = analyzeSession();
+  const captureDir = analysis.captureDir;
+  const databasePath = path.join(DIAGNOSTICS_ROOT, 'TFTMAC_PERFORMANCE_LAB.sqlite');
+  const schemaPath = labSchemaPath();
+  if (!schemaPath) throw new Error('TFTMAC performance-lab schema is unavailable.');
+  ensureDir(DIAGNOSTICS_ROOT);
+  const initialize = !exists(databasePath) || fs.statSync(databasePath).size === 0;
+  const db = new DatabaseSync(databasePath);
+  try {
+    if (initialize) db.exec(fs.readFileSync(schemaPath, 'utf8'));
+    db.exec('PRAGMA foreign_keys = ON;');
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const now = nowISO();
+      const sessionFile = readJSON(path.join(captureDir, 'session.json'), {});
+      const packageFile = path.join(captureDir, 'package-state.json');
+      const rendererFile = path.join(captureDir, 'renderer-state.json');
+      const traceCaps = readJSON(path.join(captureDir, 'trace-capabilities.json'), {});
+      const sfCounters = traceCaps?.surfaceFlingerCounters ?? {};
+      const perfettoDir = path.join(captureDir, 'perfetto');
+      let latestTraceMetadata = null;
+      try {
+        const metas = fs.readdirSync(perfettoDir)
+          .filter(name => name.endsWith('.pftrace.json'))
+          .map(name => ({ name, path: path.join(perfettoDir, name), mtimeMs: fs.statSync(path.join(perfettoDir, name)).mtimeMs }))
+          .sort((a, b) => b.mtimeMs - a.mtimeMs);
+        if (metas[0]) latestTraceMetadata = readJSON(metas[0].path, null);
+      } catch {}
+      const currentConfigId = 'mactician_compatible_official_v0';
+      const candidateConfigId = 'mactician_compatible_4gb_v1';
+
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_gameplay_ingest_at', now);
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_gameplay_baseline_session', analysis.sessionId);
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 native frame timing; 2 guest RAM 6144->4096 A/B; 3 only then graphics transport/queue experiments');
+      if (latestTraceMetadata) db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('native_trace_collector_smoke', JSON.stringify({ label: latestTraceMetadata.label, durationSeconds: latestTraceMetadata.durationSeconds, byteCount: latestTraceMetadata.byteCount, sha256: latestTraceMetadata.sha256, dataSources: latestTraceMetadata.dataSources, parseState: latestTraceMetadata.parseState }));
+
+      const configStmt = db.prepare(`INSERT INTO runtime_configs(
+        id,parent_config_id,name,config_sha256,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+        avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,display_width,display_height,density_dpi,refresh_hz,
+        gpu_mode,audio_enabled,graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET
+        parent_config_id=excluded.parent_config_id,name=excluded.name,emulator_version=excluded.emulator_version,
+        platform_tools_version=excluded.platform_tools_version,system_image_package=excluded.system_image_package,
+        avd_name=excluded.avd_name,adb_serial=excluded.adb_serial,adb_server_port=excluded.adb_server_port,
+        emulator_console_port=excluded.emulator_console_port,vcpu=excluded.vcpu,ram_mb=excluded.ram_mb,
+        display_width=excluded.display_width,display_height=excluded.display_height,density_dpi=excluded.density_dpi,
+        refresh_hz=excluded.refresh_hz,gpu_mode=excluded.gpu_mode,audio_enabled=excluded.audio_enabled,
+        graphics_transport=excluded.graphics_transport,angle_mode=excluded.angle_mode,vulkan_mode=excluded.vulkan_mode,
+        moltenvk_mode=excluded.moltenvk_mode,presentation_mode=excluded.presentation_mode,state=excluded.state,notes=excluded.notes`);
+      const currentNotes = 'First playable official TFT control: API36 Play ARM64, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream, MoltenVK/Metal. First full match placed 1st.';
+      configStmt.run(currentConfigId,null,'Mactician-compatible official TFT control v0',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,6144,1920,1080,320,60,'host',1,'virtio-gpu-asg','GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
+      configStmt.run(candidateConfigId,currentConfigId,'RAM 4 GiB candidate',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,4096,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE',now,'One-factor candidate: only guest RAM changes from 6144 MB to 4096 MB.');
+
+      db.prepare(`INSERT INTO sessions(
+        id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
+        package_name,package_version_name,package_version_code,package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+        package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET runtime_config_id=excluded.runtime_config_id,ended_utc=excluded.ended_utc,
+        host_end_mono_ns=excluded.host_end_mono_ns,workload_class=excluded.workload_class,package_version_name=excluded.package_version_name,
+        package_version_code=excluded.package_version_code,package_state_sha256=excluded.package_state_sha256,
+        renderer_state_sha256=excluded.renderer_state_sha256,capture_state=excluded.capture_state,semantic_valid=excluded.semantic_valid,
+        invalid_reason=excluded.invalid_reason,notes=excluded.notes`)
+        .run(analysis.sessionId,currentConfigId,sessionFile.startedUTC ?? analysis.match.matchEntryMarker.utc,analysis.match.matchResultMarker.utc,
+          asNumber(sessionFile.hostStartMonoNs) ?? asNumber(analysis.match.matchEntryMarker.host_mono_ns),asNumber(analysis.match.matchResultMarker.host_mono_ns),
+          'COLD','MIXED',PACKAGE,analysis.package.versionName,analysis.package.versionCode,
+          exists(packageFile) ? sha256File(packageFile) : null,exists(rendererFile) ? sha256File(rendererFile) : null,null,
+          sessionFile.packageUpdatedDuringSession ? 1 : 0,'PARTIAL',1,
+          'Native Unreal/Vulkan frame timing is not visible through gfxinfo; resource-envelope baseline is valid but frame-pacing attribution is not yet measurable.',
+          `First-place gameplay baseline; placement=${analysis.match.placement}; duration=${analysis.match.durationSeconds.toFixed(1)}s; installer=${analysis.package.installerPackage}.`);
+
+      db.prepare('DELETE FROM metrics WHERE session_id=?').run(analysis.sessionId);
+      const metricStmt = db.prepare('INSERT INTO metrics(session_id,experiment_id,metric_scope,metric_name,metric_value,unit,source_artifact_id,semantic_valid,notes) VALUES(?,?,?,?,?,?,?,?,?)');
+      const addMetric = (scope,name,value,unit,semanticValid=1,notes=null) => { if (Number.isFinite(Number(value))) metricStmt.run(analysis.sessionId,null,scope,name,Number(value),unit,null,semanticValid,notes); };
+      addMetric('MATCH','duration',analysis.match.durationSeconds,'seconds');
+      addMetric('MATCH','placement',analysis.match.placement,'rank');
+      addMetric('HOST_CPU','emulator_cpu_mean',analysis.hostEmulator.cpuPercent.mean,'percent');
+      addMetric('HOST_CPU','emulator_cpu_p95',analysis.hostEmulator.cpuPercent.p95,'percent');
+      addMetric('HOST_CPU','emulator_cpu_max',analysis.hostEmulator.cpuPercent.max,'percent');
+      addMetric('MEMORY','emulator_rss_mean',analysis.hostEmulator.rssMiB.mean,'MiB');
+      addMetric('MEMORY','emulator_rss_p95',analysis.hostEmulator.rssMiB.p95,'MiB');
+      addMetric('MEMORY','emulator_rss_max',analysis.hostEmulator.rssMiB.max,'MiB');
+      addMetric('MEMORY','host_available_min',analysis.memory.hostAvailableGiB.min,'GiB');
+      addMetric('MEMORY','host_compressed_mean',analysis.memory.hostCompressedGiB.mean,'GiB');
+      addMetric('MEMORY','host_compressed_p95',analysis.memory.hostCompressedGiB.p95,'GiB');
+      addMetric('MEMORY','host_compressed_max',analysis.memory.hostCompressedGiB.max,'GiB');
+      addMetric('MEMORY','host_swap_mean',analysis.memory.hostSwapUsedGiB.mean,'GiB');
+      addMetric('MEMORY','host_swap_max',analysis.memory.hostSwapUsedGiB.max,'GiB');
+      addMetric('MEMORY','guest_available_min',analysis.memory.guestAvailableGiB.min,'GiB');
+      addMetric('MEMORY','pageout_delta',analysis.memory.pageoutDelta,'pages');
+      addMetric('FRAME','native_frame_samples',analysis.frameMetrics.count,'count',0,'gfxinfo does not observe the Unreal native Vulkan presentation path.');
+      addMetric('ANDROID_UI','tft_anr_count_full_capture',analysis.logSignals.android.tftAnrCount,'count',1,'Includes startup/login/patch period, not attributed to match rendering.');
+      addMetric('SURFACEFLINGER','cumulative_total_missed_frames',sfCounters.totalMissedFrames,'count',0,'Cumulative display counter since boot; not match-scoped.');
+      addMetric('SURFACEFLINGER','cumulative_gpu_missed_frames',sfCounters.gpuMissedFrames,'count',0,'Cumulative display counter since boot; not match-scoped.');
+      addMetric('SURFACEFLINGER','cumulative_hwc_missed_frames',sfCounters.hwcMissedFrames,'count',0,'Cumulative display counter since boot; not match-scoped.');
+      addMetric('SURFACEFLINGER','render_rate_hz',sfCounters.renderRateHz,'Hz',0,'Observed after match; validates 60 Hz display target but is not a match-window statistic.');
+
+      db.prepare(`INSERT INTO hypotheses(id,title,boundary,statement,predicted_signature,falsification_condition,status,confidence,nominated_from_session_id,created_at,notes)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET status=excluded.status,confidence=excluded.confidence,nominated_from_session_id=excluded.nominated_from_session_id,notes=excluded.notes`)
+        .run('h_guest_ram_host_pressure','Guest RAM allocation amplifies host memory pressure','MEMORY','The 6144 MB Android guest contributes enough host RSS/compression/pageout pressure to worsen gameplay responsiveness on the 16 GiB M4 host.','A 4096 MB one-factor run materially lowers emulator RSS, host compression/pageouts, and user-visible stalls without guest OOM or app instability.','4096 MB does not reduce memory pressure or worsens stability/performance under comparable gameplay.','QUEUED',0.60,analysis.sessionId,now,`Baseline: RSS mean ${analysis.hostEmulator.rssMiB.mean.toFixed(0)} MiB, max ${analysis.hostEmulator.rssMiB.max.toFixed(0)} MiB; host compressed mean ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB; pageout delta ${analysis.memory.pageoutDelta}.`);
+      db.prepare(`UPDATE hypotheses SET status='TESTING',confidence=?,nominated_from_session_id=?,notes=? WHERE id='h_memory_pressure'`)
+        .run(0.60,analysis.sessionId,`First full match showed active host pageouts (+${analysis.memory.pageoutDelta}) with compressed memory mean ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB; causal attribution still requires A/B.`);
+      db.prepare(`INSERT INTO hypotheses(id,title,boundary,statement,predicted_signature,falsification_condition,status,confidence,nominated_from_session_id,created_at,notes)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET status=excluded.status,confidence=excluded.confidence,nominated_from_session_id=excluded.nominated_from_session_id,notes=excluded.notes`)
+        .run('h_gpu_frame_miss','GPU-side presentation misses contribute to visible lag','SURFACEFLINGER','A meaningful portion of visible gameplay lag is caused by GPU/presentation misses somewhere in the Unreal -> ANGLE -> Vulkan -> gfxstream -> MoltenVK -> Metal path.','TFT-specific android.surfaceflinger.frametimeline traces show GPU-missed or late frames correlated with user-visible stalls while host memory state is controlled.','TFT-specific frametimeline remains healthy during visible stalls, or misses disappear without improving perceived performance.','QUEUED',0.35,analysis.sessionId,now,`SurfaceFlinger cumulative counters after the match: total=${sfCounters.totalMissedFrames ?? 'unknown'}, GPU=${sfCounters.gpuMissedFrames ?? 'unknown'}, HWC=${sfCounters.hwcMissedFrames ?? 'unknown'}. Counters are since boot and therefore only nomination evidence.`);
+
+      const evidenceStmt = db.prepare(`INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+      evidenceStmt.run('ev_first_win_runtime',null,analysis.sessionId,null,'CONFIG_OBSERVATION',`Official TFT ${analysis.package.versionName} (${analysis.package.versionCode}) completed a full first-place match on Emulator37.1.11 / Android16 API36 using ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK/Metal.`,'NEUTRAL','DECISIVE',null,now,'Functional playability is proven; graphics conformance is not claimed because ES3.2 exposure is an explicit compatibility adapter.');
+      evidenceStmt.run('ev_first_win_memory','h_memory_pressure',analysis.sessionId,null,'DIRECT_MEASUREMENT',`During the ${analysis.match.durationSeconds.toFixed(0)}s match, emulator RSS averaged ${analysis.hostEmulator.rssMiB.mean.toFixed(0)} MiB and peaked ${analysis.hostEmulator.rssMiB.max.toFixed(0)} MiB; host compressed memory averaged ${analysis.memory.hostCompressedGiB.mean.toFixed(2)} GiB and pageouts increased by ${analysis.memory.pageoutDelta}.`,'SUPPORTS','MODERATE',null,now,'Supports memory pressure as a candidate cause; does not prove causality.');
+      evidenceStmt.run('ev_first_win_cpu',null,analysis.sessionId,null,'DIRECT_MEASUREMENT',`Emulator host CPU averaged ${analysis.hostEmulator.cpuPercent.mean.toFixed(1)}% with p95 ${analysis.hostEmulator.cpuPercent.p95.toFixed(1)}% and max ${analysis.hostEmulator.cpuPercent.max.toFixed(1)}% during the match.`,'NEUTRAL','STRONG',null,now,'Does not show aggregate host-emulator CPU saturation; guest-thread scheduling remains unmeasured.');
+      evidenceStmt.run('ev_native_frame_blindspot',null,analysis.sessionId,null,'NEGATIVE_RESULT','gfxinfo produced zero native gameplay frame samples for the Unreal/Vulkan match window.','NEUTRAL','DECISIVE',null,now,'Future optimization decisions require Perfetto/SurfaceFlinger/AGI-class native frame timing; do not infer FPS from gfxinfo for this workload.');
+      if (traceCaps?.perfettoAvailable) {
+        evidenceStmt.run('ev_trace_capabilities',null,analysis.sessionId,null,'CONFIG_OBSERVATION','The API36 guest exposes Perfetto android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats and linux.sys_stats data sources.','SUPPORTS','DECISIVE',null,now,'These are the authoritative next-run native telemetry sources.');
+      }
+      if (Number.isFinite(Number(sfCounters.totalMissedFrames))) {
+        evidenceStmt.run('ev_sf_cumulative_misses','h_gpu_frame_miss',analysis.sessionId,null,'CONFIG_OBSERVATION',`SurfaceFlinger cumulative display counters observed after the match: total missed=${sfCounters.totalMissedFrames}, GPU missed=${sfCounters.gpuMissedFrames}, HWC missed=${sfCounters.hwcMissedFrames}, render rate=${sfCounters.renderRateHz} Hz, TFT requested 60 Hz=${sfCounters.gameRequested60Hz}.`,'SUPPORTS','WEAK',null,now,'Counters are cumulative since boot and include non-TFT periods; use only to nominate GPU-frame tracing, not to attribute the match.');
+      }
+      if (latestTraceMetadata?.sha256) {
+        evidenceStmt.run('ev_native_trace_smoke',null,analysis.sessionId,null,'CONFIG_OBSERVATION',`Bounded Perfetto collector produced a ${latestTraceMetadata.durationSeconds}s raw trace (${latestTraceMetadata.byteCount} bytes, SHA-256 ${latestTraceMetadata.sha256}) using ${latestTraceMetadata.dataSources.join(', ')}.`,'SUPPORTS','STRONG',null,now,`Collector smoke succeeded; parse state=${latestTraceMetadata.parseState}. Counter delta=${JSON.stringify(latestTraceMetadata.counterDelta ?? {})}.`);
+      }
+
+      db.prepare(`INSERT INTO unknowns(id,question,boundary,status,blocking,resolution_evidence_id,opened_at,resolved_at,notes)
+        VALUES(?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET status=excluded.status,blocking=excluded.blocking,resolution_evidence_id=excluded.resolution_evidence_id,notes=excluded.notes`)
+        .run('u_native_frame_timing','What is the real Unreal/Vulkan frame-time distribution and which boundary owns the visible stalls?','FRAME_TIMING','OPEN',1,'ev_native_frame_blindspot',now,null,'Blocking for graphics/performance tuning. Exact available sources are android.surfaceflinger.frame + frametimeline + layers, android.gpu.memory, linux.ftrace/process_stats/sys_stats. Capture them during real combat.');
+      db.prepare(`UPDATE unknowns SET status='RESOLVED',resolved_at=?,notes=? WHERE id='u_observed_renderer_path'`)
+        .run(now,'Observed path: TFT -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK/Metal.');
+      db.prepare(`UPDATE unknowns SET status='RESOLVED',resolved_at=?,notes=? WHERE id='u_one_guest_controls'`)
+        .run(now,'One official API36 Google Play AVD installed/updated official TFT and completed a full match using the TFTMAC compatibility profile.');
+
+      db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,candidate_config_id=excluded.candidate_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
+        .run('exp_ram_4gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 4096 MB A/B','INTERVENTION',currentConfigId,candidateConfigId,'HEAVY',1,'PLANNED',1,'Same official TFT version, same renderer/transport/display/vCPU; compare full-match or matched heavy-combat resource pressure plus native frame timing once available.',now,null,'Highest-priority reversible performance experiment from first-win data.');
+      db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
+        .run('exp_native_frame_trace',null,'Native Unreal/Vulkan frame-timing capture','OBSERVATION',currentConfigId,null,'HEAVY',0,'PLANNED',0,'Capture android.surfaceflinger.frame + android.surfaceflinger.frametimeline + android.surfaceflinger.layers + android.gpu.memory during real TFT combat; align to existing host monotonic clock and optionally add linux.ftrace only in the heavier validation run.',now,null,'Measurement experiment; must precede graphics transport/queue tuning. Available Perfetto sources were proven directly on the current guest.');
+      db.prepare(`UPDATE experiments SET state='COMPLETE',baseline_config_id=?,completed_at=?,notes=? WHERE id='exp_control_direct_play'`)
+        .run(currentConfigId,now,`First official full match completed with placement ${analysis.match.placement}; resource telemetry valid; native frame timing unavailable through gfxinfo.`);
+      db.prepare(`UPDATE experiments SET state='CANCELLED',notes=COALESCE(notes,'') || ? WHERE id IN ('exp_control_repeat_warm','exp_transition_capture','exp_heavy_capture') AND baseline_config_id='control_stock_direct_v0'`)
+        .run(' Superseded by the proven mactician_compatible_official_v0 baseline and native Perfetto trace experiment.');
+      db.prepare('INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES(?,?,?)').run('exp_control_direct_play',analysis.sessionId,'BASELINE');
+
+      db.exec('COMMIT;');
+    } catch (error) {
+      try { db.exec('ROLLBACK;'); } catch {}
+      throw error;
+    }
+    const summary = {
+      databasePath,
+      databaseSHA256: sha256File(databasePath),
+      session: db.prepare('SELECT id,runtime_config_id,workload_class,capture_state,semantic_valid,notes FROM sessions WHERE id=?').get(analysis.sessionId),
+      metrics: db.prepare('SELECT metric_scope,metric_name,metric_value,unit,semantic_valid FROM metrics WHERE session_id=? ORDER BY metric_scope,metric_name').all(analysis.sessionId),
+      openHypotheses: db.prepare("SELECT id,title,status,confidence FROM hypotheses WHERE status IN ('QUEUED','TESTING','SUPPORTED') ORDER BY confidence DESC,id").all(),
+      plannedExperiments: db.prepare("SELECT id,name,state,one_factor,baseline_config_id,candidate_config_id FROM experiments WHERE state='PLANNED' ORDER BY id").all(),
+      blockingUnknowns: db.prepare("SELECT id,question,boundary,status FROM unknowns WHERE blocking=1 AND status='OPEN' ORDER BY id").all()
+    };
+    writeJSON(path.join(captureDir, 'lab-ingest.json'), summary);
+    return summary;
+  } finally {
+    try { db.close(); } catch {}
+  }
+}
+
+function surfaceFlingerCounters(runtime) {
+  const dump = adb(runtime, ['shell', 'dumpsys', 'SurfaceFlinger', '--help'], { allowFailure: true, timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
+  const text = `${dump.stdout}\n${dump.stderr}`;
+  return {
+    observedAt: nowISO(),
+    status: dump.status,
+    renderRateHz: Number(text.match(/renderRate=([0-9.]+) Hz/)?.[1] ?? NaN) || null,
+    totalMissedFrames: Number(text.match(/Total missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+    hwcMissedFrames: Number(text.match(/HWC missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+    gpuMissedFrames: Number(text.match(/GPU missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+    gameRequested60Hz: /GameFrameRateOverrides=[\s\S]*\{10215,\s*0\s+60\}/.test(text) || /GameActivity[^\n]*requestedFrameRate:\s*\{60\.00 Hz/.test(text)
+  };
+}
+
+function nativeTraceConfig(durationSeconds) {
+  const durationMs = Math.max(1000, Math.round(durationSeconds * 1000));
+  return `buffers { size_kb: 16384 fill_policy: RING_BUFFER }
+
+data_sources { config { name: "android.surfaceflinger.frame" target_buffer: 0 } }
+data_sources { config { name: "android.surfaceflinger.frametimeline" target_buffer: 0 } }
+data_sources { config { name: "android.surfaceflinger.layers" target_buffer: 0 } }
+data_sources { config { name: "android.gpu.memory" target_buffer: 0 } }
+duration_ms: ${durationMs}
+`;
+}
+
+async function captureNativeTrace(durationSeconds = 5, label = 'smoke') {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  if (!deviceReady(runtime)) throw new Error('No active emulator available for native trace capture.');
+  const traceDir = path.join(state.captureDir, 'perfetto');
+  ensureDir(traceDir);
+  const safeLabel = String(label).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'trace';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = `native-${safeLabel}-${durationSeconds}s-${stamp}.pftrace`;
+  const hostPath = path.join(traceDir, fileName);
+  const remotePath = `/data/misc/perfetto-traces/tftmac-${process.pid}-${Date.now()}.pftrace`;
+  const config = nativeTraceConfig(durationSeconds);
+  const before = surfaceFlingerCounters(runtime);
+  const startEvent = { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'NATIVE_TRACE_START', label: safeLabel, durationSeconds, dataSources: ['android.surfaceflinger.frame','android.surfaceflinger.frametimeline','android.surfaceflinger.layers','android.gpu.memory'] };
+  appendJSONL(path.join(state.captureDir, 'markers.jsonl'), startEvent);
+  const trace = adb(runtime, ['shell', 'perfetto', '--txt', '-c', '-', '-o', remotePath], {
+    allowFailure: true,
+    timeout: Math.max(30000, (durationSeconds + 20) * 1000),
+    maxBuffer: 32 * 1024 * 1024,
+    input: config
+  });
+  if (trace.status !== 0) {
+    adb(runtime, ['shell', 'rm', '-f', remotePath], { allowFailure: true, timeout: 10000 });
+    throw new Error(`NATIVE_TRACE_CAPTURE_FAILED: ${(trace.stderr || trace.stdout || '').trim()}`);
+  }
+  const pull = adb(runtime, ['pull', remotePath, hostPath], { allowFailure: true, timeout: 120000, maxBuffer: 32 * 1024 * 1024 });
+  adb(runtime, ['shell', 'rm', '-f', remotePath], { allowFailure: true, timeout: 10000 });
+  if (pull.status !== 0 || !exists(hostPath) || fs.statSync(hostPath).size <= 0) {
+    throw new Error(`NATIVE_TRACE_PULL_FAILED: ${(pull.stderr || pull.stdout || '').trim()}`);
+  }
+  const after = surfaceFlingerCounters(runtime);
+  const metadata = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    label: safeLabel,
+    durationSeconds,
+    tracePath: hostPath,
+    traceFileName: fileName,
+    byteCount: fs.statSync(hostPath).size,
+    sha256: sha256File(hostPath),
+    dataSources: ['android.surfaceflinger.frame','android.surfaceflinger.frametimeline','android.surfaceflinger.layers','android.gpu.memory'],
+    surfaceFlingerBefore: before,
+    surfaceFlingerAfter: after,
+    counterDelta: {
+      totalMissedFrames: Number.isFinite(before.totalMissedFrames) && Number.isFinite(after.totalMissedFrames) ? after.totalMissedFrames - before.totalMissedFrames : null,
+      gpuMissedFrames: Number.isFinite(before.gpuMissedFrames) && Number.isFinite(after.gpuMissedFrames) ? after.gpuMissedFrames - before.gpuMissedFrames : null,
+      hwcMissedFrames: Number.isFinite(before.hwcMissedFrames) && Number.isFinite(after.hwcMissedFrames) ? after.hwcMissedFrames - before.hwcMissedFrames : null
+    },
+    parseState: 'RAW_CAPTURE_VALIDATED_NOT_YET_NORMALIZED'
+  };
+  const metaPath = `${hostPath}.json`;
+  writeJSON(metaPath, metadata);
+  appendJSONL(path.join(state.captureDir, 'markers.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'NATIVE_TRACE_END', label: safeLabel, durationSeconds, traceFileName: fileName, sha256: metadata.sha256, counterDelta: metadata.counterDelta });
+  return metadata;
+}
+
 function hostDesktopBounds() {
   const result = command('/usr/bin/osascript', ['-e', 'tell application "Finder" to get bounds of window of desktop'], { allowFailure: true, timeout: 10000 });
   const values = result.stdout.trim().split(/\s*,\s*/).map(Number);
@@ -1124,6 +1554,56 @@ function prepareGuestFullscreenPolicy(runtime) {
     after[key] = adb(runtime, ['shell', 'settings', 'get', 'global', key], { allowFailure: true, timeout: 10000 }).stdout.trim() || null;
   }
   return { prepared: Object.entries(keys).every(([key, value]) => after[key] === value), rebootRequiredForDesktopModeOverride: before.override_desktop_mode_features !== '0', before, after };
+}
+
+function traceCapabilities() {
+  const runtime = discover();
+  if (!deviceReady(runtime)) throw new Error('No active emulator available for trace capability discovery.');
+  const runShell = (args, timeout = 30000, maxBuffer = 32 * 1024 * 1024) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout, maxBuffer });
+  const perfettoHelp = runShell(['perfetto', '--help']);
+  const perfettoQuery = runShell(['perfetto', '--query'], 30000, 64 * 1024 * 1024);
+  const sfList = runShell(['dumpsys', 'SurfaceFlinger', '--list']);
+  const sfHelp = runShell(['dumpsys', 'SurfaceFlinger', '--help']);
+  const queryText = `${perfettoQuery.stdout}\n${perfettoQuery.stderr}`;
+  const interestingDataSources = queryText.split(/\r?\n/)
+    .filter(line => /android\.(surfaceflinger|frame|gpu|memory|power)|linux\.(ftrace|process|sys_stats)|track_event|gpu|frame|surface|sched|freq|memory/i.test(line))
+    .slice(0, 600);
+  const tftSurfaces = sfList.stdout.split(/\r?\n/)
+    .filter(line => /teamfighttactics|GameActivity|SurfaceView|BLAST|Surface/i.test(line))
+    .slice(0, 300);
+  const sfText = `${sfHelp.stdout}\n${sfHelp.stderr}`;
+  const result = {
+    observedAt: nowISO(),
+    perfettoAvailable: perfettoHelp.status === 0 || perfettoQuery.status === 0,
+    nativeFrameDataSources: {
+      surfaceFlingerFrame: interestingDataSources.some(line => /android\.surfaceflinger\.frame\b/.test(line)),
+      surfaceFlingerFrameTimeline: interestingDataSources.some(line => /android\.surfaceflinger\.frametimeline\b/.test(line)),
+      surfaceFlingerLayers: interestingDataSources.some(line => /android\.surfaceflinger\.layers\b/.test(line)),
+      gpuMemory: interestingDataSources.some(line => /android\.gpu\.memory\b/.test(line)),
+      ftrace: interestingDataSources.some(line => /linux\.ftrace\b/.test(line)),
+      processStats: interestingDataSources.some(line => /linux\.process_stats\b/.test(line)),
+      sysStats: interestingDataSources.some(line => /linux\.sys_stats\b/.test(line))
+    },
+    surfaceFlingerCounters: {
+      renderRateHz: Number(sfText.match(/renderRate=([0-9.]+) Hz/)?.[1] ?? NaN) || null,
+      totalMissedFrames: Number(sfText.match(/Total missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+      hwcMissedFrames: Number(sfText.match(/HWC missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+      gpuMissedFrames: Number(sfText.match(/GPU missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+      gameRequested60Hz: /GameFrameRateOverrides=[\s\S]*\{10215,\s*0\s+60\}/.test(sfText) || /GameActivity[^\n]*requestedFrameRate:\s*\{60\.00 Hz/.test(sfText),
+      scope: 'cumulative display counters since boot; not match-scoped'
+    },
+    perfettoHelpStatus: perfettoHelp.status,
+    perfettoQueryStatus: perfettoQuery.status,
+    perfettoHelp: `${perfettoHelp.stdout}${perfettoHelp.stderr}`.trim().slice(0, 24000),
+    interestingDataSources,
+    surfaceFlingerListStatus: sfList.status,
+    tftSurfaces,
+    surfaceFlingerHelpStatus: sfHelp.status,
+    surfaceFlingerHelp: `${sfHelp.stdout}${sfHelp.stderr}`.trim().slice(0, 24000)
+  };
+  const state = readJSON(CONTROL_STATE);
+  if (state?.captureDir) writeJSON(path.join(state.captureDir, 'trace-capabilities.json'), result);
+  return result;
 }
 
 function presentationProbe() {
@@ -1886,9 +2366,14 @@ function labSelfTest() {
   const db = new DatabaseSync(tempPath);
   try {
     db.exec(fs.readFileSync(schemaPath, 'utf8'));
-    const control = db.prepare("SELECT id,vcpu,ram_mb,display_width,display_height,density_dpi,state FROM runtime_configs WHERE id='control_stock_direct_v0'").get();
-    const experiment = db.prepare("SELECT id,state FROM experiments WHERE id='exp_control_direct_play'").get();
-    return { schemaPath, control, experiment };
+    const currentBaseline = db.prepare("SELECT value FROM lab_meta WHERE key='current_playable_baseline'").get()?.value ?? 'control_stock_direct_v0';
+    const control = db.prepare('SELECT id,vcpu,ram_mb,display_width,display_height,density_dpi,state FROM runtime_configs WHERE id=?').get(currentBaseline);
+    const experiment = db.prepare("SELECT id,state,baseline_config_id FROM experiments WHERE id='exp_control_direct_play'").get();
+    const plannedExperiments = db.prepare("SELECT id,name,baseline_config_id,candidate_config_id,one_factor FROM experiments WHERE state='PLANNED' ORDER BY id").all();
+    const foreignKeyProblems = db.prepare('PRAGMA foreign_key_check').all();
+    if (!control) throw new Error(`PERFORMANCE_LAB_CURRENT_BASELINE_MISSING: ${currentBaseline}`);
+    if (foreignKeyProblems.length) throw new Error(`PERFORMANCE_LAB_FOREIGN_KEY_FAILURE: ${JSON.stringify(foreignKeyProblems)}`);
+    return { schemaPath, currentBaseline, control, experiment, plannedExperiments, foreignKeyProblems };
   } finally {
     try { db.close(); } catch {}
     try { fs.unlinkSync(tempPath); } catch {}
@@ -1915,23 +2400,25 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
     const processes = readJSONL(path.join(captureDir, 'host-process.jsonl'));
     const memories = readJSONL(path.join(captureDir, 'host-memory.jsonl'));
     const sessionId = session.sessionId;
-    const semanticValid = session.packageAuthorityVerified === true
-      && session.matchEntryObserved === true
-      && session.combatObserved === true
-      && frames.some(frame => frame.intervalNs !== null);
-    const captureState = semanticValid ? 'COMPLETE' : 'PARTIAL';
-    const workloadClass = semanticValid ? 'MIXED' : 'UNKNOWN';
+    const runtimeConfigId = session.runtimeConfig ?? runtime.control ?? 'control_stock_direct_v0';
+    const matchResultObserved = session.matchResultObserved === true || markers.some(row => row.event === 'MATCH_RESULT');
+    const gameplaySemanticValid = session.matchEntryObserved === true && matchResultObserved && pkg.installerPackage === 'com.android.vending';
+    const nativeFrameTimingValid = frames.some(frame => frame.intervalNs !== null);
+    const semanticValid = gameplaySemanticValid;
+    const captureState = gameplaySemanticValid && nativeFrameTimingValid ? 'COMPLETE' : 'PARTIAL';
+    const workloadClass = gameplaySemanticValid ? 'MIXED' : 'UNKNOWN';
     const packageStatePath = path.join(captureDir, 'package-state.json');
     const rendererStatePath = path.join(captureDir, 'renderer-state.json');
 
     db.exec('BEGIN IMMEDIATE;');
     try {
-      db.prepare("UPDATE runtime_configs SET config_sha256=COALESCE(config_sha256, ?), graphics_transport=COALESCE(graphics_transport, ?), angle_mode=COALESCE(angle_mode, ?), vulkan_mode=COALESCE(vulkan_mode, ?), moltenvk_mode=COALESCE(moltenvk_mode, ?) WHERE id='control_stock_direct_v0'")
+      db.prepare("UPDATE runtime_configs SET config_sha256=COALESCE(config_sha256, ?), graphics_transport=COALESCE(graphics_transport, ?), angle_mode=COALESCE(angle_mode, ?), vulkan_mode=COALESCE(vulkan_mode, ?), moltenvk_mode=COALESCE(moltenvk_mode, ?) WHERE id=?")
         .run(runtime.avdConfigSHA256 ?? null,
-          runtime.observedGraphicsTransport ?? null,
+          runtime.graphicsTransportRequested ?? runtime.observedGraphicsTransport ?? null,
           renderer?.angleSettings ? JSON.stringify(renderer.angleSettings) : null,
           renderer?.properties?.['ro.hardware.vulkan'] ?? null,
-          (renderer?.hostGraphicsEvidence ?? []).some(line => /MoltenVK/i.test(line)) ? 'OBSERVED_IN_HOST_LOG' : null);
+          (renderer?.hostGraphicsEvidence ?? []).some(line => /MoltenVK/i.test(line)) ? 'OBSERVED_IN_HOST_LOG' : null,
+          runtimeConfigId);
 
       db.prepare(`INSERT INTO sessions (
         id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
@@ -1944,18 +2431,22 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
         renderer_state_sha256=excluded.renderer_state_sha256,session_manifest_sha256=excluded.session_manifest_sha256,
         package_updated_during_session=excluded.package_updated_during_session,capture_state=excluded.capture_state,semantic_valid=excluded.semantic_valid,
         invalid_reason=excluded.invalid_reason,notes=excluded.notes`)
-        .run(sessionId, 'control_stock_direct_v0', session.startedUTC ?? null, session.endedUTC ?? null,
+        .run(sessionId, runtimeConfigId, session.startedUTC ?? null, session.endedUTC ?? null,
           asNumber(session.hostStartMonoNs), asNumber(session.hostEndMonoNs), runtime.bootClass ?? 'UNKNOWN', workloadClass,
           PACKAGE, pkg.versionName ?? null, pkg.versionCode ?? null,
           exists(packageStatePath) ? sha256File(packageStatePath) : null,
           exists(rendererStatePath) ? sha256File(rendererStatePath) : null,
           manifestSHA256, session.packageUpdatedDuringSession ? 1 : 0, captureState, semanticValid ? 1 : 0,
-          semanticValid ? null : 'Control capture did not yet prove official-current package + live match entry + combat + frame cadence.',
-          `Google Play authority verified=${session.packageAuthorityVerified === true}; signer=${pkg.signerCertificateSHA256 ?? 'unavailable'}`);
+          gameplaySemanticValid ? (nativeFrameTimingValid ? null : 'Gameplay outcome is valid, but native Unreal/Vulkan frame timing is not visible through gfxinfo.') : 'Control capture did not prove a complete official Google-Play-installed match.',
+          `Google Play installer=${pkg.installerPackage ?? 'unknown'}; authority-ui-verified=${session.packageAuthorityVerified === true}; matchResult=${matchResultObserved}; nativeFrameTiming=${nativeFrameTimingValid}; signer=${pkg.signerCertificateSHA256 ?? 'unavailable'}`);
 
-      db.prepare('DELETE FROM evidence WHERE session_id=?').run(sessionId);
+      db.prepare("DELETE FROM evidence WHERE session_id=? AND id LIKE 'evidence_%'").run(sessionId);
       db.prepare('DELETE FROM experiment_sessions WHERE experiment_id=? AND session_id=?').run('exp_control_direct_play', sessionId);
-      for (const table of ['metrics','frame_samples','process_samples','memory_samples','markers','clock_sync','artifacts']) {
+      db.prepare(`DELETE FROM metrics WHERE session_id=? AND metric_name IN (
+        'frame_sample_count','presented_fps_approx','mean_frame_interval_ms','p50_frame_interval_ms','p95_frame_interval_ms','p99_frame_interval_ms','jank_pct','severe_stall_count',
+        'sdk_bytes','avd_bytes','capture_bytes'
+      )`).run(sessionId);
+      for (const table of ['frame_samples','process_samples','memory_samples','markers','clock_sync','artifacts']) {
         db.prepare(`DELETE FROM ${table} WHERE session_id=?`).run(sessionId);
       }
 
@@ -1992,6 +2483,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       for (const row of markers) {
         const type = row.event === 'MANUAL_STUTTER_MARKER' ? 'USER_STUTTER'
           : row.event === 'MATCH_ENTRY' ? 'MATCH_ENTRY'
+          : row.event === 'MATCH_RESULT' ? 'MATCH_RESULT'
           : row.event === 'COMBAT_START' ? 'COMBAT_START'
           : row.event === 'PACKAGE_UPDATE' ? 'PACKAGE_UPDATE'
           : 'CUSTOM';
@@ -2043,7 +2535,8 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       ];
       for (const [scope,name,value,unit] of metricRows) {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
-        metricStmt.run(sessionId, null, scope, name, Number(value), unit, scope === 'FRAME' ? (artifactByPath.get('frame-metrics.json') ?? frameArtifact) : (artifactByPath.get('storage-bom.json') ?? null), semanticValid ? 1 : 0, null);
+        const metricSemanticValid = scope === 'FRAME' ? (nativeFrameTimingValid ? 1 : 0) : (gameplaySemanticValid ? 1 : 0);
+        metricStmt.run(sessionId, null, scope, name, Number(value), unit, scope === 'FRAME' ? (artifactByPath.get('frame-metrics.json') ?? frameArtifact) : (artifactByPath.get('storage-bom.json') ?? null), metricSemanticValid, scope === 'FRAME' && !nativeFrameTimingValid ? 'gfxinfo is not a valid native Unreal/Vulkan frame source for this session.' : null);
       }
 
       const packageArtifact = artifactByPath.get('package-state.json') ?? null;
@@ -2063,10 +2556,10 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       db.prepare("UPDATE unknowns SET status='RESOLVED', resolved_at=?, notes=? WHERE id='u_storage_bom'")
         .run(session.endedUTC ?? nowISO(), JSON.stringify(storage));
 
-      if (semanticValid) {
+      if (gameplaySemanticValid) {
         db.prepare("INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES('exp_control_direct_play',?,'BASELINE')").run(sessionId);
         db.prepare("UPDATE experiments SET state='COMPLETE', completed_at=?, notes=? WHERE id='exp_control_direct_play'")
-          .run(session.endedUTC ?? nowISO(), `Completed official-current live-match control session ${sessionId}.`);
+          .run(session.endedUTC ?? nowISO(), `Completed official Google-Play-installed live-match control session ${sessionId}; native frame timing available=${nativeFrameTimingValid}.`);
       }
       db.exec('COMMIT;');
     } catch (error) {
@@ -2149,8 +2642,11 @@ async function stopControl() {
   const session = readJSON(sessionPath, {});
   session.endedUTC = nowISO();
   session.hostEndMonoNs = monoNs().toString();
-  session.semanticValid = session.packageAuthorityVerified === true && session.matchEntryObserved === true && session.combatObserved === true && frameMs.length > 0;
-  session.captureState = session.semanticValid ? 'COMPLETE' : 'PARTIAL';
+  const markersAtStop = readJSONL(path.join(captureDir, 'markers.jsonl'));
+  const matchResultObserved = session.matchResultObserved === true || markersAtStop.some(row => row.event === 'MATCH_RESULT');
+  session.semanticValid = session.matchEntryObserved === true && matchResultObserved && pkg.installerPackage === 'com.android.vending';
+  session.nativeFrameTimingValid = frameMs.length > 0;
+  session.captureState = session.semanticValid && session.nativeFrameTimingValid ? 'COMPLETE' : 'PARTIAL';
   writeJSON(sessionPath, session);
 
   const manifestSHA256 = finalizeManifest(captureDir);
@@ -2553,6 +3049,11 @@ async function main() {
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
   if (action === 'logger-health') { json(await loggerHealth()); return; }
+  if (action === 'analyze-session') { json(analyzeSession()); return; }
+  if (action === 'ingest-analysis') { json(ingestAnalysisIntoLab()); return; }
+  if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
+  if (action === 'native-trace-smoke') { json(await captureNativeTrace(5, 'smoke')); return; }
+  if (action === 'native-trace-combat') { json(await captureNativeTrace(20, 'combat')); return; }
   if (action === 'presentation-probe') { json(presentationProbe()); return; }
   if (action === 'window-inventory') { json(emulatorWindowInventory()); return; }
   if (action === 'fit-window') { json(fitEmulatorWindow()); return; }

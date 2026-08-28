@@ -1083,6 +1083,146 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T05:38:00Z','Xcode compatibility search space','Mapped every Xcode26 release Apple officially supports on current macOS26.6.2 and separated it from unsupported Xcode16.x/legacy isolated-build candidates.',NULL),
 ('2026-08-28T05:38:00Z','Xcode decision rule','Recorded that local Xcode26 downgrades still use 26.x SDKs, so deployment-target12.0 remains the first experiment before downloading another Xcode.',NULL);
 
+-- ---------------------------------------------------------------------------
+-- Schema/current-authority v3: first full official TFT gameplay baseline
+-- ---------------------------------------------------------------------------
+-- This section intentionally executes last so current measured runtime truth
+-- supersedes the earlier source-AEMU/API37 planning state without deleting its
+-- historical value.
+
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('schema_version','3'),
+('last_truth_audit_at','2026-08-28T18:30:59Z'),
+('current_phase','Playable official TFT baseline -> measured performance optimization'),
+('current_runtime','Google Emulator 37.1.11 / Android16 API36 Google Play ARM64 / TFT_Ultra_Tablet'),
+('current_workload','Official TFT 18.1-5392842 versionCode 8392842 via com.android.vending'),
+('current_renderer','Unreal GameActivity -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal'),
+('current_result','First full measured gameplay session completed in 1st place'),
+('current_performance_priority','Native frame timing first; guest RAM 6144->4096 MB A/B second; renderer/transport tuning only after those measurements.'),
+('current_trace_sources','Perfetto proven available: android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats, linux.sys_stats.'),
+('current_trace_collector_smoke','5s raw Perfetto smoke succeeded: 7479 bytes, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, zero SurfaceFlinger missed-frame delta during idle smoke.'),
+('current_performance_truth','User-visible performance was poor/laggy. Resource telemetry shows active memory pressure; gfxinfo cannot quantify native Unreal frame pacing. SurfaceFlinger cumulative counters also nominate GPU-side missed frames, but they are not match-scoped.');
+
+INSERT OR REPLACE INTO components(id,name,kind,layer,ownership,status,purpose,notes) VALUES
+('android_guest','Android 16 API36 Google Play ARM64 guest','guest_os','guest','GOOGLE','PROVEN','Official package-authority and gameplay guest','Current playable authority is API36 Play ARM64, not the earlier API37 planning guest.'),
+('tft_android','Teamfight Tactics Android client 18.1','workload','application','RIOT','PROVEN','Primary production workload','Current package com.riotgames.league.teamfighttactics launched Unreal SplashActivity/GameActivity and completed a full first-place match.'),
+('aemu','Google Android Emulator 37.1.11','hypervisor_runtime','virtualization','UPSTREAM','PROVEN','Current production machine/runtime host','Stock released emulator is now the playable authority; source-built AEMU is not required for the current product path.'),
+('perfetto_trace','Android native frame tracing','telemetry','measurement','GOOGLE','AVAILABLE','Capture native Unreal/Vulkan frame pacing and causal graphics timing','Required because gfxinfo produced zero gameplay frames for the native Unreal/Vulkan path.');
+
+INSERT OR REPLACE INTO component_versions(id,component_id,version,commit_sha,artifact_sha256,source_authority,frozen,notes) VALUES
+('ver_android_guest','android_guest','Android16 / API36 Play ARM64 rev>=7',NULL,NULL,'direct runtime observation',1,'system-images;android-36;google_apis_playstore;arm64-v8a.'),
+('ver_android_emulator_control','aemu','37.1.11 / build 15917651',NULL,NULL,'direct runtime observation',1,'First full official TFT match completed on this released emulator.'),
+('ver_tft_current','tft_android','18.1-5392842 / 8392842',NULL,NULL,'Google Play-installed package observation',1,'Installer com.android.vending; signer digest still unresolved.');
+
+INSERT OR REPLACE INTO capabilities(id,name,layer,description,acceptance_rule) VALUES
+('cap_full_match_playability','Official TFT full-match playability','application','Official Google Play TFT completes a real match under the TFTMAC runtime.','Full match reaches result screen without device-compatibility rejection or process crash.'),
+('cap_native_frame_timing','Native Unreal/Vulkan frame timing','measurement','TFTMAC records real gameplay presentation intervals and correlates stalls to renderer/system boundaries.','Perfetto/SurfaceFlinger/FrameTimeline or equivalent yields continuous native gameplay frame timing aligned to host telemetry.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_first_win_playable','2026-08-28T18:25:16.276Z','gameplay_result','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/markers.jsonl',NULL,'Official TFT 18.1-5392842 completed a 2152.69-second full match on the current runtime and the user placed 1st.','DIRECT','Functional vertical slice is proven end-to-end.'),
+('ev_first_win_renderer','2026-08-28T18:30:59Z','runtime_renderer','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'Current runtime is Android16 API36, ro.hardware.egl=angle, ro.hardware.vulkan=ranchu, ro.opengles.version=196610, virtio-gpu-asg/gfxstream host graphics with TFT-specific ANGLE VkInstance creation and MoltenVK/Metal host path.','DIRECT','ES3.2 exposure is an explicit compatibility adapter; this evidence proves workload compatibility, not GLES conformance.'),
+('ev_first_win_resources','2026-08-28T18:30:59Z','gameplay_telemetry','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'Across 1044-1046 in-match samples, emulator CPU mean=253.87%, p95=330.5%, max=363.2%; RSS mean=5155 MiB, p95=6126 MiB, max=6846 MiB; host compressed memory mean=4.15 GiB and pageouts increased by 12876.','DIRECT','Supports memory pressure as a candidate cause. CPU saturation is not demonstrated by this capture.'),
+('ev_native_frame_blindspot','2026-08-28T18:30:59Z','measurement_gap','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'gfxinfo produced zero match-window frame samples because the current workload presents through native Unreal/Vulkan rather than Android ViewRoot frame accounting.','DIRECT','Native frame tracing is now blocking before graphics tuning.'),
+('ev_trace_capabilities','2026-08-28T18:42:01Z','measurement_capability','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/trace-capabilities.json',NULL,'The current API36 guest exposes Perfetto android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats and linux.sys_stats data sources.','DIRECT','Exact native frame/presentation telemetry is available without changing the graphics stack.'),
+('ev_native_trace_smoke','2026-08-28T18:46:04Z','measurement_capture','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/perfetto/native-smoke-5s-2026-08-28T18-45-59-859Z.pftrace','214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028','The low-overhead native collector completed a 5-second trace using SurfaceFlinger frame/frametimeline/layers plus GPU memory and produced a 7479-byte raw pftrace.','DIRECT','Collector path is proven. The trace still needs normalization/query support before frame metrics can enter the SQL lab.'),
+('ev_sf_cumulative_misses','2026-08-28T18:42:01Z','surfaceflinger_counters','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/trace-capabilities.json',NULL,'Latest post-match SurfaceFlinger cumulative display counters: renderRate=60 Hz, total missed=2709, GPU missed=2163, HWC missed=546; TFT GameActivity requests 60 Hz.','DIRECT','Counters are cumulative since boot and include non-TFT periods. They nominate a GPU-frame-miss trace but do not attribute the match.'),
+('ev_user_first_win_quality','2026-08-28T18:28:00Z','user_observation',NULL,NULL,'User reported graphics and performance during the first full match as very bad, laggy, and low performance despite completing the match in first place.','DIRECT','Subjective quality observation; use as a target signal, not as quantitative FPS evidence.'),
+('ev_single_play_avd','2026-08-28T18:25:16.276Z','architecture_result','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'One API36 Google Play AVD installed/updated official TFT and executed the same official package through a full match.','DIRECT','No package-authority/execution-guest split is required for the current path.');
+
+INSERT OR REPLACE INTO constraints(id,category,statement,severity,mutable,rationale) VALUES
+('con_no_spoof','graphics_truth','Never describe ES3.2 compatibility exposure as genuine conformance. The current explicit nonconformant/testing exposure may be used only as a named workload-compatibility adapter until a conformant path is proven.','HARD',0,'Truthful labeling preserves engineering causality while allowing the currently proven playable path.'),
+('con_measure_before_tune','performance','Do not promote graphics, transport, queue, shader, scheduler, or memory tuning without a comparable baseline and measurable result. Native frame timing is mandatory for graphics-performance claims.','HARD',0,'The first match proved that gfxinfo cannot measure this Unreal/Vulkan workload, so blind tuning would recreate the old rabbit hole.'),
+('con_one_factor_perf','performance','Performance interventions must change one separable variable at a time and be reversible; KEEP requires measured improvement and confirmation.','HIGH',0,'The historical donor campaign already showed favorable one-off runs can fail cold confirmation.');
+
+INSERT OR REPLACE INTO interfaces(id,from_component,to_component,interface_type,contract,state,notes) VALUES
+('if_tft_angle','tft_android','angle','GLES compatibility','Official TFT reaches and uses ANGLE under the explicit ES3.2 compatibility exposure.','PROVEN','TFT-specific ANGLE VkInstance observed during successful full match.'),
+('if_angle_vk','angle','gfxstream','Vulkan guest path','ANGLE uses Vulkan/ranchu and submits through gfxstream transport.','PROVEN','Direct runtime properties plus host graphics evidence.'),
+('if_gfx_mvk','gfxstream','moltenvk_integrated','host Vulkan','gfxstream host Vulkan reaches MoltenVK/Metal.','PROVEN','Current released emulator successfully renders full TFT match on Apple M4.'),
+('if_mvk_metal','moltenvk_integrated','metal','Metal','MoltenVK translates host Vulkan work to Metal on Apple M4.','PROVEN','Current runtime host path completed a full match.');
+
+INSERT OR REPLACE INTO dependencies(id,consumer_component,provider_component,relationship,required,compatibility_state,evidence_id,notes) VALUES
+('dep_angle_guestvk','angle','gfxstream','guest Vulkan transport',1,'PASS','ev_first_win_renderer','Current workload path is directly observed.'),
+('dep_gfx_mvk','gfxstream','moltenvk_integrated','host Vulkan provider',1,'PASS','ev_first_win_renderer','Current full-match path is directly observed.'),
+('dep_mvk_metal','moltenvk_integrated','metal','Apple GPU backend',1,'PASS','ev_first_win_renderer','Current full-match path is directly observed.'),
+('dep_tft_gles32','tft_android','angle','ES3.2 workload compatibility',1,'WORKAROUND','ev_first_win_playable','TFT runs only after explicit ANGLE nonconformant/ES3.2 testing exposure. This is a compatibility workaround, not conformance.'),
+('dep_tft_play','tft_android','google_play','install/update authority',1,'PASS','ev_single_play_avd','Installer com.android.vending; same AVD executed full match.');
+
+INSERT OR REPLACE INTO component_capabilities(component_id,capability_id,state,evidence_id,notes) VALUES
+('tft_android','cap_full_match_playability','PASS','ev_first_win_playable','First full official match completed in 1st place.'),
+('angle','cap_guestangle','PASS','ev_first_win_renderer','Runtime workload directly reached ANGLE.'),
+('angle','cap_gles32','PARTIAL','ev_first_win_renderer','Workload compatibility is proven only through explicit nonconformant/testing ES3.2 exposure; genuine conformance remains unproven.'),
+('perfetto_trace','cap_native_frame_timing','PARTIAL','ev_native_trace_smoke','Required data sources and raw capture path are proven; a TFT-specific combat capture plus trace normalization/query still need validation before performance attribution.');
+
+INSERT OR REPLACE INTO experiments(id,observed_at,title,layer,hypothesis,action,result,status,reusable_lesson) VALUES
+('exp_first_win_baseline','2026-08-28T18:30:59Z','First full official TFT gameplay baseline','runtime_performance','The released stock-emulator/API36 compatibility path is sufficiently complete to produce a real gameplay baseline.','Captured full match with append-only host process/memory, clock, logcat, renderer state and result markers.','PASS: 1st place after 2152.69s. Performance was user-reported as poor. Resource telemetry is valid; native frame timing is missing.','PASS','The product path works. Optimize from measured current data; do not resume source-AEMU work unless a future measured capability gap requires it.');
+
+INSERT OR REPLACE INTO experiment_evidence(experiment_id,evidence_id) VALUES
+('exp_first_win_baseline','ev_first_win_playable'),
+('exp_first_win_baseline','ev_first_win_renderer'),
+('exp_first_win_baseline','ev_first_win_resources'),
+('exp_first_win_baseline','ev_native_frame_blindspot'),
+('exp_first_win_baseline','ev_trace_capabilities'),
+('exp_first_win_baseline','ev_native_trace_smoke'),
+('exp_first_win_baseline','ev_sf_cumulative_misses'),
+('exp_first_win_baseline','ev_user_first_win_quality');
+
+INSERT OR REPLACE INTO failures(id,experiment_id,symptom,root_cause,owning_layer,workaround,permanent_fix,state) VALUES
+('fail_native_frame_telemetry','exp_first_win_baseline','Performance felt laggy but gfxinfo recorded zero match-window frames.','Current TFT renders through native Unreal/Vulkan, outside Android ViewRoot/gfxinfo frame accounting.','measurement','Use resource telemetry only for candidate nomination; do not claim frame metrics.','Add low-overhead native Perfetto/SurfaceFlinger/FrameTimeline capture aligned to existing host clock/log streams.','OPEN');
+
+INSERT OR REPLACE INTO decisions(id,decided_at,decision,rationale,state,evidence_id,supersedes) VALUES
+('dec_stock_runtime_primary','2026-08-28T18:30:59Z','Use released Google Emulator37.1.11 + API36 Play guest + TFTMAC compatibility adapter as the primary product/runtime path.','The path installed official TFT, passed the ES3.2 device gate after measured ANGLE compatibility exposure, survived Riot patching/login, and completed a full first-place match.','ACTIVE','ev_first_win_playable','dec_locked_aemu'),
+('dec_native_trace_before_tuning','2026-08-28T18:30:59Z','Make native Unreal/Vulkan frame timing the next blocking measurement before graphics optimization.','gfxinfo produced zero gameplay frames, so graphics tuning cannot currently be scored honestly.','ACTIVE','ev_native_frame_blindspot',NULL),
+('dec_memory_ab_first','2026-08-28T18:30:59Z','After native frame timing is available, test guest RAM 6144 -> 4096 MB as the first one-factor performance intervention.','The first full match showed ~5.16 GiB mean emulator RSS, ~4.15 GiB mean host compression and +12876 pageouts, while aggregate emulator CPU did not show saturation.','ACTIVE','ev_first_win_resources',NULL);
+
+INSERT OR REPLACE INTO architecture_candidates(id,name,summary,status,integration_cost,invention_level,expected_control,expected_risk,rationale) VALUES
+('arch_a','Locked source AEMU + TFTMAC compatibility/build adapter','Historical source-build path retained only if a future measured runtime capability gap requires source control.','RESEARCH',7,5,9,6,'The released stock emulator now completes official TFT matches; source build adds large failure surface without a current runtime need.'),
+('arch_b','Stock Google Emulator37.1.11 + TFTMAC native shell/control','Official released emulator, API36 Play guest, explicit TFT compatibility adapter, native shell and evidence-driven performance lab.','PRIMARY',2,3,8,3,'Directly proven by a full official TFT first-place match on the target Apple M4 host.'),
+('arch_h','Stock Emulator37.1.11 capability-first runtime','Earlier stock-control candidate is now subsumed by arch_b and retained for historical traceability.','VIABLE',2,2,6,3,'Its central question is answered: the stock emulator path is playable when paired with the measured compatibility adapter.');
+
+INSERT OR REPLACE INTO unknowns(id,question,owning_layer,blocking,next_probe,status,resolution) VALUES
+('unk_stock_capability','Does official Emulator37.1.11 provide the runtime capability needed by current TFT?','graphics_capability',0,'Retain genuine GLES3.2 conformance as a separate research question; product playability is already proven.','RESOLVED','Yes for workload execution when using the explicit ANGLE ES3.2 compatibility exposure; no claim of genuine conformance.'),
+('unk_old_stock_runtime','Can stock Emulator37.1.11 + an official Play image run current TFT without a source-built emulator?','architecture',0,'No further probe required unless a future update regresses.','RESOLVED','Yes. Android16 API36 Play ARM64 + Emulator37.1.11 completed a full first-place match.'),
+('unk_native_frame_timing','What is the real native Unreal/Vulkan frame-time distribution and which layer owns visible stalls?','measurement',1,'Capture android.surfaceflinger.frame + android.surfaceflinger.frametimeline + android.surfaceflinger.layers + android.gpu.memory during bounded real combat and align it to the existing host clock; add linux.ftrace only in heavier validation.','OPEN',NULL),
+('unk_memory_causality','Does reducing guest RAM from 6144 to 4096 MB reduce host compression/pageouts and improve real frame pacing without guest instability?','performance',0,'Run one-factor 4096 MB A/B after native frame timing is available; keep vCPU/display/renderer/transport/package identical.','OPEN',NULL),
+('unk_signer_digest','What is the exact SHA-256 signer certificate digest of the current Google-Play-installed TFT base APK?','package_authority',0,'Repair the apksigner capture path and record the actual digest; do not substitute the hard-coded expected value.','OPEN',NULL),
+('unk_phase1_result','Does locked source AEMU complete with the host adapter?','host_build',0,'Do not resume unless stock-runtime evidence reveals a source-only blocker.','DEFERRED','No current product need: released Emulator37.1.11 is playable.');
+
+INSERT OR REPLACE INTO invention_opportunities(id,title,problem,tftmac_owned_solution,replaces_or_bypasses,benefit,risk,status) VALUES
+('inv_native_frame_logger','TFT Native Frame Telemetry','gfxinfo cannot see Unreal/Vulkan gameplay frames, leaving visible lag unquantified.','Extend the existing append-only logger with bounded android.surfaceflinger.frame + frametimeline + layers + android.gpu.memory capture and clock-aligned stall extraction; add linux.ftrace only for heavier correlation.','ViewRoot/gfxinfo-only frame telemetry','Makes every future optimization scoreable and enables causal stall windows across Unreal/ANGLE/gfxstream/MoltenVK/Metal.','Tracing can perturb workload if configured too heavily; keep bounded/low-overhead and validate observer cost.','RECOMMENDED'),
+('inv_memory_ab','Adaptive Guest Memory Profile','Current 6 GiB guest coincides with high host compression/pageouts on a 16 GiB unified-memory host.','Test and, if confirmed, promote a 4 GiB guest profile with automatic rollback when guest memory/instability gates fail.','Fixed donor RAM allocation','Could reduce host compression/swap and improve responsiveness with zero graphics-code changes.','Too little guest RAM may induce Android LMK/OOM or asset churn; requires measured A/B.','RECOMMENDED');
+
+INSERT OR REPLACE INTO version_catalog(id,component_id,product,version_label,release_date,channel,architecture,host_os_min,host_os_max,guest_api_min,guest_api_max,bundled_sdk_version,deployment_target_min,deployment_target_max,source_kind,source_ref,evidence_class,lifecycle_state,compatibility_state,last_verified_at,exact_claim,limitations,candidate_role) VALUES
+('vc_android36_play_current','android_guest','Android system image','Android16 API36 Google Play ARM64 rev>=7',NULL,'stable','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'direct runtime observation','gameplay-analysis.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T18:30:59Z','Official Play guest installed and executed current TFT through a full match.','Compatibility path uses explicit ANGLE ES3.2 exposure.','Current guest'),
+('vc_tft_current181','tft_android','TFT Android live','18.1-5392842 / 8392842',NULL,'Google Play','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'direct package observation','gameplay-analysis.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T18:30:59Z','Installer com.android.vending; Unreal GameActivity; full first-place match completed.','Signer SHA-256 still unresolved.','Current workload');
+
+UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Superseded guest planning baseline' WHERE id='vc_android37_r6';
+UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Superseded workload inspection' WHERE id='vc_tft_live1616';
+UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Source authority retained only for future blocker research' WHERE id='vc_aemu_locked';
+
+INSERT OR REPLACE INTO stack_profiles(id,name,purpose,status,confidence,environment_id,workload,exact_result,limitations,next_use) VALUES
+('stack_first_win','Playable official TFT baseline: API36 + Emulator37.1.11','Current product/performance baseline','CURRENT_AUTHORITY','DIRECT','env_current_m4','TFT 18.1-5392842','Official Google Play package completed a 2152.69s full match in 1st place; ANGLE/Vulkan/gfxstream/MoltenVK/Metal path directly observed.','Performance poor by user observation; gfxinfo has no native Unreal frame samples; signer digest unresolved.','Add native frame tracing, then run RAM 4 GiB one-factor A/B.');
+
+INSERT OR REPLACE INTO stack_profile_members(stack_id,version_id,role,required) VALUES
+('stack_first_win','vc_macos_current','host OS',1),
+('stack_first_win','vc_emulator37111','stock emulator',1),
+('stack_first_win','vc_android36_play_current','official Play guest',1),
+('stack_first_win','vc_tft_current181','official workload',1);
+
+INSERT OR REPLACE INTO runtime_variants(id,entrypoint,classification,runtime_family,graphics_path,display_profile,resource_profile,exact_result,promotion_state,source_document_id,current_relevance,notes) VALUES
+('rv_current_first_win','TFTMAC start-donor-control','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play','TFT -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal','1920x1080 / 320 DPI / 60Hz target','6 vCPU / 6144 MB','Official TFT 18.1 completed a full first-place match.','PROMOTED',NULL,'Current product baseline','Compatibility ES3.2 exposure is explicit and nonconformant; performance requires optimization.');
+
+INSERT OR REPLACE INTO benchmark_findings(id,classification,environment_id,stack_id,workload,metric_summary,causal_interpretation,reproducibility,source_document_id,current_relevance,notes) VALUES
+('bf_first_win_resources','PROVISIONAL','env_current_m4','stack_first_win','Full first-place TFT match','2152.69s; emulator CPU mean253.87%/p95 330.5%; RSS mean5155MiB/max6846MiB; host compressed mean4.15GiB; pageouts +12876; native gfxinfo frames=0; post-match SF cumulative missed=2709/GPU=2163/HWC=546','Memory pressure is a high-value match-scoped candidate; cumulative SurfaceFlinger counters separately nominate GPU-side frame misses for TFT-specific tracing; aggregate emulator CPU saturation is not demonstrated.','One full match only; SurfaceFlinger counters are since boot; requires controlled A/B and native frametimeline capture.',NULL,'Primary current optimization baseline','User reported laggy/low graphics/performance.');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-28T18:30:59Z','Playable runtime authority','Promoted released Emulator37.1.11 + API36 Play + explicit TFT compatibility adapter to current product baseline; source-AEMU path moved to research-only.','ev_first_win_playable'),
+('2026-08-28T18:30:59Z','Current workload truth','Corrected stale non-Unreal workload claim: current TFT18.1 launches Unreal GameActivity and uses ANGLE/Vulkan path.','ev_first_win_renderer'),
+('2026-08-28T18:30:59Z','Performance baseline','Recorded first full-match resource envelope and user-reported poor performance without falsely inventing native frame metrics.','ev_first_win_resources'),
+('2026-08-28T18:30:59Z','Optimization order','Made native frame tracing the blocking measurement and guest-RAM 4GiB A/B the first reversible performance intervention.','ev_native_frame_blindspot'),
+('2026-08-28T18:42:01Z','Trace capability','Proved current guest exposes SurfaceFlinger frame/frametimeline/layers, GPU memory and Linux tracing data sources; native telemetry no longer requires guessing or external instrumentation.','ev_trace_capabilities'),
+('2026-08-28T18:42:01Z','GPU miss nomination','Recorded cumulative SurfaceFlinger missed-frame counters as non-match-scoped nomination evidence only; requires TFT-specific frametimeline correlation before attribution.','ev_sf_cumulative_misses'),
+('2026-08-28T18:46:04Z','Native trace collector','Validated a bounded low-overhead Perfetto raw collector using the four required fast-path data sources; combat capture and normalization remain next.','ev_native_trace_smoke');
+
 COMMIT;
 
 -- Recommended queries during every future work session:

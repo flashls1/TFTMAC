@@ -1545,7 +1545,7 @@ async function validateEngineeringMap() {
     const deploymentCandidateCount = Number(db.prepare('SELECT COUNT(*) AS count FROM deployment_target_candidates').get().count);
     const openBlockingUnknowns = Number(db.prepare("SELECT COUNT(*) AS count FROM unknowns WHERE blocking=1 AND status IN ('OPEN','TESTING')").get().count);
     return {
-      pass: foreignKeyProblems.length === 0 && schemaVersion === '2',
+      pass: foreignKeyProblems.length === 0 && schemaVersion === '3',
       path: mapPath,
       sha256: await sha256(mapPath),
       bytes: (await stat(mapPath)).size,
@@ -1575,7 +1575,7 @@ function directControl(action) {
 async function consumeDirectControlRequest() {
   if (!existsSync(DIRECT_CONTROL_REQUEST)) return null;
   const request = JSON.parse(await readFile(DIRECT_CONTROL_REQUEST, 'utf8'));
-  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'open-play-web', 'runtime-process-audit', 'cleanup-tftmac-adb-residue', 'single-runtime-preflight', 'launch-mactician-control', 'stop-mactician-control', 'mactician-runtime-audit', 'cleanup-observer-adb-5037', 'start', 'start-donor-control', 'play-action', 'play-probe', 'gles-capability-probe', 'launch-failure-probe', 'recover-anr-wait', 'logger-health', 'presentation-probe', 'window-inventory', 'fit-window', 'play-certification', 'play-diagnose', 'google-account-ui', 'image-check', 'device-profiles', 'image-upgrade-start', 'image-upgrade-status', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'first-place', 'stop', 'package-state', 'auth-brief', 'install-diagnose', 'play-install-brief', 'play-store-repair']);
+  const allowed = new Set(['inventory', 'prepare', 'lab-selftest', 'build', 'launch-app', 'open-play-web', 'runtime-process-audit', 'cleanup-tftmac-adb-residue', 'single-runtime-preflight', 'launch-mactician-control', 'stop-mactician-control', 'mactician-runtime-audit', 'cleanup-observer-adb-5037', 'start', 'start-donor-control', 'play-action', 'play-probe', 'gles-capability-probe', 'launch-failure-probe', 'recover-anr-wait', 'logger-health', 'analyze-session', 'ingest-analysis', 'trace-capabilities', 'native-trace-smoke', 'native-trace-combat', 'presentation-probe', 'window-inventory', 'fit-window', 'play-certification', 'play-diagnose', 'google-account-ui', 'image-check', 'device-profiles', 'image-upgrade-start', 'image-upgrade-status', 'launch-game', 'status', 'marker', 'match-entry', 'combat-start', 'first-place', 'stop', 'package-state', 'auth-brief', 'install-diagnose', 'play-install-brief', 'play-store-repair']);
   if (!allowed.has(request?.action)) throw new Error(`DIRECT_CONTROL_ACTION_INVALID: ${request?.action ?? '<missing>'}`);
   await rm(DIRECT_CONTROL_REQUEST, { force: true });
   const startedAt = new Date().toISOString();

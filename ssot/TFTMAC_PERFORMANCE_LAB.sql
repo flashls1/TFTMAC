@@ -135,7 +135,7 @@ CREATE TABLE markers (
     host_mono_ns INTEGER NOT NULL,
     guest_mono_ns INTEGER,
     marker_type TEXT NOT NULL CHECK (
-        marker_type IN ('USER_STUTTER','AUTO_JANK','AUTO_SEVERE_STALL','MATCH_ENTRY','COMBAT_START','TRANSITION','PACKAGE_UPDATE','CUSTOM')
+        marker_type IN ('USER_STUTTER','AUTO_JANK','AUTO_SEVERE_STALL','MATCH_ENTRY','MATCH_RESULT','COMBAT_START','TRANSITION','PACKAGE_UPDATE','USER_QUALITY_REPORT','CUSTOM')
     ),
     label TEXT,
     payload_json TEXT
@@ -516,6 +516,68 @@ INSERT INTO unknowns VALUES
 ('u_drop_reproduction','Does the severe light-state-to-single-digit-FPS collapse reproduce under the clean official-package control?','PERFORMANCE','OPEN',0,NULL,'2026-08-28T07:50:00Z',NULL,'Prior user observation is diagnostic only until reproduced here.'),
 ('u_storage_bom','What is the exact shipping/control storage bill of materials after TFT is fully patched?','STORAGE','OPEN',0,NULL,'2026-08-28T07:50:00Z',NULL,'Initial ceiling is 35 GiB; measure actual bytes.'),
 ('u_one_guest_controls','Can one official Play AVD provide every runtime control needed for compatibility and measurement?','RUNTIME','OPEN',0,NULL,'2026-08-28T07:50:00Z',NULL,'Only activate authority/execution split if current evidence says no.');
+
+-- ---------------------------------------------------------------------------
+-- Current playable baseline authority: 2026-08-28 first-place match
+-- ---------------------------------------------------------------------------
+-- Later rows intentionally supersede stale API37/source-AEMU assumptions while
+-- preserving those older rows as historical context elsewhere in the project.
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','mactician_compatible_official_v0'),
+('current_playable_baseline_session','2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2'),
+('current_guest','Android 16 / API 36 Google Play ARM64 revision >=7'),
+('current_emulator','Google Android Emulator 37.1.11'),
+('current_tft','18.1-5392842 / versionCode 8392842 / installer com.android.vending'),
+('current_renderer_path','TFT Unreal GameActivity -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal'),
+('current_measurement_gap','gfxinfo does not expose native Unreal/Vulkan gameplay frames; native frame timing is blocking before graphics tuning'),
+('current_trace_sources','Perfetto proven available: android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats, linux.sys_stats'),
+('current_trace_collector_smoke','5s smoke succeeded: 7479-byte raw pftrace, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, four lightweight SurfaceFlinger/GPU-memory sources, zero missed-frame counter delta during idle smoke'),
+('current_optimization_priority','1 native frame timing; 2 guest RAM 6144->4096 MB A/B; 3 only then renderer/transport/queue experiments');
+
+INSERT OR REPLACE INTO host_facts VALUES
+('control_image','control_system_image','system-images;android-36;google_apis_playstore;arm64-v8a',NULL,'DIRECT_OBSERVATION','gameplay-analysis.json','FROZEN','2026-08-28T18:30:59Z','First full official TFT match completed on this real Google Play image family.'),
+('control_image_revision','control_system_image_revision','>=7',NULL,'DIRECT_OBSERVATION','runtime inventory + source.properties','FROZEN','2026-08-28T18:30:59Z','Installed API36 Play ARM64 image satisfies revision-7 minimum used by current control.'),
+('control_avd','control_avd_name','TFT_Ultra_Tablet',NULL,'DIRECT_OBSERVATION','runtime-state.json','FROZEN','2026-08-28T18:30:59Z','Single official Play AVD used for package authority and gameplay execution.');
+
+INSERT OR REPLACE INTO runtime_configs (
+    id,parent_config_id,name,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+    avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,
+    display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
+    graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES
+('mactician_compatible_official_v0',NULL,'Mactician-compatible official TFT control v0','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,6144,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','GuestAngle + explicit exposeNonConformantExtensionsAndVersions/exposeES32ForTesting compatibility adapter','ranchu guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL','2026-08-28T11:06:18Z','Completed a full first-place official TFT match. Compatibility exposure is a truthful workload adapter, not GLES conformance proof.'),
+('mactician_compatible_4gb_v1','mactician_compatible_official_v0','RAM 4 GiB candidate','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,4096,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE','2026-08-28T18:30:59Z','One-factor candidate: only guest RAM changes 6144 -> 4096 MB.');
+
+UPDATE hypotheses
+SET status='TESTING', confidence=0.60,
+    nominated_from_session_id=NULL,
+    notes='First full match: emulator RSS mean about 5155 MiB, max about 6846 MiB; host compressed memory mean about 4.15 GiB; pageouts +12876. Candidate cause only until controlled A/B.'
+WHERE id='h_memory_pressure';
+
+INSERT OR REPLACE INTO hypotheses VALUES
+('h_guest_ram_host_pressure','Guest RAM allocation amplifies host memory pressure','MEMORY','The 6144 MB Android guest contributes enough host RSS/compression/pageout pressure to worsen gameplay responsiveness on the 16 GiB M4 host.','A 4096 MB one-factor run lowers emulator RSS, host compression/pageouts and visible stalls without guest OOM or instability.','4096 MB does not reduce pressure or worsens comparable gameplay.','QUEUED',0.60,NULL,'2026-08-28T18:30:59Z','Highest-value reversible performance hypothesis from the first full match.'),
+('h_gpu_frame_miss','GPU-side presentation misses contribute to visible lag','SURFACEFLINGER','A meaningful portion of visible gameplay lag is caused by GPU/presentation misses somewhere in the Unreal -> ANGLE -> Vulkan -> gfxstream -> MoltenVK -> Metal path.','TFT-specific SurfaceFlinger frametimeline traces show GPU-missed or late frames correlated with visible stalls while memory state is controlled.','TFT-specific frametimeline remains healthy during visible stalls, or misses disappear without improving perceived performance.','QUEUED',0.35,NULL,'2026-08-28T18:42:01Z','Nominated from cumulative SurfaceFlinger counters only: 2709 total missed, 2163 GPU missed, 546 HWC missed at the latest post-match read. These counters are since boot and are not match-scoped.');
+
+INSERT OR REPLACE INTO experiments VALUES
+('exp_ram_4gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 4096 MB A/B','INTERVENTION','mactician_compatible_official_v0','mactician_compatible_4gb_v1','HEAVY',1,'PLANNED',1,'Same official TFT version, renderer path, display, transport and vCPU; compare matched combat with resource pressure plus native frame timing.','2026-08-28T18:30:59Z',NULL,'First performance intervention. No other variable changes.'),
+('exp_native_frame_trace',NULL,'Native Unreal/Vulkan frame-timing capture','OBSERVATION','mactician_compatible_official_v0',NULL,'HEAVY',0,'PLANNED',0,'Capture android.surfaceflinger.frame + android.surfaceflinger.frametimeline + android.surfaceflinger.layers + android.gpu.memory during real TFT combat; align to the existing host monotonic clock. Add linux.ftrace only in the heavier validation run.','2026-08-28T18:30:59Z',NULL,'Blocking measurement experiment before renderer/transport tuning. All required Perfetto data sources are directly proven available on the current guest.');
+
+UPDATE experiments
+SET baseline_config_id='mactician_compatible_official_v0',
+    state='COMPLETE',
+    notes=COALESCE(notes,'') || ' Superseded runtime identity corrected to the proven playable baseline.'
+WHERE id='exp_control_direct_play';
+
+UPDATE experiments
+SET state='CANCELLED',
+    notes=COALESCE(notes,'') || ' Superseded by mactician_compatible_official_v0 and exp_native_frame_trace.'
+WHERE id IN ('exp_control_repeat_warm','exp_transition_capture','exp_heavy_capture')
+  AND baseline_config_id='control_stock_direct_v0';
+
+INSERT OR REPLACE INTO unknowns VALUES
+('u_native_frame_timing','What is the real Unreal/Vulkan frame-time distribution and which boundary owns visible stalls?','FRAME_TIMING','OPEN',1,NULL,'2026-08-28T18:30:59Z',NULL,'gfxinfo returned zero gameplay frames. Exact available replacement sources: android.surfaceflinger.frame + frametimeline + layers + android.gpu.memory; linux.ftrace/process_stats/sys_stats are available for heavier correlation.'),
+('u_drop_reproduction','Does the severe low-performance/laggy behavior reproduce under the clean official-package control?','PERFORMANCE','OPEN',0,NULL,'2026-08-28T07:50:00Z',NULL,'User reported the first full match as laggy/low-performance; resource pressure reproduced, but native frame timing is still missing for quantitative attribution.');
 
 COMMIT;
 
