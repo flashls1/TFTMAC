@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { closeSync, createReadStream, existsSync, openSync } from 'node:fs';
 import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 function resolveConsoleUserHome() {
   const userResult = spawnSync('/usr/bin/stat', ['-f', '%Su', '/dev/console'], { encoding: 'utf8' });
@@ -35,6 +35,9 @@ const LOGS = join(APP, 'Logs');
 const DIAGNOSTICS = join(APP, 'Diagnostics');
 const ROLLBACK = join(APP, 'Rollback');
 const SSOT = join(REPO, 'ssot');
+const SOURCE_WORKER_STATE = join(LOGS, 'phase0-source-worker.json');
+const SOURCE_WORKER_STDOUT = join(LOGS, 'phase0-source-worker.stdout.log');
+const SOURCE_WORKER_STDERR = join(LOGS, 'phase0-source-worker.stderr.log');
 
 const EXPECTED = Object.freeze({
   architecture: 'arm64',
@@ -87,6 +90,40 @@ function run(executable, args = [], options = {}) {
     throw new Error(`${executable} ${args.join(' ')} exited ${result.status}${detail ? `\n${detail}` : ''}`);
   }
   return { status: result.status ?? 1, stdout, stderr };
+}
+
+function runInherited(executable, args = [], options = {}) {
+  const result = spawnSync(executable, args, {
+    cwd: options.cwd ?? REPO,
+    env: options.env ?? process.env,
+    stdio: 'inherit'
+  });
+  if (result.error) {
+    throw new Error(`${executable} failed to start: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`${executable} ${args.join(' ')} exited ${result.status}`);
+  }
+  return { status: result.status ?? 1 };
+}
+
+function pidIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readSourceWorkerState() {
+  if (!existsSync(SOURCE_WORKER_STATE)) return null;
+  try {
+    return JSON.parse(await readFile(SOURCE_WORKER_STATE, 'utf8'));
+  } catch {
+    return { schema: 1, status: 'INVALID_STATE_FILE', path: SOURCE_WORKER_STATE };
+  }
 }
 
 function firstExisting(paths) {
@@ -562,21 +599,19 @@ function resolveRemoteTag(url, tag) {
   return peeled?.[0] ?? direct?.[0] ?? null;
 }
 
-async function phase0Source() {
+async function phase0SourceForeground() {
   await ensureRoots();
   const repoTool = await ensureRepoTool();
   const aemuRoot = join(BUILD, 'aemu');
   await mkdir(aemuRoot, { recursive: true });
   const repoEnv = { ...process.env, HOME: USER_HOME };
-  run(repoTool, ['init', '-u', 'https://android.googlesource.com/platform/manifest', '-b', EXPECTED.aemuBranch], {
+  runInherited(repoTool, ['init', '-u', 'https://android.googlesource.com/platform/manifest', '-b', EXPECTED.aemuBranch], {
     cwd: aemuRoot,
-    env: repoEnv,
-    maxBuffer: 128 * 1024 * 1024
+    env: repoEnv
   });
-  run(repoTool, ['sync', '-c', '-j8'], {
+  runInherited(repoTool, ['sync', '-c', '-j8'], {
     cwd: aemuRoot,
-    env: repoEnv,
-    maxBuffer: 256 * 1024 * 1024
+    env: repoEnv
   });
 
   const resolvedManifest = run(repoTool, ['manifest', '-r'], {
@@ -680,7 +715,72 @@ async function phase0Source() {
     [['generality', 'gles_cts_commit'], glesCTSCommit]
   ]);
   console.log(JSON.stringify(sourceArtifact, null, 2));
-  if (!guestAnglePass) die('GUESTANGLE_AUTHORITY_FAILED: locked source semantics do not satisfy the SSOT.', 7);
+  if (!guestAnglePass) throw new Error('GUESTANGLE_AUTHORITY_FAILED: locked source semantics do not satisfy the SSOT.');
+}
+
+async function phase0SourceWorker() {
+  await ensureRoots();
+  const startedAt = process.env.TFTMAC_SOURCE_WORKER_STARTED_AT ?? new Date().toISOString();
+  const baseState = {
+    schema: 1,
+    pid: process.pid,
+    startedAt,
+    buildRoot: BUILD,
+    aemuRoot: join(BUILD, 'aemu'),
+    branch: EXPECTED.aemuBranch,
+    stdoutPath: SOURCE_WORKER_STDOUT,
+    stderrPath: SOURCE_WORKER_STDERR
+  };
+  await atomicWrite(SOURCE_WORKER_STATE, `${JSON.stringify({ ...baseState, status: 'RUNNING' }, null, 2)}\n`);
+  try {
+    await phase0SourceForeground();
+    await atomicWrite(SOURCE_WORKER_STATE, `${JSON.stringify({ ...baseState, status: 'SUCCEEDED', endedAt: new Date().toISOString() }, null, 2)}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await atomicWrite(SOURCE_WORKER_STATE, `${JSON.stringify({ ...baseState, status: 'FAILED', endedAt: new Date().toISOString(), error: message }, null, 2)}\n`);
+    throw error;
+  }
+}
+
+async function phase0Source() {
+  await ensureRoots();
+  const existing = await readSourceWorkerState();
+  if (existing?.pid && pidIsAlive(existing.pid)) {
+    console.log(JSON.stringify({
+      phase: '0-source',
+      launched: false,
+      alreadyRunning: true,
+      worker: existing
+    }, null, 2));
+    return;
+  }
+
+  const startedAt = new Date().toISOString();
+  const stdoutFd = openSync(SOURCE_WORKER_STDOUT, 'a');
+  const stderrFd = openSync(SOURCE_WORKER_STDERR, 'a');
+  try {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'phase0-source-worker'], {
+      cwd: REPO,
+      env: { ...process.env, TFTMAC_SOURCE_WORKER_STARTED_AT: startedAt },
+      detached: true,
+      stdio: ['ignore', stdoutFd, stderrFd]
+    });
+    child.unref();
+    console.log(JSON.stringify({
+      phase: '0-source',
+      launched: true,
+      pid: child.pid,
+      startedAt,
+      buildRoot: BUILD,
+      branch: EXPECTED.aemuBranch,
+      statePath: SOURCE_WORKER_STATE,
+      stdoutPath: SOURCE_WORKER_STDOUT,
+      stderrPath: SOURCE_WORKER_STDERR
+    }, null, 2));
+  } finally {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+  }
 }
 
 const AUTHORITY_FILES = Object.freeze([
@@ -876,11 +976,17 @@ async function status() {
     const path = join(SSOT, name);
     artifacts[name] = existsSync(path) ? { exists: true, bytes: (await stat(path)).size, sha256: await sha256(path) } : { exists: false };
   }
+  const sourceWorker = await readSourceWorkerState();
+  const sourceWorkerAlive = Boolean(sourceWorker?.pid && pidIsAlive(sourceWorker.pid));
+  const sourceWorkerObservedStatus = sourceWorker?.status === 'RUNNING' && !sourceWorkerAlive
+    ? 'INTERRUPTED'
+    : sourceWorker?.status ?? 'NOT_STARTED';
   console.log(JSON.stringify({
     appRoot: APP,
     buildRoot: BUILD,
     buildRootSource: process.env.TFTMAC_BUILD_ROOT ? 'TFTMAC_BUILD_ROOT' : 'default-external',
     repository: REPO,
+    sourceWorker: sourceWorker ? { ...sourceWorker, alive: sourceWorkerAlive, observedStatus: sourceWorkerObservedStatus } : null,
     artifacts
   }, null, 2));
 }
@@ -892,6 +998,7 @@ try {
     case 'phase0-android': await phase0Android(); break;
     case 'phase0-vulkan': await phase0Vulkan(); break;
     case 'phase0-source': await phase0Source(); break;
+    case 'phase0-source-worker': await phase0SourceWorker(); break;
     case 'phase0-authority': await importAuthorityFiles(); break;
     case 'phase0-policy': await phase0Policy(); break;
     case 'phase0-report': await preflightReport(); break;
