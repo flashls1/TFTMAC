@@ -1013,6 +1013,56 @@ function riotPatchState(runtime) {
   };
 }
 
+function telemetrySnapshot(captureDir) {
+  const tracked = [
+    'host-events.jsonl', 'host-process.jsonl', 'host-memory.jsonl', 'clock-sync.jsonl',
+    'logcat.raw.txt', 'gfxinfo/framestats.raw.txt'
+  ];
+  const files = {};
+  for (const rel of tracked) {
+    const file = path.join(captureDir, rel);
+    try {
+      const stat = fs.statSync(file);
+      files[rel] = { bytes: stat.size, mtimeMs: stat.mtimeMs };
+    } catch {
+      files[rel] = { bytes: null, mtimeMs: null };
+    }
+  }
+  return files;
+}
+
+async function loggerHealth() {
+  const state = readJSON(CONTROL_STATE);
+  if (!state?.captureDir) throw new Error('No active direct-control session.');
+  const before = telemetrySnapshot(state.captureDir);
+  await sleep(2600);
+  const after = telemetrySnapshot(state.captureDir);
+  const growth = {};
+  for (const [rel, current] of Object.entries(after)) {
+    const prior = before[rel] ?? {};
+    growth[rel] = current.bytes !== null && prior.bytes !== null
+      ? { bytesAdded: current.bytes - prior.bytes, mtimeAdvanced: (current.mtimeMs ?? 0) > (prior.mtimeMs ?? 0) }
+      : { bytesAdded: null, mtimeAdvanced: false };
+  }
+  const expectedStreams = ['host-process.jsonl', 'host-memory.jsonl', 'logcat.raw.txt', 'gfxinfo/framestats.raw.txt'];
+  const activeStreams = expectedStreams.filter(rel => (growth[rel]?.bytesAdded ?? 0) > 0 || growth[rel]?.mtimeAdvanced);
+  const result = {
+    observedAt: nowISO(),
+    sessionId: state.sessionId,
+    captureDir: state.captureDir,
+    samplerAlive: processAlive(state.samplerPid),
+    emulatorProcessAlive: processAlive(state.emulatorPid),
+    activeStreams,
+    expectedStreams,
+    healthy: processAlive(state.samplerPid) && activeStreams.length >= 3,
+    before,
+    after,
+    growth
+  };
+  writeJSON(path.join(state.captureDir, 'logger-health.json'), result);
+  return result;
+}
+
 async function status() {
   const runtime = discover();
   const state = readJSON(CONTROL_STATE);
@@ -2332,6 +2382,7 @@ async function main() {
   if (action === 'gles-capability-probe') { json(glesCapabilityProbe()); return; }
   if (action === 'launch-failure-probe') { json(launchFailureProbe()); return; }
   if (action === 'recover-anr-wait') { json(await recoverAnrWait()); return; }
+  if (action === 'logger-health') { json(await loggerHealth()); return; }
   if (action === 'status') { json(await status()); return; }
   if (action === 'play-certification') { json(await playCertification()); return; }
   if (action === 'play-diagnose') { json(await playDiagnose()); return; }
