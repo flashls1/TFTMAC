@@ -270,6 +270,7 @@ final class TFTMACRuntimeBridge: ObservableObject {
         if let screen = NSScreen.main ?? NSScreen.screens.first {
             environment["TFTMAC_HOST_SCREEN_WIDTH"] = String(Int(screen.frame.width.rounded()))
             environment["TFTMAC_HOST_SCREEN_HEIGHT"] = String(Int(screen.frame.height.rounded()))
+            environment["TFTMAC_HOST_BACKING_SCALE"] = String(format: "%.6f", screen.backingScaleFactor)
             environment["TFTMAC_NATIVE_CONTROL_WIDTH"] = String(Int(TFTMACWindowCoordinator.controlBarWidth.rounded()))
             environment["TFTMAC_NATIVE_TOPBAR_HEIGHT"] = String(Int(TFTMACWindowCoordinator.topBarHeight.rounded()))
         }

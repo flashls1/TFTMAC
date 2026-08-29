@@ -644,7 +644,17 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('latest_closed_run_network','No emulator/Android network disconnect reproduced: TFT PID stayed 5276; network 101 stayed assigned; end-of-game callback requests were immediately reassigned to network 101.'),
 ('latest_closed_run_presentation','Surface remains 1280x720 scaled to 1920x1080; post-run total missed=562 and HWC missed=562 at 60 Hz. Zero-valued GPU counter parsing was fixed so zero no longer becomes NULL. Next graphics intervention remains ASG drawFlushInterval 800 -> 400 only.'),
 ('current_5gb_operational_decision','KEEP 5120 MB as development runtime. Two long runs reproduce lower pressure/pageout direction versus 6144 MB while maintaining adequate heavy-game guest headroom; 4096 MB remains deferred.'),
-('current_graphics_experiment','Next one-factor candidate: mactician_compatible_5gb_flush400_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.');
+('current_graphics_experiment','Next one-factor candidate: mactician_compatible_5gb_flush400_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.'),
+('latest_graphics_quality_observation','2026-08-28 late game: user changed TFT from Medium to Ultra High, observed Ultra High as unplayable due to severe lag, then returned to Medium and playability recovered. Exact switch timestamps were not instrumented in this legacy run, so do not assign telemetry bins or inferred FPS values to the Ultra High interval.'),
+('current_tft_graphics_observed','Medium'),
+('ultra_high_current_usability','REJECT for current runtime usability until new native-app FPS/config instrumentation can quantify the boundary; direct user observation is decisive for usability but not causal pipeline attribution.');
+
+UPDATE experiments
+SET notes=COALESCE(notes,'') || ' Latest qualitative result: Ultra High was unplayable from severe lag and returning to Medium restored playability. Exact switch timestamps/FPS were not captured, so this is a usability rejection for Ultra High, not a completed quantitative preset A/B.'
+WHERE id='exp_tft_graphics_preset_ab';
+
+INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
+('ev_ultra_high_unplayable_user_observation',NULL,NULL,'exp_tft_graphics_preset_ab','CONFIG_OBSERVATION','User directly observed Ultra High as unplayable because of severe lag in the completed late-game run; returning to Medium restored playability.','NEUTRAL','DECISIVE',NULL,'2026-08-29T03:02:00Z','No exact preset-switch timestamp and no trustworthy legacy native-Vulkan FPS stream. Preserve as decisive usability evidence only; do not fabricate a numeric Ultra High frame rate or telemetry window.');
 
 COMMIT;
 

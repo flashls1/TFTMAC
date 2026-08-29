@@ -4,8 +4,8 @@ import SwiftUI
 
 @MainActor
 final class TFTMACWindowCoordinator: ObservableObject {
-    static let topBarHeight: CGFloat = 52
-    static let controlBarWidth: CGFloat = 96
+    static let topBarHeight: CGFloat = 30
+    static let controlBarWidth: CGFloat = 64
 
     @Published private(set) var immersive = false
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
@@ -233,8 +233,8 @@ final class TFTMACWindowCoordinator: ObservableObject {
     }
 
     private func controlFrame(for screen: NSScreen) -> NSRect {
-        let bottomInset: CGFloat = 12
-        let topGap: CGFloat = 8
+        let bottomInset: CGFloat = 4
+        let topGap: CGFloat = 4
         return NSRect(
             x: screen.frame.maxX - Self.controlBarWidth,
             y: screen.frame.minY + bottomInset,

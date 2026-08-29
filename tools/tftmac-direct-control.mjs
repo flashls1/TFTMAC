@@ -724,16 +724,19 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
     '-vsync-rate', String(DONOR_PROFILE.refreshHz),
     '-dns-server', '1.1.1.1,8.8.8.8',
     '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(ramMB),
+    '-no-hidpi-scaling',
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
   if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
     const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
     const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
-    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 96);
-    const titleChrome = 30;
-    const widthScale = screenWidth > controlWidth ? (screenWidth - controlWidth) / DONOR_PROFILE.width : 1;
-    const heightScale = screenHeight > titleChrome ? (screenHeight - titleChrome) / DONOR_PROFILE.height : 1;
-    const scale = Math.max(0.1, Math.min(widthScale, heightScale, 1));
+    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 64);
+    const titleChrome = Number(process.env.TFTMAC_NATIVE_TOPBAR_HEIGHT ?? 30);
+    const backingScale = Number(process.env.TFTMAC_HOST_BACKING_SCALE ?? 1) || 1;
+    const widthScalePoints = screenWidth > controlWidth ? (screenWidth - controlWidth) / DONOR_PROFILE.width : 1;
+    const heightScalePoints = screenHeight > titleChrome ? (screenHeight - titleChrome) / DONOR_PROFILE.height : 1;
+    const logicalScale = Math.max(0.1, Math.min(widthScalePoints, heightScalePoints, 4));
+    const scale = logicalScale * backingScale;
     args.push('-scale', scale.toFixed(6));
   }
   const timeZone = hostTimeZoneId();
@@ -2302,6 +2305,198 @@ duration_ms: ${durationMs}
 `;
 }
 
+async function analyzeLatestClosedRunFast() {
+  ensureDir(CAPTURE_ROOT);
+  const candidates = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const dir = path.join(CAPTURE_ROOT, entry.name);
+      return { id: entry.name, dir, session: readJSON(path.join(dir, 'session.json'), null) };
+    })
+    .filter(row => row.session?.endedUTC)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const target = candidates.at(-1);
+  if (!target) throw new Error('NO_CLOSED_RUN_AVAILABLE_FOR_FAST_ANALYSIS');
+  const startNs = Number(target.session.hostStartMonoNs);
+  const endNs = Number(target.session.hostEndMonoNs);
+  if (!Number.isFinite(startNs) || !Number.isFinite(endNs) || endNs <= startNs) throw new Error('CLOSED_RUN_WINDOW_INVALID');
+
+  const binSeconds = 600;
+  const binNs = binSeconds * 1e9;
+  const binCount = Math.max(1, Math.ceil((endNs - startNs) / binNs));
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    index: index + 1,
+    startSeconds: index * binSeconds,
+    durationSeconds: Math.min(binSeconds, Math.max(0, (endNs - (startNs + index * binNs)) / 1e9)),
+    cpu: [], rss: [], hostAvailable: [], hostCompressed: [], guestAvailable: [], swap: [],
+    pageoutFirst: null, pageoutLast: null,
+    sfFirst: null, sfLast: null
+  }));
+  const overall = { cpu: [], rss: [], hostAvailable: [], hostCompressed: [], guestAvailable: [], swap: [], pageoutFirst: null, pageoutLast: null };
+  const gib = 1024 ** 3;
+  const binFor = mono => {
+    const index = Math.floor((mono - startNs) / binNs);
+    return index >= 0 && index < bins.length ? bins[index] : null;
+  };
+
+  const streamJsonl = async (file, consume) => {
+    if (!exists(file)) return;
+    const readline = await import('node:readline');
+    const input = fs.createReadStream(file, { encoding: 'utf8' });
+    const rl = readline.createInterface({ input, crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      consume(row);
+    }
+  };
+
+  await streamJsonl(path.join(target.dir, 'host-process.jsonl'), row => {
+    if (!/qemu-system-aarch64|\/emulator(?:\s|$)/i.test(String(row.command ?? ''))) return;
+    const mono = Number(row.host_mono_ns);
+    if (!Number.isFinite(mono) || mono < startNs || mono > endNs) return;
+    const cpu = Number(row.cpu_pct);
+    const rss = Number(row.rss_kb) / 1024;
+    const bin = binFor(mono);
+    if (Number.isFinite(cpu)) { overall.cpu.push(cpu); bin?.cpu.push(cpu); }
+    if (Number.isFinite(rss)) { overall.rss.push(rss); bin?.rss.push(rss); }
+  });
+
+  await streamJsonl(path.join(target.dir, 'host-memory.jsonl'), row => {
+    const mono = Number(row.host_mono_ns);
+    if (!Number.isFinite(mono) || mono < startNs || mono > endNs) return;
+    const values = {
+      hostAvailable: Number(row.host_available_bytes) / gib,
+      hostCompressed: Number(row.host_compressed_bytes) / gib,
+      guestAvailable: Number(row.guest_available_bytes) / gib,
+      swap: Number(row.host_swap_used_bytes) / gib
+    };
+    const pageout = Number(row.pageout_count);
+    const bin = binFor(mono);
+    for (const key of Object.keys(values)) {
+      if (!Number.isFinite(values[key])) continue;
+      overall[key].push(values[key]);
+      bin?.[key].push(values[key]);
+    }
+    if (Number.isFinite(pageout)) {
+      if (overall.pageoutFirst === null) overall.pageoutFirst = pageout;
+      overall.pageoutLast = pageout;
+      if (bin) {
+        if (bin.pageoutFirst === null) bin.pageoutFirst = pageout;
+        bin.pageoutLast = pageout;
+      }
+    }
+  });
+
+  await streamJsonl(path.join(target.dir, 'surfaceflinger', 'counters.jsonl'), row => {
+    const mono = Number(row.host_mono_ns);
+    if (!Number.isFinite(mono) || mono < startNs || mono > endNs) return;
+    const bin = binFor(mono);
+    if (!bin) return;
+    if (!bin.sfFirst) bin.sfFirst = row;
+    bin.sfLast = row;
+  });
+
+  const deltaCounter = (first, last, key) => {
+    const a = Number(first?.[key]);
+    const b = Number(last?.[key]);
+    return Number.isFinite(a) && Number.isFinite(b) ? b - a : null;
+  };
+  const summarizeBin = bin => {
+    const pageoutDelta = Number.isFinite(bin.pageoutFirst) && Number.isFinite(bin.pageoutLast) ? bin.pageoutLast - bin.pageoutFirst : null;
+    const minutes = bin.durationSeconds / 60;
+    return {
+      index: bin.index,
+      startSeconds: bin.startSeconds,
+      durationSeconds: bin.durationSeconds,
+      emulatorCpuMeanPct: summarizeNumbers(bin.cpu).mean,
+      emulatorCpuP95Pct: summarizeNumbers(bin.cpu).p95,
+      emulatorRssMeanMiB: summarizeNumbers(bin.rss).mean,
+      hostAvailableMeanGiB: summarizeNumbers(bin.hostAvailable).mean,
+      hostCompressedMeanGiB: summarizeNumbers(bin.hostCompressed).mean,
+      guestAvailableMeanGiB: summarizeNumbers(bin.guestAvailable).mean,
+      guestAvailableMinGiB: summarizeNumbers(bin.guestAvailable).min,
+      pageoutDelta,
+      pageoutsPerMinute: Number.isFinite(pageoutDelta) && minutes > 0 ? pageoutDelta / minutes : null,
+      surfaceFlinger: {
+        samples: bin.sfFirst ? 1 + (bin.sfLast && bin.sfLast !== bin.sfFirst ? 1 : 0) : 0,
+        totalMissDelta: deltaCounter(bin.sfFirst, bin.sfLast, 'totalMissedFrames'),
+        gpuMissDelta: deltaCounter(bin.sfFirst, bin.sfLast, 'gpuMissedFrames'),
+        hwcMissDelta: deltaCounter(bin.sfFirst, bin.sfLast, 'hwcMissedFrames')
+      }
+    };
+  };
+  const summarizedBins = bins.map(summarizeBin).filter(bin => bin.durationSeconds > 0);
+  const pageoutDelta = Number.isFinite(overall.pageoutFirst) && Number.isFinite(overall.pageoutLast) ? overall.pageoutLast - overall.pageoutFirst : null;
+  const durationSeconds = (endNs - startNs) / 1e9;
+  const markers = readJSONL(path.join(target.dir, 'markers.jsonl'));
+  const seal = readJSON(path.join(target.dir, 'capture-seal.json'), null);
+  const result = {
+    schema: 1,
+    observedAt: nowISO(),
+    sessionId: target.id,
+    captureDir: target.dir,
+    session: {
+      startedUTC: target.session.startedUTC,
+      endedUTC: target.session.endedUTC,
+      captureState: target.session.captureState ?? null,
+      rawCaptureState: target.session.rawCaptureState ?? null,
+      durationSeconds
+    },
+    seal: seal ? {
+      rawCaptureState: seal.rawCaptureState ?? null,
+      rawManifestSHA256: seal.rawManifestSHA256 ?? null,
+      manifestSHA256: seal.finalManifestSHA256 ?? seal.manifestSHA256 ?? null,
+      semanticValid: seal.semanticValid ?? null
+    } : null,
+    wholeRun: {
+      emulatorCpuPercent: summarizeNumbers(overall.cpu),
+      emulatorRssMiB: summarizeNumbers(overall.rss),
+      hostAvailableGiB: summarizeNumbers(overall.hostAvailable),
+      hostCompressedGiB: summarizeNumbers(overall.hostCompressed),
+      guestAvailableGiB: summarizeNumbers(overall.guestAvailable),
+      hostSwapUsedGiB: summarizeNumbers(overall.swap),
+      pageoutDelta,
+      pageoutsPerMinute: Number.isFinite(pageoutDelta) && durationSeconds > 0 ? pageoutDelta / (durationSeconds / 60) : null
+    },
+    bins: summarizedBins,
+    annotations: {
+      gameSettings: markers.filter(row => row.event === 'GAME_SETTINGS'),
+      qualityReports: markers.filter(row => row.event === 'USER_QUALITY_REPORT'),
+      matchResults: markers.filter(row => row.event === 'MATCH_RESULT')
+    },
+    attributionRule: 'Only explicit GAME_SETTINGS timestamps define exact preset windows. User-observed Ultra High lag without a switch timestamp is decisive usability evidence but not assigned to an arbitrary telemetry bin.'
+  };
+  writeJSON(path.join(target.dir, 'closed-run-fast-analysis.json'), result);
+  return result;
+}
+
+function latestClosedRunFastResult() {
+  ensureDir(CAPTURE_ROOT);
+  const candidates = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const dir = path.join(CAPTURE_ROOT, entry.name);
+      return { id: entry.name, dir, session: readJSON(path.join(dir, 'session.json'), null) };
+    })
+    .filter(row => row.session?.endedUTC)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const target = candidates.at(-1);
+  if (!target) throw new Error('NO_CLOSED_RUN_AVAILABLE');
+  const analysis = readJSON(path.join(target.dir, 'closed-run-fast-analysis.json'), null);
+  if (!analysis) throw new Error(`FAST_ANALYSIS_RESULT_MISSING: ${target.id}`);
+  return {
+    sessionId: analysis.sessionId,
+    session: analysis.session,
+    seal: analysis.seal,
+    wholeRun: analysis.wholeRun,
+    bins: analysis.bins,
+    annotations: analysis.annotations,
+    attributionRule: analysis.attributionRule
+  };
+}
+
 function analyzeLatestClosedRunTrends() {
   ensureDir(CAPTURE_ROOT);
   const candidates = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
@@ -2488,6 +2683,13 @@ function audioHealthCheck() {
   };
   writeJSON(path.join(captureDir, 'audio-health.json'), result);
   return result;
+}
+
+function emulatorScaleProbe() {
+  const runtime = discover();
+  const help = command(runtime.emulator, ['-help'], { allowFailure: true, env: runtime.env, timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+  const lines = `${help.stdout}\n${help.stderr}`.split(/\r?\n/).filter(line => /scale|window|zoom|dpi|skin/i.test(line)).slice(0, 240);
+  return { observedAt: nowISO(), status: help.status, lines };
 }
 
 function audioBackendProbe() {
@@ -2754,11 +2956,13 @@ function prepareEmulatorWindowFit(runtime, contentWidth, contentHeight) {
   if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
     const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
     const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
-    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 96);
-    const titleChrome = 30;
-    const widthScale = screenWidth > controlWidth ? (screenWidth - controlWidth) / contentWidth : 1;
-    const heightScale = screenHeight > titleChrome ? (screenHeight - titleChrome) / contentHeight : 1;
-    const scale = Math.max(0.1, Math.min(widthScale, heightScale, 1));
+    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 64);
+    const titleChrome = Number(process.env.TFTMAC_NATIVE_TOPBAR_HEIGHT ?? 30);
+    const backingScale = Number(process.env.TFTMAC_HOST_BACKING_SCALE ?? 1) || 1;
+    const widthScalePoints = screenWidth > controlWidth ? (screenWidth - controlWidth) / contentWidth : 1;
+    const heightScalePoints = screenHeight > titleChrome ? (screenHeight - titleChrome) / contentHeight : 1;
+    const logicalScale = Math.max(0.1, Math.min(widthScalePoints, heightScalePoints, 4));
+    const scale = logicalScale * backingScale;
     const userIniPath = path.join(runtime.avdDir, 'emulator-user.ini');
     let text = exists(userIniPath) ? fs.readFileSync(userIniPath, 'utf8') : '[General]\n';
     text = setUserIniValue(text, 'window.x', 0);
@@ -3629,10 +3833,42 @@ function percentile(values, p) {
   return a[idx];
 }
 
+function finalizeRawManifest(captureDir) {
+  const rawRelativePaths = [
+    'session.json',
+    'runtime-state.json',
+    'package-state.json',
+    'renderer-state.json',
+    'host-events.jsonl',
+    'clock-sync.jsonl',
+    'markers.jsonl',
+    'emulator.stdout.log',
+    'emulator.stderr.log',
+    'logcat.raw.txt',
+    'host-process.csv',
+    'host-process.jsonl',
+    'host-memory.csv',
+    'host-memory.jsonl',
+    'surfaceflinger/counters.jsonl',
+    'gfxinfo/framestats.raw.txt'
+  ];
+  const lines = [];
+  for (const rel of rawRelativePaths) {
+    const file = path.join(captureDir, rel);
+    if (!exists(file)) continue;
+    try {
+      if (fs.statSync(file).isFile()) lines.push(`${sha256File(file)}  ${rel}`);
+    } catch {}
+  }
+  const manifestPath = path.join(captureDir, 'manifest.raw.sha256');
+  fs.writeFileSync(manifestPath, `${lines.join('\n')}${lines.length ? '\n' : ''}`);
+  return { path: manifestPath, sha256: sha256File(manifestPath), artifactCount: lines.length };
+}
+
 function finalizeManifest(captureDir) {
   const entries = [];
   for (const file of walk(captureDir, 12, 50000)) {
-    try { if (fs.statSync(file).isFile() && path.basename(file) !== 'manifest.sha256') entries.push(file); } catch {}
+    try { if (fs.statSync(file).isFile() && !['manifest.sha256'].includes(path.basename(file))) entries.push(file); } catch {}
   }
   entries.sort();
   const lines = entries.map(file => `${sha256File(file)}  ${path.relative(captureDir, file)}`);
@@ -3957,16 +4193,40 @@ async function stopControl() {
   const state = readJSON(CONTROL_STATE);
   if (!state?.captureDir) throw new Error('No active direct-control session.');
   const captureDir = state.captureDir;
-  if (deviceReady(runtime)) {
-    packageState(runtime, captureDir);
-    rendererState(runtime, captureDir);
-    const finalGfx = adb(runtime, ['shell', 'dumpsys', 'gfxinfo', PACKAGE, 'framestats'], { allowFailure: true, timeout: 30000 }).stdout;
-    fs.appendFileSync(path.join(captureDir, 'gfxinfo', 'framestats.raw.txt'), `\n# ${nowISO()} final\n${finalGfx}\n`);
-  }
+
+  // CRITICAL SHUTDOWN CONTRACT: stop producers and seal raw evidence first.
+  // No SDK/AVD inventory, package-signing pull, SQL work, or expensive derived
+  // analysis is allowed to sit between sampler shutdown and the raw seal.
   if (processAlive(state.samplerPid)) { try { process.kill(state.samplerPid, 'SIGTERM'); } catch {} }
   for (let i = 0; i < 10 && processAlive(state.samplerPid); i += 1) await sleep(500);
-  const filteredLogLines = filterLogcat(captureDir);
 
+  const sessionPath = path.join(captureDir, 'session.json');
+  const session = readJSON(sessionPath, {});
+  const pkg = readJSON(path.join(captureDir, 'package-state.json'), {});
+  session.endedUTC = nowISO();
+  session.hostEndMonoNs = monoNs().toString();
+  session.rawCaptureState = 'SEALED';
+  session.semanticValid = pkg.installerPackage === 'com.android.vending'
+    && exists(path.join(captureDir, 'host-process.jsonl'))
+    && exists(path.join(captureDir, 'host-memory.jsonl'))
+    && exists(path.join(captureDir, 'logcat.raw.txt'));
+  session.captureState = session.semanticValid ? 'COMPLETE' : 'PARTIAL';
+  writeJSON(sessionPath, session);
+
+  const rawManifest = finalizeRawManifest(captureDir);
+  writeJSON(path.join(captureDir, 'capture-seal.json'), {
+    sessionId: state.sessionId,
+    sealedAt: nowISO(),
+    rawCaptureState: 'SEALED',
+    rawManifestSHA256: rawManifest.sha256,
+    rawArtifactCount: rawManifest.artifactCount,
+    semanticValid: session.semanticValid,
+    note: 'Raw capture was sealed immediately after telemetry producers stopped. All derived analysis, inventory, and SQLite work is post-seal and cannot invalidate this capture.'
+  });
+
+  // Everything below this line is post-seal derived work. It may fail without
+  // compromising the completed game capture.
+  const filteredLogLines = filterLogcat(captureDir);
   const frameText = exists(path.join(captureDir, 'gfxinfo', 'framestats.raw.txt')) ? fs.readFileSync(path.join(captureDir, 'gfxinfo', 'framestats.raw.txt'), 'utf8') : '';
   const frames = parseFrameStats(frameText);
   const frameMs = frames.flatMap(row => row.intervalNs === null ? [] : [Number(row.intervalNs) / 1e6]).filter(v => Number.isFinite(v) && v > 0 && v < 10000);
@@ -3985,48 +4245,33 @@ async function stopControl() {
   };
   metrics.jankPct = frameMs.length ? metrics.jankCount * 100 / frameMs.length : null;
   metrics.presentedFPSApprox = metrics.meanFrameMs && metrics.meanFrameMs > 0 ? 1000 / metrics.meanFrameMs : null;
+  session.nativeFrameTimingValid = frameMs.length > 0;
+  writeJSON(sessionPath, session);
   writeJSON(path.join(captureDir, 'frame-metrics.json'), metrics);
 
-  const pkg = readJSON(path.join(captureDir, 'package-state.json'), {});
-  const runtimeBytes = recursiveSize(runtime.sdkRoot);
-  const avdBytes = runtime.avdDir ? recursiveSize(runtime.avdDir) : null;
+  // Runtime/AVD size is configuration inventory, not per-game shutdown work.
+  // Keep it out of the critical path; a dedicated inventory action can refresh
+  // those values when the runtime actually changes.
+  const previousStorage = readJSON(path.join(captureDir, 'storage-bom.json'), {});
   const packageGuestBytes = Object.values(pkg.apkBytes ?? {}).reduce((sum, value) => sum + (Number(value) || 0), 0) || null;
   const storage = {
     observedAt: nowISO(),
-    sdkBytes: runtimeBytes,
-    avdBytes,
+    sdkBytes: previousStorage.sdkBytes ?? null,
+    avdBytes: previousStorage.avdBytes ?? null,
     packageGuestBytes,
     captureBytes: recursiveSize(captureDir),
+    inventoryDeferred: true,
     provisionalCeilingBytes: 35 * 1024 ** 3
   };
   writeJSON(path.join(captureDir, 'storage-bom.json'), storage);
-  storage.captureBytes = recursiveSize(captureDir);
-  writeJSON(path.join(captureDir, 'storage-bom.json'), storage);
-
-  const sessionPath = path.join(captureDir, 'session.json');
-  const session = readJSON(sessionPath, {});
-  session.endedUTC = nowISO();
-  session.hostEndMonoNs = monoNs().toString();
-  const markersAtStop = readJSONL(path.join(captureDir, 'markers.jsonl'));
-  const matchResultObserved = session.matchResultObserved === true || markersAtStop.some(row => row.event === 'MATCH_RESULT');
-  session.rawCaptureState = 'SEALED';
-  session.semanticValid = pkg.installerPackage === 'com.android.vending'
-    && exists(path.join(captureDir, 'host-process.jsonl'))
-    && exists(path.join(captureDir, 'host-memory.jsonl'))
-    && exists(path.join(captureDir, 'logcat.raw.txt'));
-  session.nativeFrameTimingValid = frameMs.length > 0;
-  session.captureState = session.semanticValid ? 'COMPLETE' : 'PARTIAL';
-  writeJSON(sessionPath, session);
 
   const manifestSHA256 = finalizeManifest(captureDir);
+  const seal = readJSON(path.join(captureDir, 'capture-seal.json'), {});
   writeJSON(path.join(captureDir, 'capture-seal.json'), {
-    sessionId: state.sessionId,
-    sealedAt: nowISO(),
-    rawCaptureState: 'SEALED',
-    manifestSHA256,
-    semanticValid: session.semanticValid,
-    nativeFrameTimingValid: session.nativeFrameTimingValid,
-    note: 'Raw capture is sealed before SQLite/post-processing. Post-processing failure cannot invalidate or discard this capture.'
+    ...seal,
+    finalizedAt: nowISO(),
+    finalManifestSHA256: manifestSHA256,
+    nativeFrameTimingValid: session.nativeFrameTimingValid
   });
 
   let normalization = null;
@@ -4038,11 +4283,12 @@ async function stopControl() {
       observedAt: nowISO(),
       error: error instanceof Error ? error.message : String(error),
       rawCapturePreserved: true,
+      rawManifestSHA256: rawManifest.sha256,
       manifestSHA256
     };
     writeJSON(path.join(captureDir, 'normalization-error.json'), normalizationError);
   }
-  const controlResult = { sessionId: state.sessionId, manifestSHA256, rawCaptureState: 'SEALED', metrics, storage, normalization, normalizationError };
+  const controlResult = { sessionId: state.sessionId, rawManifestSHA256: rawManifest.sha256, manifestSHA256, rawCaptureState: 'SEALED', metrics, storage, normalization, normalizationError };
   writeJSON(path.join(captureDir, 'control-result.json'), controlResult);
   const result = { sessionId: state.sessionId, captureDir, ...controlResult };
   try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
@@ -4497,12 +4743,56 @@ async function main() {
   if (action === 'analyze-session') { json(analyzeContinuousRun()); return; }
   if (action === 'ingest-analysis') { json(ingestContinuousRunIntoLab()); return; }
   if (action === 'trace-capabilities') { json(traceCapabilities()); return; }
+  if (action === 'analyze-latest-closed-run-fast') { json(await analyzeLatestClosedRunFast()); return; }
+  if (action === 'latest-closed-run-fast-result') { json(latestClosedRunFastResult()); return; }
+  if (action === 'export-latest-closed-run-fast-result') {
+    const outputPath = path.join(repoRoot, '.tftmac-latest-run-analysis.json');
+    try {
+      const result = latestClosedRunFastResult();
+      writeJSON(outputPath, result);
+      json({ action: 'LATEST_CLOSED_RUN_FAST_RESULT_EXPORTED', outputPath, sessionId: result.sessionId });
+    } catch (error) {
+      writeJSON(outputPath, { error: error instanceof Error ? error.message : String(error), observedAt: nowISO() });
+      json({ action: 'LATEST_CLOSED_RUN_FAST_RESULT_EXPORT_FAILED', outputPath });
+    }
+    return;
+  }
+  if (action === 'export-latest-closed-session-state') {
+    const outputPath = path.join(repoRoot, '.tftmac-latest-closed-session.json');
+    const candidates = fs.readdirSync(CAPTURE_ROOT, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => {
+        const dir = path.join(CAPTURE_ROOT, entry.name);
+        return { id: entry.name, dir, session: readJSON(path.join(dir, 'session.json'), null) };
+      })
+      .filter(row => row.session?.endedUTC)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const target = candidates.at(-1);
+    if (!target) {
+      writeJSON(outputPath, { error: 'NO_CLOSED_SESSION', observedAt: nowISO() });
+    } else {
+      writeJSON(outputPath, {
+        observedAt: nowISO(),
+        sessionId: target.id,
+        captureDir: target.dir,
+        session: target.session,
+        seal: readJSON(path.join(target.dir, 'capture-seal.json'), null),
+        controlResult: readJSON(path.join(target.dir, 'control-result.json'), null),
+        hasFastAnalysis: exists(path.join(target.dir, 'closed-run-fast-analysis.json')),
+        hasTrendAnalysis: exists(path.join(target.dir, 'run-trend-analysis.json')),
+        hasContinuousAnalysis: exists(path.join(target.dir, 'continuous-run-analysis.json'))
+      });
+    }
+    json({ action: 'LATEST_CLOSED_SESSION_STATE_EXPORTED', outputPath });
+    return;
+  }
   if (action === 'analyze-latest-closed-run-trends') { json(analyzeLatestClosedRunTrends()); return; }
   if (action === 'compare-latest-runs') { json(compareLatestRuns()); return; }
   if (action === 'screen-state-probe') { json(screenStateProbe()); return; }
   if (action === 'reveal-lock-screen') { json(revealLockScreen()); return; }
   if (action === 'wake-guest-screen') { json(wakeGuestScreenAction()); return; }
   if (action === 'audio-health') { json(audioHealthCheck()); return; }
+  if (action === 'emulator-scale-probe') { json(emulatorScaleProbe()); return; }
   if (action === 'audio-backend-probe') { json(audioBackendProbe()); return; }
   if (action === 'disconnect-window-audit') { json(disconnectWindowAudit()); return; }
   if (action === 'runtime-fault-audit') { json(runtimeFaultAudit()); return; }

@@ -81,17 +81,17 @@ struct TFTMACTopBarView: View {
     @ObservedObject var coordinator: TFTMACWindowCoordinator
 
     var body: some View {
-        HStack(spacing: 13) {
-            TFTMACLogo(size: 25)
+        HStack(spacing: 8) {
+            TFTMACLogo(size: 20)
             Text("TFTMAC")
-                .font(.system(size: 15, weight: .black, design: .rounded))
+                .font(.system(size: 13, weight: .black, design: .rounded))
                 .tracking(1)
             Circle()
                 .fill(bridge.phase == .running ? Color.green : Color.orange)
                 .frame(width: 7, height: 7)
                 .padding(.leading, 6)
             Text(bridge.phase.rawValue)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
             Text("1920 × 1080")
@@ -122,9 +122,9 @@ struct TFTMACTopBarView: View {
             .buttonStyle(TFTMACToolButtonStyle())
             .help("Quit TFTMAC")
         }
-        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
         .foregroundStyle(.white)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.92))
         .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.12)).frame(height: 1) }
@@ -250,7 +250,7 @@ struct TFTMACToolButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
+            .frame(width: 24, height: 24)
             .background(Circle().fill(.white.opacity(configuration.isPressed ? 0.16 : 0.07)))
     }
 }
