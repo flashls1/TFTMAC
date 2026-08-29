@@ -358,9 +358,11 @@ Control presentation requirements:
 
 The final product requirement remains stronger:
 
-> **One native-feeling TFTMAC macOS application surface with true fullscreen and emulator chrome hidden.**
+> **One legitimate native TFTMAC macOS application with a standard AppKit window, native traffic-light controls/fullscreen, and the Android Emulator embedded through its controller interface with the Qt window hidden.**
 
-But the custom native presentation layer does **not** block the first control. When implemented, it must be compared against the direct emulator control and rejected if it materially worsens frame time or input latency.
+The implementation authority for that product layer is `ssot/TFTMAC_NATIVE_APP_EMBEDDED_BUILD_PLAN.md`. The old separate-QEMU-window resizing/Accessibility/overlay approach is superseded and must not be resumed as the production architecture.
+
+The embedded presentation layer does **not** block the first control. When implemented, it must be compared against the direct emulator control and rejected or redesigned if it materially worsens source FPS, presentation FPS, frame timing, input latency, audio, or graphics capability.
 
 No presentation system is allowed to reintroduce guest software video encoding.
 
