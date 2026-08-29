@@ -375,20 +375,27 @@ cpu_cores_observed
 
 ## 8.2 Guest RAM
 
-Requested product UI range:
+Supported product UI range:
 
 ```text
-4 GB through 10 GB
+4.0 GB through 8.0 GB
 ```
 
-However, Google currently documents the emulator `-memory` override as 1536-8192 MB. Therefore:
+Increment:
 
-- 4-8 GB are the initially supported/validated choices;
-- 9-10 GB appear only after a one-time capability validation proves the installed Emulator build accepts them safely;
-- do not pretend 9-10 GB are supported before that proof;
-- store support capability by emulator version so a future emulator update can revalidate automatically.
+```text
+0.5 GB
+```
 
-UI control: 1 GB stepper/dropdown.
+Exact choices:
+
+```text
+4.0 / 4.5 / 5.0 / 5.5 / 6.0 / 6.5 / 7.0 / 7.5 / 8.0 GB
+```
+
+Do not expose 9 GB or 10 GB. Keep the RAM control simple and inside the supported emulator range.
+
+UI control: stepper/dropdown in 0.5 GB increments.
 
 Apply mode: `RESTART_ANDROID`.
 
@@ -397,7 +404,7 @@ Every session logs:
 ```text
 ram_mb_requested
 ram_mb_observed
-ram_support_class = VALIDATED | EXPERIMENTAL | REJECTED
+ram_support_class = VALIDATED | REJECTED
 ```
 
 ## 8.3 ASG draw flush interval
@@ -816,8 +823,7 @@ Examples:
 
 ```text
 CPU 2-8 cores: VALIDATED after launch/runtime proof
-RAM 4-8 GB: VALIDATED range after launch/runtime proof
-RAM 9-10 GB: EXPERIMENTAL until installed emulator accepts it
+RAM 4.0-8.0 GB in 0.5 GB increments: VALIDATED range after launch/runtime proof
 ASG flush 800: BASELINE
 ASG flush 400: EXPERIMENTAL until A/B verdict
 1920x1080: BASELINE / locked
@@ -884,7 +890,7 @@ Exit gate: user can operate Android/TFT without another visible emulator UI.
 - Implement setting registry.
 - Profile persistence/config hashing.
 - CPU cores 2-8.
-- RAM 4-8 validated plus capability-gated 9-10.
+- RAM 4.0-8.0 GB in 0.5 GB increments.
 - ASG flush 400/800.
 - Apply/restart workflow.
 
@@ -958,7 +964,7 @@ mouse/touch/keyboard work
 CoreAudio works
 TFT launches and plays a full match
 CPU selection 2-8 available in Settings
-RAM selection available with validated capability rules
+RAM selection 4.0-8.0 GB in 0.5 GB increments available in Settings
 ASG flush 800/400 available in Settings
 settings persist in profiles
 Apply & Restart safely starts a new run
