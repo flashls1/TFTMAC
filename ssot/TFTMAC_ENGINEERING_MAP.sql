@@ -1354,6 +1354,15 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T23:45:40.943Z','Normalized RAM comparison','Converted raw pageout totals to per-minute rates and retained 5 GiB while rejecting a 4 GiB cut for now.','ev_5gb_6gb_normalized'),
 ('2026-08-28T23:47:00Z','Logger reliability hardening','Decoupled raw capture sealing and cleanup from SQLite normalization so post-processing cannot strand or invalidate a long run.','ev_logger_raw_seal');
 
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; mactician_compatible_5gb_v1; raw capture SEALED; SQLite COMPLETE; 18/18 required artifacts present; manifest f17014ce217742682898a4562aa873a58d8d3fed09b765603c6d4052ea49aa6b.'),
+('latest_closed_run_memory','Second sustained 5 GiB run reproduced the operating envelope. Full run weighted means: host available 5.425 GiB, host compressed 2.793 GiB, guest available 2.224 GiB, emulator RSS 5829 MiB. Heavy 10-minute windows reached CPU 229-288%, guest available about 1.70-1.90 GiB, host available about 5.01-5.26 GiB, compressed about 2.97-3.40 GiB. Keep 5120 MB; do not reduce to 4096 MB.'),
+('latest_closed_run_pageouts','Current 5 GiB run: 10711 pageouts over 3860.24s = 166.48/min including cold boot. Excluding the first 10-minute cold-boot/startup window, sustained rate is about 127.94/min, close to the prior 5 GiB run about 133.54/min. Old 6 GiB baseline was about 207.18/min. Directional evidence continues to favor 5 GiB.'),
+('latest_closed_run_audio','Explicit CoreAudio held through the full run: TFT OpenSL ES 44.1 kHz stereo playback active, ranchu pcm_write I/O failures=0, mixer underruns partial=0 empty=0.'),
+('latest_closed_run_network','TFT stayed PID 5276 and Android network 101 remained assigned. End-of-game TFT connectivity callback requests at about 19:30 were immediately assigned to network 101; no Android LOST/UNAVAIL sequence or process restart was observed.'),
+('latest_closed_run_presentation','Post-run SurfaceFlinger state: 60 Hz, 1280x720 TFT SurfaceView scaled 1.5x to 1920x1080, total missed=562 and HWC missed=562. The old parser converted an actual zero counter to NULL; parser has been corrected to preserve zero. Current evidence continues to prioritize presentation/HWC pacing over host GPU saturation.'),
+('current_graphics_next_action','Proceed with one-factor mactician_compatible_5gb_flush400_v1 experiment: ASG drawFlushInterval 800 -> 400 only, after validating the corrected zero-counter parser and sealed-run comparison. Keep RAM=5120, Medium/60/Performance OFF, CoreAudio, ANGLE/Vulkan/gfxstream/MoltenVK, resolution and all other transport fields fixed.');
+
 COMMIT;
 
 -- Recommended queries during every future work session:

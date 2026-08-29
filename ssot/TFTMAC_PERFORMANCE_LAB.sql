@@ -636,6 +636,16 @@ INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,eviden
 INSERT OR REPLACE INTO decisions(id,experiment_id,decision,rationale,cold_confirmation_complete,promoted_config_id,decided_at,notes) VALUES
 ('decision_ram5_operational_keep','exp_ram_5gb_ab','KEEP','Retain 5120 MB guest RAM for continued development: host-pressure indicators improved materially and the guest retained usable headroom without OOM/ANR. Do not cut to 4096 MB now.','0',NULL,'2026-08-28T23:49:00Z','KEEP means current development default, not a permanent promoted performance fact.');
 
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; mactician_compatible_5gb_v1; raw SEALED; normalized COMPLETE; 18/18 required artifacts present.'),
+('latest_closed_run_memory','Full-run weighted means: emulator CPU 171.87%, RSS 5829 MiB, host available 5.425 GiB, host compressed 2.793 GiB, guest available 2.224 GiB. Heavy windows reproduced about 1.70-1.90 GiB guest headroom. Keep 5120 MB and defer/reject 4096 MB for now.'),
+('latest_closed_run_pageouts','10711 pageouts / 3860.24s = 166.48 per minute including cold boot. Excluding first 10 minutes gives about 127.94 per minute, close to prior 5 GiB run 133.54 per minute and below old 6 GiB baseline 207.18 per minute. Treat as repeated directional support, not perfectly matched workload proof.'),
+('latest_closed_run_audio','CoreAudio sustained: explicit backend, 0 ranchu pcm_write I/O errors, active TFT 44.1 kHz stereo OpenSL ES track, 0 mixer underruns.'),
+('latest_closed_run_network','No emulator/Android network disconnect reproduced: TFT PID stayed 5276; network 101 stayed assigned; end-of-game callback requests were immediately reassigned to network 101.'),
+('latest_closed_run_presentation','Surface remains 1280x720 scaled to 1920x1080; post-run total missed=562 and HWC missed=562 at 60 Hz. Zero-valued GPU counter parsing was fixed so zero no longer becomes NULL. Next graphics intervention remains ASG drawFlushInterval 800 -> 400 only.'),
+('current_5gb_operational_decision','KEEP 5120 MB as development runtime. Two long runs reproduce lower pressure/pageout direction versus 6144 MB while maintaining adequate heavy-game guest headroom; 4096 MB remains deferred.'),
+('current_graphics_experiment','Next one-factor candidate: mactician_compatible_5gb_flush400_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.');
+
 COMMIT;
 
 -- Recommended first queries after ingestion:

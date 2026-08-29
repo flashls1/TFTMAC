@@ -77,6 +77,7 @@ function appendJSONL(file, value) { fs.appendFileSync(file, `${JSON.stringify(va
 function readJSON(file, fallback = null) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 function writeJSON(file, value) { ensureDir(path.dirname(file)); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); }
 function sha256File(file) { const h = crypto.createHash('sha256'); h.update(fs.readFileSync(file)); return h.digest('hex'); }
+function matchNumber(text, pattern) { const match = String(text ?? '').match(pattern); return match ? Number(match[1]) : null; }
 
 function command(executablePath, args = [], options = {}) {
   const result = spawnSync(executablePath, args, {
@@ -2269,9 +2270,9 @@ function surfaceFlingerCounters(runtime) {
     observedAt: nowISO(),
     status: dump.status,
     renderRateHz: Number(text.match(/renderRate=([0-9.]+) Hz/)?.[1] ?? NaN) || null,
-    totalMissedFrames: Number(text.match(/Total missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
-    hwcMissedFrames: Number(text.match(/HWC missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
-    gpuMissedFrames: Number(text.match(/GPU missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+    totalMissedFrames: matchNumber(text, /Total missed frame count:\s*(\d+)/),
+    hwcMissedFrames: matchNumber(text, /HWC missed frame count:\s*(\d+)/),
+    gpuMissedFrames: matchNumber(text, /GPU missed frame count:\s*(\d+)/),
     gameRequested60Hz: /GameFrameRateOverrides=[\s\S]*\{10215,\s*0\s+60\}/.test(text) || /GameActivity[^\n]*requestedFrameRate:\s*\{60\.00 Hz/.test(text)
   };
 }
@@ -2373,7 +2374,8 @@ function compareLatestRuns() {
       const dir = path.join(CAPTURE_ROOT, entry.name);
       const continuous = path.join(dir, 'continuous-run-analysis.json');
       const gameplay = path.join(dir, 'gameplay-analysis.json');
-      return { id: entry.name, dir, analysisPath: exists(continuous) ? continuous : (exists(gameplay) ? gameplay : null) };
+      const trend = path.join(dir, 'run-trend-analysis.json');
+      return { id: entry.name, dir, analysisPath: exists(continuous) ? continuous : (exists(gameplay) ? gameplay : (exists(trend) ? trend : null)) };
     })
     .filter(row => row.analysisPath)
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -2381,15 +2383,27 @@ function compareLatestRuns() {
     .map(row => {
       const analysis = readJSON(row.analysisPath, {});
       const runtimeInfo = readJSON(path.join(row.dir, 'runtime-state.json'), {});
-      const mem = analysis.memory ?? {};
-      const cpu = analysis.hostEmulator?.cpuPercent ?? {};
-      const rss = analysis.hostEmulator?.rssMiB ?? {};
+      const trendBins = Array.isArray(analysis.bins) ? analysis.bins : [];
+      const trendDuration = trendBins.reduce((sum, bin) => sum + (Number(bin.durationSeconds) || 0), 0);
+      const weightedTrend = key => trendDuration > 0
+        ? trendBins.reduce((sum, bin) => sum + (Number(bin.durationSeconds) || 0) * (Number(bin[key]) || 0), 0) / trendDuration
+        : null;
+      const trendPageoutDelta = trendBins.length ? trendBins.reduce((sum, bin) => sum + (Number(bin.pageoutDelta) || 0), 0) : null;
+      const mem = analysis.memory ?? (trendBins.length ? {
+        hostAvailableGiB: { mean: weightedTrend('hostAvailableMeanGiB') },
+        hostCompressedGiB: { mean: weightedTrend('hostCompressedMeanGiB'), p95: null },
+        hostSwapUsedGiB: { mean: null },
+        guestAvailableGiB: { mean: weightedTrend('guestAvailableMeanGiB'), min: null },
+        pageoutDelta: trendPageoutDelta
+      } : {});
+      const cpu = analysis.hostEmulator?.cpuPercent ?? (trendBins.length ? { mean: weightedTrend('emulatorCpuMeanPct'), p95: null } : {});
+      const rss = analysis.hostEmulator?.rssMiB ?? (trendBins.length ? { mean: weightedTrend('emulatorRssMeanMiB'), p95: null } : {});
       return {
         sessionId: row.id,
         control: runtimeInfo.control ?? analysis.runtimeConfig ?? null,
         ramMB: runtimeInfo.ramMB ?? null,
-        durationSeconds: analysis.run?.durationSeconds ?? analysis.match?.durationSeconds ?? null,
-        captureState: analysis.run?.captureState ?? analysis.captureState ?? null,
+        durationSeconds: analysis.run?.durationSeconds ?? analysis.match?.durationSeconds ?? analysis.runDurationSeconds ?? null,
+        captureState: analysis.run?.captureState ?? analysis.captureState ?? readJSON(path.join(row.dir, 'session.json'), {})?.captureState ?? null,
         completedMatches: analysis.annotations?.completedMatches ?? (analysis.match ? 1 : 0),
         wins: analysis.annotations?.wins ?? (analysis.match?.placement === 1 ? 1 : 0),
         emulatorCpuMeanPct: cpu.mean ?? null,
@@ -2403,27 +2417,28 @@ function compareLatestRuns() {
         guestAvailableMeanGiB: mem.guestAvailableGiB?.mean ?? null,
         guestAvailableMinGiB: mem.guestAvailableGiB?.min ?? null,
         pageoutDelta: mem.pageoutDelta ?? null,
-        pageoutsPerMinute: Number.isFinite(Number(mem.pageoutDelta)) && Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds) > 0
-          ? Number(mem.pageoutDelta) / (Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds) / 60)
+        pageoutsPerMinute: Number.isFinite(Number(mem.pageoutDelta)) && Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds ?? analysis.runDurationSeconds) > 0
+          ? Number(mem.pageoutDelta) / (Number(analysis.run?.durationSeconds ?? analysis.match?.durationSeconds ?? analysis.runDurationSeconds) / 60)
           : null,
         qualityReports: analysis.annotations?.qualityReports ?? []
       };
     });
   const baseline6 = [...rows].reverse().find(row => Number(row.ramMB) === 6144) ?? null;
   const candidate5 = [...rows].reverse().find(row => Number(row.ramMB) === 5120) ?? null;
+  const safeDiff = (candidate, baseline) => Number.isFinite(candidate) && Number.isFinite(baseline) ? candidate - baseline : null;
   const delta = baseline6 && candidate5 ? {
-    hostAvailableMeanGiB: candidate5.hostAvailableMeanGiB - baseline6.hostAvailableMeanGiB,
-    hostCompressedMeanGiB: candidate5.hostCompressedMeanGiB - baseline6.hostCompressedMeanGiB,
-    hostCompressedP95GiB: candidate5.hostCompressedP95GiB - baseline6.hostCompressedP95GiB,
-    hostSwapMeanGiB: candidate5.hostSwapMeanGiB - baseline6.hostSwapMeanGiB,
-    guestAvailableMeanGiB: candidate5.guestAvailableMeanGiB - baseline6.guestAvailableMeanGiB,
-    pageoutDelta: candidate5.pageoutDelta - baseline6.pageoutDelta,
-    pageoutsPerMinute: candidate5.pageoutsPerMinute - baseline6.pageoutsPerMinute,
+    hostAvailableMeanGiB: safeDiff(candidate5.hostAvailableMeanGiB, baseline6.hostAvailableMeanGiB),
+    hostCompressedMeanGiB: safeDiff(candidate5.hostCompressedMeanGiB, baseline6.hostCompressedMeanGiB),
+    hostCompressedP95GiB: safeDiff(candidate5.hostCompressedP95GiB, baseline6.hostCompressedP95GiB),
+    hostSwapMeanGiB: safeDiff(candidate5.hostSwapMeanGiB, baseline6.hostSwapMeanGiB),
+    guestAvailableMeanGiB: safeDiff(candidate5.guestAvailableMeanGiB, baseline6.guestAvailableMeanGiB),
+    pageoutDelta: safeDiff(candidate5.pageoutDelta, baseline6.pageoutDelta),
+    pageoutsPerMinute: safeDiff(candidate5.pageoutsPerMinute, baseline6.pageoutsPerMinute),
     pageoutsPerMinutePercent: Number.isFinite(candidate5.pageoutsPerMinute) && Number.isFinite(baseline6.pageoutsPerMinute) && baseline6.pageoutsPerMinute !== 0
       ? 100 * (candidate5.pageoutsPerMinute - baseline6.pageoutsPerMinute) / baseline6.pageoutsPerMinute
       : null,
-    emulatorCpuMeanPct: candidate5.emulatorCpuMeanPct - baseline6.emulatorCpuMeanPct,
-    emulatorRssMeanMiB: candidate5.emulatorRssMeanMiB - baseline6.emulatorRssMeanMiB
+    emulatorCpuMeanPct: safeDiff(candidate5.emulatorCpuMeanPct, baseline6.emulatorCpuMeanPct),
+    emulatorRssMeanMiB: safeDiff(candidate5.emulatorRssMeanMiB, baseline6.emulatorRssMeanMiB)
   } : null;
   return { observedAt: nowISO(), runs: rows, baseline6GiB: baseline6, candidate5GiB: candidate5, candidateMinusBaseline: delta };
 }
@@ -2785,9 +2800,9 @@ function traceCapabilities() {
     },
     surfaceFlingerCounters: {
       renderRateHz: Number(sfText.match(/renderRate=([0-9.]+) Hz/)?.[1] ?? NaN) || null,
-      totalMissedFrames: Number(sfText.match(/Total missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
-      hwcMissedFrames: Number(sfText.match(/HWC missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
-      gpuMissedFrames: Number(sfText.match(/GPU missed frame count:\s*(\d+)/)?.[1] ?? NaN) || null,
+      totalMissedFrames: matchNumber(sfText, /Total missed frame count:\s*(\d+)/),
+      hwcMissedFrames: matchNumber(sfText, /HWC missed frame count:\s*(\d+)/),
+      gpuMissedFrames: matchNumber(sfText, /GPU missed frame count:\s*(\d+)/),
       gameRequested60Hz: /GameFrameRateOverrides=[\s\S]*\{10215,\s*0\s+60\}/.test(sfText) || /GameActivity[^\n]*requestedFrameRate:\s*\{60\.00 Hz/.test(sfText),
       scope: 'cumulative display counters since boot; not match-scoped'
     },
