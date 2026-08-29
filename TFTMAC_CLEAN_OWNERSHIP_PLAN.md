@@ -6,6 +6,10 @@
 **Date frozen:** 2026-08-29  
 **Scope:** source identity, runtime authority, validation/CI, storage reclamation, redundant-project retirement, and safe continuation of the native application build.
 
+**Mandatory execution preflight:** `TFTMAC_CLEAN_OWNERSHIP_PREFLIGHT.md`
+
+> Implementation agents must read the preflight before repository discovery. The preflight contains the exact already-discovered files, symbols, hashes, branch state, storage paths, validation coupling, migration hazards, and KEEP/DELETE/REWRITE/MIGRATE classifications. Do not repeat discovery already recorded there unless its referenced source/hash has changed or the item is explicitly marked REMEASURE.
+
 ---
 
 ## 0. Executive directive
