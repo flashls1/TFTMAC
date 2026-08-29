@@ -77,6 +77,11 @@ xcrun clang \
     -target arm64-apple-macosx12.0 \
     -fsyntax-only \
     "$LAUNCHER_DIR/EmulatorHost/main.c"
+
+# The current product is the native TFTMAC shell around the stock Play runtime.
+# Build it during production validation so Swift/AppKit/window integration cannot drift.
+/bin/zsh "$PROJECT_DIR/scripts/build-tftmac-app.command" >/dev/null
+
 "$PROJECT_DIR/scripts/build-tft-screen-classifier.command" >/dev/null
 "$PROJECT_DIR/runtime/tft-screen-classifier" --self-test >/dev/null
 

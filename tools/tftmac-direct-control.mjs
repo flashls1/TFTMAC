@@ -640,7 +640,7 @@ function startEmulator(runtime, captureDir) {
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
-    `@${AVD_NAME}`, '-id', 'TFTMAC-Play-Authority', '-port', EMULATOR_PORT,
+    `@${AVD_NAME}`, '-id', 'TFTMAC', '-port', EMULATOR_PORT,
     '-gpu', 'host', '-audio', 'coreaudio', '-cores', '6', '-memory', String(PLAY_RAM_MB),
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
@@ -716,16 +716,26 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
-    `@${AVD_NAME}`, '-id', 'TFTMAC-Mactician-Compatible', '-port', EMULATOR_PORT,
+    `@${AVD_NAME}`, '-id', 'TFTMAC', '-port', EMULATOR_PORT,
     '-gpu', 'host', '-audio', 'coreaudio', '-feature', DONOR_PROFILE.featureList,
     '-append-userspace-opt', 'androidboot.opengles.version=196610',
-    '-append-userspace-opt', 'androidboot.tftmac.graphics_profile=mactician-compatible',
+    '-append-userspace-opt', 'androidboot.tftmac.graphics_profile=tftmac',
     '-skin', `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
     '-vsync-rate', String(DONOR_PROFILE.refreshHz),
     '-dns-server', '1.1.1.1,8.8.8.8',
     '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(ramMB),
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
+  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
+    const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
+    const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
+    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 96);
+    const titleChrome = 30;
+    const widthScale = screenWidth > controlWidth ? (screenWidth - controlWidth) / DONOR_PROFILE.width : 1;
+    const heightScale = screenHeight > titleChrome ? (screenHeight - titleChrome) / DONOR_PROFILE.height : 1;
+    const scale = Math.max(0.1, Math.min(widthScale, heightScale, 1));
+    args.push('-scale', scale.toFixed(6));
+  }
   const timeZone = hostTimeZoneId();
   if (timeZone) args.push('-timezone', timeZone);
   const env = {
@@ -806,6 +816,9 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DON
 }
 
 async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
+  const preAudit = runtimeProcessAudit();
+  const hasActiveRuntime = preAudit.processes.some(item => ['ANDROID_EMULATOR', 'TFTMAC_SAMPLER'].includes(item.kind));
+  if (!hasActiveRuntime && preAudit.adb5040 === 'LISTENER_PRESENT') cleanupTftmacAdbResidue();
   singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
@@ -2734,23 +2747,71 @@ function setUserIniValue(text, key, value) {
 
 function prepareEmulatorWindowFit(runtime, contentWidth, contentHeight) {
   if (!runtime.avdDir) return { prepared: false, reason: 'AVD_UNRESOLVED' };
+
+  // The native TFTMAC shell owns live fullscreen sizing with NSScreen. Seed the
+  // emulator at 1:1 guest scale and move only the Qt title chrome above the
+  // screen; do not use Finder's combined multi-monitor desktop bounds here.
+  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
+    const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
+    const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
+    const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 96);
+    const titleChrome = 30;
+    const widthScale = screenWidth > controlWidth ? (screenWidth - controlWidth) / contentWidth : 1;
+    const heightScale = screenHeight > titleChrome ? (screenHeight - titleChrome) / contentHeight : 1;
+    const scale = Math.max(0.1, Math.min(widthScale, heightScale, 1));
+    const userIniPath = path.join(runtime.avdDir, 'emulator-user.ini');
+    let text = exists(userIniPath) ? fs.readFileSync(userIniPath, 'utf8') : '[General]\n';
+    text = setUserIniValue(text, 'window.x', 0);
+    text = setUserIniValue(text, 'window.y', 0);
+    text = setUserIniValue(text, 'window.scale', scale.toFixed(6));
+    fs.writeFileSync(userIniPath, text);
+    return {
+      prepared: true,
+      mode: 'NATIVE_SHELL_SCALE',
+      userIniPath,
+      host: { width: screenWidth || null, height: screenHeight || null, controlWidth, titleChrome },
+      content: { width: contentWidth, height: contentHeight },
+      window: { x: 0, y: 0, scale },
+      guestResolutionPreserved: true,
+      liveSizingAuthority: 'TFTMAC native shell; explicit emulator -scale'
+    };
+  }
+
   const bounds = hostDesktopBounds();
   if (!bounds) return { prepared: false, reason: 'HOST_DESKTOP_BOUNDS_UNRESOLVED' };
-  const marginX = 40;
-  const marginTop = 55;
-  const marginBottom = 45;
-  const chromeWidth = 72;
+
+  // TFTMAC immersive mode keeps the Android guest at its authoritative
+  // 1920x1080 resolution while scaling the host Qt canvas to cover the Mac
+  // display. Google Emulator chrome is deliberately placed outside the visible
+  // desktop: title bar above the screen and stock toolbar beyond the right edge.
+  // This replaces the old inset/margin behavior that made the game appear as a
+  // smaller screen inside the native wrapper.
   const chromeHeight = 38;
-  const availableWidth = Math.max(320, bounds.width - (marginX * 2) - chromeWidth);
-  const availableHeight = Math.max(240, bounds.height - marginTop - marginBottom - chromeHeight);
-  const scale = Math.max(0.1, Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight));
+  const scale = Math.max(0.1, Math.max(bounds.width / contentWidth, bounds.height / contentHeight));
+  const scaledWidth = contentWidth * scale;
+  const scaledHeight = contentHeight * scale;
+  const cropX = Math.max(0, (scaledWidth - bounds.width) / 2);
+  const cropY = Math.max(0, (scaledHeight - bounds.height) / 2);
+  const windowX = Math.round(-cropX);
+  const windowY = Math.round(-chromeHeight - cropY);
+
   const userIniPath = path.join(runtime.avdDir, 'emulator-user.ini');
   let text = exists(userIniPath) ? fs.readFileSync(userIniPath, 'utf8') : '[General]\n';
-  text = setUserIniValue(text, 'window.x', marginX);
-  text = setUserIniValue(text, 'window.y', marginTop);
+  text = setUserIniValue(text, 'window.x', windowX);
+  text = setUserIniValue(text, 'window.y', windowY);
   text = setUserIniValue(text, 'window.scale', scale.toFixed(6));
   fs.writeFileSync(userIniPath, text);
-  return { prepared: true, userIniPath, desktop: bounds, content: { width: contentWidth, height: contentHeight }, window: { x: marginX, y: marginTop, scale } };
+  return {
+    prepared: true,
+    mode: 'IMMERSIVE_COVER',
+    userIniPath,
+    desktop: bounds,
+    content: { width: contentWidth, height: contentHeight },
+    scaledContent: { width: scaledWidth, height: scaledHeight },
+    window: { x: windowX, y: windowY, scale },
+    crop: { x: cropX, y: cropY },
+    guestResolutionPreserved: true
+  };
 }
 
 function prepareGuestFullscreenPolicy(runtime) {
@@ -2836,6 +2897,44 @@ function presentationProbe() {
   };
 }
 
+function androidControl(control) {
+  const runtime = discover();
+  const state = readJSON(CONTROL_STATE);
+  if (!deviceReady(runtime)) throw new Error('TFTMAC Android runtime is not ready.');
+  const shell = (...args) => adb(runtime, ['shell', ...args], { allowFailure: true, timeout: 15000 });
+  let result = null;
+  switch (control) {
+    case 'back': result = shell('input', 'keyevent', '4'); break;
+    case 'home': result = shell('input', 'keyevent', '3'); break;
+    case 'overview': result = shell('input', 'keyevent', '187'); break;
+    case 'power': result = shell('input', 'keyevent', '26'); break;
+    case 'volume-up': result = shell('input', 'keyevent', '24'); break;
+    case 'volume-down': result = shell('input', 'keyevent', '25'); break;
+    case 'rotate': {
+      const current = Number(shell('settings', 'get', 'system', 'user_rotation').stdout.trim() || 0);
+      const next = current === 1 ? 0 : 1;
+      shell('settings', 'put', 'system', 'accelerometer_rotation', '0');
+      result = shell('settings', 'put', 'system', 'user_rotation', String(next));
+      break;
+    }
+    case 'screenshot': {
+      const captureDir = state?.captureDir ?? path.join(APP_SUPPORT, 'Screenshots');
+      ensureDir(captureDir);
+      const guestPath = '/sdcard/tftmac-screenshot.png';
+      shell('screencap', '-p', guestPath);
+      const hostPath = path.join(captureDir, `screenshot-${nowISO().replace(/[:.]/g, '-')}.png`);
+      const pull = adb(runtime, ['pull', guestPath, hostPath], { allowFailure: true, timeout: 30000 });
+      shell('rm', '-f', guestPath);
+      if (pull.status !== 0 || !exists(hostPath)) throw new Error(`TFTMAC screenshot failed: ${(pull.stderr || pull.stdout || '').trim()}`);
+      if (state?.captureDir) appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'SCREENSHOT', path: hostPath });
+      return { action: 'ANDROID_CONTROL', control, screenshot: hostPath };
+    }
+    default: throw new Error(`Unknown TFTMAC Android control: ${control}`);
+  }
+  if (state?.captureDir) appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), host_mono_ns: monoNs().toString(), event: 'ANDROID_CONTROL', control });
+  return { action: 'ANDROID_CONTROL', control, status: result?.status ?? 0 };
+}
+
 function emulatorWindowInventory() {
   const runtime = discover();
   if (!deviceReady(runtime)) throw new Error('No active emulator available.');
@@ -2879,21 +2978,14 @@ function fitEmulatorWindow() {
     tell application "Finder" to set desktopBounds to bounds of window of desktop
     set screenWidth to item 3 of desktopBounds
     set screenHeight to item 4 of desktopBounds
-    set marginX to 40
-    set marginTop to 55
-    set marginBottom to 45
     set chromeWidth to 72
     set chromeHeight to 38
-    set availableWidth to screenWidth - (marginX * 2) - chromeWidth
-    set availableHeight to screenHeight - marginTop - marginBottom - chromeHeight
-    set contentWidth to availableWidth
-    set contentHeight to contentWidth * 9 / 16
-    if contentHeight > availableHeight then
-      set contentHeight to availableHeight
-      set contentWidth to contentHeight * 16 / 9
-    end if
-    set targetWidth to (contentWidth + chromeWidth) as integer
-    set targetHeight to (contentHeight + chromeHeight) as integer
+    -- Preserve the Android guest at 1920x1080.  The host window is deliberately
+    -- oversized so the Qt title bar is above the visible display and the stock
+    -- emulator toolbar is beyond the right edge. TFTMAC supplies its own native
+    -- control strip on that edge instead of adding a streamed rendering layer.
+    set targetWidth to (screenWidth + chromeWidth) as integer
+    set targetHeight to (screenHeight + chromeHeight) as integer
     tell application "System Events"
       set targetProcess to first application process whose unix id is ${observedPid}
       set targetWindow to missing value
@@ -2905,16 +2997,16 @@ function fitEmulatorWindow() {
           end if
         end try
       end repeat
-      if targetWindow is missing value then error "Android Emulator canvas window not found"
+      if targetWindow is missing value then error "TFTMAC game canvas window not found"
       set frontmost of targetProcess to true
       delay 0.1
-      set position of targetWindow to {marginX, marginTop}
+      set position of targetWindow to {0, -chromeHeight}
       set size of targetWindow to {targetWidth, targetHeight}
-      delay 0.1
+      delay 0.15
       set finalPosition to position of targetWindow
       set finalSize to size of targetWindow
     end tell
-    return (screenWidth as text) & "x" & (screenHeight as text) & " -> " & (item 1 of finalSize as text) & "x" & (item 2 of finalSize as text) & " @ " & (item 1 of finalPosition as text) & "," & (item 2 of finalPosition as text)
+    return (screenWidth as text) & "x" & (screenHeight as text) & " -> TFTMAC " & (item 1 of finalSize as text) & "x" & (item 2 of finalSize as text) & " @ " & (item 1 of finalPosition as text) & "," & (item 2 of finalPosition as text)
   `;
   const result = command('/usr/bin/osascript', ['-e', script], { allowFailure: true, timeout: 10000 });
   const output = `${result.stdout}${result.stderr}`.trim();
@@ -4092,6 +4184,23 @@ async function sampler(captureDir, sessionId) {
 }
 
 function buildApp() {
+  const shellBuilder = path.join(repoRoot, 'scripts', 'build-tftmac-app.command');
+  if (exists(shellBuilder)) {
+    const built = command('/bin/zsh', [shellBuilder], { timeout: 300000, maxBuffer: 32 * 1024 * 1024 });
+    const app = path.join(repoRoot, 'dist', 'TFTMAC.app');
+    const installed = '/Applications/TFTMAC.app';
+    const binary = path.join(app, 'Contents', 'MacOS', 'TFTMAC');
+    if (!executable(binary)) throw new Error(`TFTMAC fullscreen shell build did not produce ${binary}`);
+    return {
+      action: 'TFTMAC_FULLSCREEN_SHELL_BUILT',
+      app,
+      installed: exists(installed) ? installed : null,
+      binary,
+      binarySHA256: sha256File(binary),
+      icon: path.join(app, 'Contents', 'Resources', 'TFTMAC.icns'),
+      buildOutput: built.stdout.trim()
+    };
+  }
   const sourcesDir = path.join(repoRoot, 'tftmac', 'Sources');
   const sources = fs.readdirSync(sourcesDir).filter(n => n.endsWith('.swift')).map(n => path.join(sourcesDir, n));
   const dist = path.join(repoRoot, 'dist');
@@ -4115,6 +4224,8 @@ function buildApp() {
   const sdkPath = command('/usr/bin/xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { env: xcodeEnv }).stdout.trim();
   command(swiftc, ['-O', '-parse-as-library', '-target', 'arm64-apple-macosx14.0', '-sdk', sdkPath, ...sources, '-o', binary], { timeout: 240000, env: xcodeEnv });
   fs.copyFileSync(path.join(repoRoot, 'tftmac', 'Info.plist'), path.join(contents, 'Info.plist'));
+  const iconSource = path.join(repoRoot, 'branding', 'generated', 'Mactician.icns');
+  if (exists(iconSource)) fs.copyFileSync(iconSource, path.join(contents, 'Resources', 'TFTMAC.icns'));
   fs.copyFileSync(scriptPath, path.join(contents, 'Resources', 'tftmac-direct-control.mjs'));
   const labSource = path.join(repoRoot, 'ssot', 'TFTMAC_PERFORMANCE_LAB.sql');
   if (exists(labSource)) fs.copyFileSync(labSource, path.join(contents, 'Resources', 'TFTMAC_PERFORMANCE_LAB.sql'));
@@ -4177,11 +4288,13 @@ function cleanupTftmacAdbResidue() {
 
 function singleRuntimePreflight() {
   const audit = runtimeProcessAudit();
-  const blockers = audit.processes.filter(item => ['TFTMAC_APP', 'MACTICIAN_APP', 'ANDROID_EMULATOR', 'TFTMAC_SAMPLER', 'ADB_SERVER'].includes(item.kind));
+  const tftmacApps = audit.processes.filter(item => item.kind === 'TFTMAC_APP');
+  const blockers = audit.processes.filter(item => ['MACTICIAN_APP', 'ANDROID_EMULATOR', 'TFTMAC_SAMPLER', 'ADB_SERVER'].includes(item.kind));
+  if (tftmacApps.length > 1) blockers.push(...tftmacApps.slice(1));
   if (blockers.length || audit.ports.length) {
-    throw new Error(`SINGLE_RUNTIME_PREFLIGHT_BLOCKED: ${JSON.stringify({ blockers, ports: audit.ports, adb5040: audit.adb5040 })}`);
+    throw new Error(`SINGLE_RUNTIME_PREFLIGHT_BLOCKED: ${JSON.stringify({ blockers, ports: audit.ports, adb5040: audit.adb5040, tftmacLauncherCount: tftmacApps.length })}`);
   }
-  return { pass: true, observedAt: audit.observedAt, audit };
+  return { pass: true, observedAt: audit.observedAt, tftmacLauncherCount: tftmacApps.length, audit };
 }
 
 function launchMacticianControl() {
@@ -4326,8 +4439,20 @@ function openPlayWeb() {
   return { action: 'PLAY_WEB_OPENED', url, openStatus: result.status, stderr: result.stderr.trim() || null };
 }
 
+function installApp() {
+  const source = path.join(repoRoot, 'dist', 'TFTMAC.app');
+  const destination = '/Applications/TFTMAC.app';
+  if (!exists(source)) throw new Error('TFTMAC.app has not been built. Run build first.');
+  fs.rmSync(destination, { recursive: true, force: true });
+  command('/usr/bin/ditto', [source, destination], { timeout: 120000 });
+  command('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', destination], { timeout: 120000 });
+  return { action: 'TFTMAC_INSTALLED', source, destination, icon: path.join(destination, 'Contents', 'Resources', 'TFTMAC.icns') };
+}
+
 function launchApp() {
-  const app = path.join(repoRoot, 'dist', 'TFTMAC.app');
+  const installed = '/Applications/TFTMAC.app';
+  const built = path.join(repoRoot, 'dist', 'TFTMAC.app');
+  const app = exists(installed) ? installed : built;
   if (!exists(app)) throw new Error('TFTMAC.app has not been built. Run build first.');
   const result = command('/usr/bin/open', ['-n', app], { allowFailure: true, timeout: 30000 });
   return { app, openStatus: result.status, stderr: result.stderr.trim() || null };
@@ -4345,6 +4470,7 @@ async function main() {
   if (action === 'engineering-map-selftest') { json(engineeringMapSelfTest()); return; }
   if (action === 'lab-selftest') { json(labSelfTest()); return; }
   if (action === 'build') { json(buildApp()); return; }
+  if (action === 'install-app') { json(installApp()); return; }
   if (action === 'launch-app') { json(launchApp()); return; }
   if (action === 'open-play-web') { json(openPlayWeb()); return; }
   if (action === 'runtime-process-audit') { json(runtimeProcessAudit()); return; }
@@ -4386,6 +4512,7 @@ async function main() {
   if (action === 'presentation-probe') { json(presentationProbe()); return; }
   if (action === 'window-inventory') { json(emulatorWindowInventory()); return; }
   if (action === 'fit-window') { json(fitEmulatorWindow()); return; }
+  if (action === 'android-control') { json(androidControl(args[0])); return; }
   if (action === 'status') { json(await status()); return; }
   if (action === 'play-certification') { json(await playCertification()); return; }
   if (action === 'play-diagnose') { json(await playDiagnose()); return; }
