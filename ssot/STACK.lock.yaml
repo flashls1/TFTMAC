@@ -1,17 +1,19 @@
-schema: 2
-frozen_at: "2026-08-28T08:46:32.848Z"
+schema: 3
+frozen_at: "2026-08-30T09:30:17Z"
 phase0_status: PASS
 
 authority:
-  ssot_version: "2.0"
+  mode: "released_native_runtime"
+  runtime_authority: "ssot/runtime-authority.json"
+  ssot_version: "3.0"
   implementation_plan_version: "2.0"
   ssot_sha256: "4c905ad35a676aa8f4ad0a22416e73d640120851ce9f41e742349ac61ceab1ea"
   implementation_plan_sha256: "81bd386c1d9d47f26659c93af914ec9a92568ee689e7bed47eb0f2afd6dd5f1a"
   zengate_version: "2.3"
   zengate_score: 93
   zengate_result: "PASS"
-  aemu_branch: "emu-master-dev"
-  production_guest: "official Android 17 Google Play ARM64"
+  source_build_inputs_status: "historical_reference_only"
+  production_guest: "official Android 16 Google Play ARM64"
   shipping_render_target: "1920x1080@60"
 
 host:
@@ -23,6 +25,17 @@ host:
   macos_sdk_path: "/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk"
   hardware_model: "Mac16,10"
 
+release:
+  version: "2.0.0"
+  build: "2"
+  installed_path: "/Applications/TFTMAC.app"
+  executable_sha256: "4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49"
+  signing: "ad_hoc_local_valid"
+  notarized_for_public_distribution: false
+  mac_icon_embedded: true
+  native_verifier: PASS
+  unit_tests_passed: 14
+
 android_command_line_tools:
   archive: "commandlinetools-mac_arm64-15859902_latest.zip"
   sha256: "835b62a26162b229b441d1f6d4680383815a270809eb33522c0d480fa5002c4e"
@@ -30,19 +43,20 @@ android_command_line_tools:
   installed_revision: "22.0"
 
 android:
-  api: 37
+  api: 36
   play_image_package: "system-images;android-36;google_apis_playstore;arm64-v8a"
   play_image_revision: 7
-  avd_name: "TFTMAC_Live_API37"
-  emulator_console_port: 5592
-  adb_serial: "emulator-5592"
-  adb_server_port: 5040
+  avd_name: "TFT_Ultra_Tablet"
+  emulator_console_port: 5582
+  adb_serial: "emulator-5582"
+  adb_server_port: 5038
   platform_tools_revision: "37.0.1"
   emulator_revision: "37.1.11"
   platform_revision: "1"
   build_tools_revision: "37.0.0"
 
 aemu:
+  status: "historical_reference_only_not_required_by_live_runtime"
   authority_branch: "emu-master-dev"
   resolved_manifest_sha256: "28865cd8a162178ba462b296f5714b6b7b6916e0cafcddfc0c5e44aa03f8e8d3"
   qemu_commit: "ae9d18d2b6261179fbd57fffec720a04f7bfb053"
@@ -53,17 +67,20 @@ aemu:
   guestangle_authority: "PASS"
 
 vulkan_sdk:
+  status: "historical_reference_only_not_required_by_live_runtime"
   version: "1.4.357.0"
   sha256: "539433589c83522e6f31b1c7b418a4167e21597a4a361ab119e1dc0760cf3865"
   vulkaninfo_version: "vulkaninfo - Summarize Vulkan information in relation to the current environment.\n\nUSAGE: \n    vulkaninfo --summary\n    vulkaninfo -o <filename> | --output <filename>\n    vulkaninfo -j | -j=<gpu-number> | --json | --json=<gpu-number>\n    vulkaninfo --text\n    vulkaninfo --html\n    vulkaninfo --show-all\n    vulkaninfo --show-formats\n    vulkaninfo --show-tool-props\n    vulkaninfo --show-promoted-structs\n    vulkaninfo --show-video-props\n\nOPTIONS:\n[-h, --help]         Print this help.\n[--summary]          Show a summary of the instance and GPU's on a system.\n[-o <filename>, --output <filename>]\n                     Print output to a new file whose name is specified by filename.\n                     File will be written to the current working directory.\n[--text]             Produce a text version of vulkaninfo output to stdout. This is\n                     the default output.\n[--html]             Produce an html version of vulkaninfo output, saved as\n                     \"vulkaninfo.html\" in the directory in which the command\n                     is run.\n[-j, --json]         Produce a json version of vulkaninfo output conforming to the Vulkan\n                     Profiles schema, saved as \n                     \"VP_VULKANINFO_[DEVICE_NAME]_[DRIVER_VERSION].json\"\n                     of the first gpu in the system.\n[-j=<gpu-number>, --json=<gpu-number>]\n                     For a multi-gpu system, a single gpu can be targeted by\n                     specifying the gpu-number associated with the gpu of \n                     interest. This number can be determined by running\n                     vulkaninfo without any options specified.\n[--show-all]         Show everything (includes all the below options)\n[--show-tool-props]  Show the active VkPhysicalDeviceToolPropertiesEXT that vulkaninfo finds.\n[--show-formats]     Display the format properties of each physical device.\n                     Note: This only affects text output.\n[--show-promoted-structs] Include structs promoted to core in pNext Chains.\n[--show-video-props]\n                     Display the video profile info, video capabilities and\n                     video format properties of each video profile supported\n                     by each physical device.\n                     Note: This only affects text output which by default\n                     only contains the list of supported video profile names."
 
 moltenvk:
+  status: "emulator_bundled_runtime_active_reference_source_historical"
   reference_tag: "v1.4.2"
   reference_commit: "db66022459ffb663aa2b50f6b018bc2e124f5edf"
   selected_commit: null
   patch_series_sha256: null
 
 generality:
+  status: "historical_reference_only_not_release_acceptance"
   gles_cts_tag: "opengl-es-cts-3.2.14.1"
   gles_cts_commit: "067e8832315e79817ede1c4863804e440f5d1c80"
   vulkan_cts_tag: "vulkan-cts-1.4.6.1"
@@ -74,13 +91,14 @@ generality:
 resource_profiles:
   A:
     vcpu: 6
-    ram_mb: 6144
+    ram_mb: 5120
   B:
     vcpu: 8
-    ram_mb: 8192
-  selected: null
+    ram_mb: 6144
+  selected: A
 
 phase0_evidence:
+  status: "historical_source_research_only"
   authority_hashes: "ssot/AUTHORITY_INPUTS.sha256"
   policy: "ssot/phase0-policy.json"
   remediation_inventory: "ssot/phase0-remediation-inventory.md"

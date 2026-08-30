@@ -1379,3 +1379,24 @@ COMMIT;
 --   3. Resolve or create the corresponding unknown.
 --   4. Re-query v_architecture_options and v_open_questions.
 --   5. Only then choose the next mutation.
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-30 native full-screen runtime authority
+-- ---------------------------------------------------------------------------
+UPDATE runtime_variants
+SET current_relevance='Historical first-win control receipt; superseded as current launcher identity by rv_current_native_5gb.'
+WHERE id='rv_current_first_win';
+
+INSERT OR REPLACE INTO runtime_variants(id,entrypoint,classification,runtime_family,graphics_path,display_profile,resource_profile,exact_result,promotion_state,source_document_id,current_relevance,notes) VALUES
+('rv_current_native_5gb','TFTMAC.app','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play through packaged macOS app host','TFT Unreal -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> host Vulkan -> MoltenVK -> Metal -> raw gRPC RGBA -> AppKit Metal','1920x1080 / 320 DPI / 60Hz target / native full screen','6 vCPU / 5120 MB','Authenticated controller, ADB5038/emulator-5582 device, official TFT18.1 SplashActivity -> Unreal GameActivity, correctly oriented native frames and input all passed in one live session.','PROMOTED',NULL,'Current native product/runtime authority','Source/presentation FPS are transport metrics, not Unreal FPS. CoreAudio software path passed; user audible confirmation and a full native match remain acceptance gaps.');
+
+INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
+('ev_native_fullscreen_20260830','2026-08-30T08:41:35Z','native_runtime_acceptance','~/Library/Application Support/TFTMAC/Captures/2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94/TFTMAC_NATIVE_RUNTIME.sqlite',NULL,'Native AppKit TFTMAC authenticated Emulator37.1.11, reached ADB5038/emulator-5582 device, rendered exact 1920x1080 raw RGBA through Metal, accepted mouse input, and launched official TFT18.1 into com.epicgames.unreal.GameActivity.','DIRECT','Live lobby acceptance. Does not claim a completed native match, user-audible sound, or causal graphics-boundary attribution.');
+
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('current_native_runtime','TFTMAC.app; packaged TFTMAC Emulator Host.app via /usr/bin/open -n -W; ADB5038; emulator-5582; no injected ADB_VENDOR_KEYS; 6 vCPU; 5120 MiB; 1920x1080/320dpi/60Hz; CoreAudio; authenticated gRPC raw RGBA -> AppKit Metal full screen.'),
+('current_native_telemetry','Private local SQL plus JSONL/raw sidecars: configuration receipts, events, one-second native-frame interval windows, output presentation, qemu CPU/RSS, guest memory, clock sync, SurfaceFlinger deltas, AudioFlinger health, logcat fault counts, game-process sessions, input counts and manual match/combat/stutter/end markers.'),
+('current_native_metric_boundary','gRPC source-window and Metal output rates are transport/presentation observations, not Unreal engine FPS. Use bounded SurfaceFlinger/Perfetto evidence for guest/pipeline attribution.');
+
+INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
+('2026-08-30T08:41:35Z','Native runtime promotion','Promoted the logged-in-session packaged-host 5038/5582/5120-MiB AppKit/Metal path after live TFT GameActivity acceptance; preserved 5040/5592/6144 evidence as historical only.','ev_native_fullscreen_20260830');

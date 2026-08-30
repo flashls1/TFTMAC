@@ -664,3 +664,36 @@ COMMIT;
 -- SELECT * FROM v_open_hypotheses;
 -- SELECT * FROM v_experiment_scorecard;
 -- SELECT * FROM v_promoted_facts;
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-30 native AppKit/Metal runtime authority
+-- Historical 5040/5592/6144 rows above remain immutable experiment receipts.
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO runtime_configs (
+    id,parent_config_id,name,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+    avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,
+    display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
+    graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES
+('tftmac_5gb_native_v1','tftmac_5gb_baseline_v1','TFTMAC native full-screen 5 GiB baseline','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5582',5038,5582,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','GuestAngle + explicit exposeNonConformantExtensionsAndVersions/exposeES32ForTesting compatibility adapter','ranchu guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','authenticated raw gRPC -> AppKit Metal full screen','CONTROL','2026-08-30T08:40:36Z','Donor-compatible logged-in-session launcher: /usr/bin/open -n -W through packaged TFTMAC Emulator Host.app; ADB_VENDOR_KEYS absent. Native lobby acceptance passed; source/presentation counters are transport metrics, not Unreal engine FPS.');
+
+INSERT OR REPLACE INTO sessions(
+    id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,
+    boot_class,workload_class,package_name,package_version_name,package_version_code,
+    package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+    package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+) VALUES
+('2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94','tftmac_5gb_native_v1','2026-08-30T08:40:36Z',NULL,NULL,NULL,'COLD','LOBBY','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,0,'PARTIAL',1,NULL,'Native full-screen lobby acceptance; capture was still open when this SSOT receipt was written.');
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','tftmac_5gb_native_v1'),
+('current_native_runtime_config','tftmac_5gb_native_v1'),
+('current_native_acceptance_session','2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94'),
+('current_runtime_identity','ADB 5038; console 5582; serial emulator-5582; packaged app host via /usr/bin/open; no injected ADB_VENDOR_KEYS'),
+('current_native_frame_truth','Raw gRPC source-window rate and Metal presentation rate are transport/output metrics only. Do not label either as Unreal engine FPS.'),
+('current_native_logger','Private local capture: SQL receipts/events, one-second frame interval windows, presentation, qemu CPU/RSS, guest memory, clock sync, SurfaceFlinger deltas, AudioFlinger health, aggregate logcat signals, game PID sessions, input counts and explicit match/stutter markers.'),
+('current_surfaceflinger_counter_policy','Sample the live dumpsys SurfaceFlinger counters every 30 seconds during gameplay and at session boundaries. Compare deltas inside marked windows; absolute counters remain cumulative since boot.'),
+('current_optimization_priority','Hold 1920x1080/320 dpi, 5038/5582, 5120 MiB, 6 vCPU, CoreAudio, host GPU and the renderer chain. Run one restart-bound variable A/B at a time and require cold confirmation before promotion.');
+
+INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
+('ev_native_fullscreen_acceptance_20260830',NULL,'2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94',NULL,'DIRECT_MEASUREMENT','Native TFTMAC filled the 1920x1080 display in an AppKit full-screen window, authenticated Emulator37.1.11 gRPC, authorized emulator-5582 on ADB5038, rendered 1920x1080 RGBA through Metal at about 60 output presentations/s, and launched official TFT18.1 into Unreal GameActivity.','NEUTRAL','DECISIVE',NULL,'2026-08-30T08:41:35Z','Capture 2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94. Lobby/input/software-audio path proven; full-match and user-audible acceptance remain separate.');

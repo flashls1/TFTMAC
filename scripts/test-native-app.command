@@ -19,4 +19,10 @@ DERIVED="${ROOT}/.build/native-tests"
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "${DERIVED}" \
   CODE_SIGNING_ALLOWED=NO \
-  test
+  build-for-testing
+
+readonly TEST_BUNDLE="${DERIVED}/Build/Products/Debug/TFTMACTests.xctest"
+readonly XCTEST="${DEVELOPER_DIR}/usr/bin/xctest"
+[[ -x "${XCTEST}" ]] || { echo "XCTest runner is unavailable: ${XCTEST}" >&2; exit 1; }
+[[ -x "${TEST_BUNDLE}/Contents/MacOS/TFTMACTests" ]] || { echo "Test bundle is incomplete: ${TEST_BUNDLE}" >&2; exit 1; }
+"${XCTEST}" "${TEST_BUNDLE}"

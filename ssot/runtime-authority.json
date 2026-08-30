@@ -1,17 +1,32 @@
 {
-  "schema": 1,
-  "observedAt": "2026-08-30T03:59:46Z",
-  "gate": "Gate 4 stock-runtime independence",
+  "schema": 2,
+  "observedAt": "2026-08-30T09:30:17Z",
+  "gate": "Native full-screen playable runtime acceptance",
   "result": "PASS",
   "runtimeRoot": "/Volumes/MAC MINI M4/TFTMAC/Runtime",
-  "sdkRoot": "/Volumes/MAC MINI M4/TFTMAC/Runtime/sdk",
+  "sdkRoot": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK",
   "emulator": {
     "version": "Android emulator version 37.1.11.0",
     "buildId": "15917651",
     "avd": "TFT_Ultra_Tablet",
-    "adbSerial": "emulator-5592",
-    "adbServerPort": 5040,
-    "consolePort": 5592
+    "adbSerial": "emulator-5582",
+    "adbServerPort": 5038,
+    "consolePort": 5582,
+    "launcher": "/usr/bin/open -n -W --env ... --args ...",
+    "launcherHost": "TFTMAC Emulator Host.app",
+    "adbVendorKeysInjected": false
+  },
+  "runtimeProfile": {
+    "id": "tftmac_5gb_native_v1",
+    "vcpu": 6,
+    "ramMiB": 5120,
+    "display": "1920x1080",
+    "densityDpi": 320,
+    "refreshHz": 60,
+    "gpu": "host",
+    "audio": "coreaudio",
+    "graphicsTransport": "virtio-gpu-asg",
+    "asgDrawFlushInterval": 800
   },
   "package": {
     "name": "com.riotgames.league.teamfighttactics",
@@ -20,29 +35,47 @@
     "installer": "com.android.vending"
   },
   "emulatorController": {
-    "installedPath": "/Volumes/MAC MINI M4/TFTMAC/Runtime/sdk/emulator/lib/emulator_controller.proto",
+    "installedPath": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/lib/emulator_controller.proto",
     "vendoredPath": "Vendor/AndroidEmulator/emulator_controller.proto",
     "sha256": "1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f",
     "byteEquality": true
   },
   "buildTreeRequiredByLiveRuntime": false,
   "retiredApplicationRequired": false,
-  "processAudit": {
-    "operation": "tftmac-gate4-process-audit-20260829",
-    "duplicateRisk": {
-      "tftmacApps": 1,
-      "emulators": 1,
-      "samplers": 1,
-      "adbServers": 1
-    },
-    "buildTreeProcessReferences": 0
+  "nativeAcceptance": {
+    "captureSession": "2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94",
+    "controllerAuthenticated": true,
+    "frameTransport": "raw_grpc_rgba8888",
+    "frameSize": "1920x1080",
+    "metalPresentationHzObserved": 60.5,
+    "sourceStreamHzObserved": 61.1,
+    "windowNativeFullscreen": true,
+    "tftActivity": "com.epicgames.unreal.GameActivity",
+    "audioSoftwarePathVerified": true,
+    "userAudibleConfirmation": false
+  },
+  "finalInstalledRelease": {
+    "path": "/Applications/TFTMAC.app",
+    "version": "2.0.0",
+    "build": "2",
+    "executableSHA256": "4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49",
+    "deepCodeSignatureValid": true,
+    "macIconEmbedded": true,
+    "nativeVerifier": "PASS",
+    "unitTestsPassed": 14,
+    "liveMatchAndCleanShutdownCapture": "2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c",
+    "installedReleaseLaunchCapture": "2026-08-30T09-30-17.189Z-68f1bb24-f660-4245-9750-823b7da703a4",
+    "confirmedMemoryKills": 0,
+    "secureAndroidUnlock": "MANUAL_ONLY"
   },
   "evidenceOperations": [
-    "tftmac-gate4-runtime-inventory-20260829",
-    "tftmac-gate4-start-baseline-20260829",
-    "tftmac-gate4-package-state-20260829",
-    "tftmac-gate4-proto-equality-20260829",
-    "tftmac-gate4-process-audit-20260829",
-    "tftmac-gate4-clean-stop-20260829"
-  ]
+    "native-events:CONTROLLER_AUTHENTICATED",
+    "native-events:ADB_DEVICE_AUTHORIZED",
+    "native-events:FIRST_NATIVE_FRAME",
+    "native-events:OFFICIAL_TFT_PACKAGE_RECEIPT",
+    "native-events:TFT_LAUNCH_REQUESTED",
+    "native-events:TFT_PROCESS_STARTED",
+    "appkit-accessibility:AXFullScreen=true"
+  ],
+  "supersedes": "ssot/history/runtime-authority-gate4-2026-08-30.json"
 }

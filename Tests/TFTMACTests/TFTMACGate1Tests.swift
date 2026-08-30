@@ -27,4 +27,138 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(source.x, 960, accuracy: 0.001)
         XCTAssertEqual(source.y, 540, accuracy: 0.001)
     }
+
+    func testNativeRGBAFrameContractAcceptsExact1080pFrame() throws {
+        XCTAssertNoThrow(try FrameContract.validate(
+            width: 1920,
+            height: 1080,
+            byteCount: 1920 * 1080 * 4
+        ))
+    }
+
+    func testNativeRGBAFrameContractRejectsTruncatedFrame() {
+        XCTAssertThrowsError(try FrameContract.validate(
+            width: 1920,
+            height: 1080,
+            byteCount: 1920 * 1080 * 4 - 1
+        )) { error in
+            XCTAssertEqual(
+                error as? FrameContractError,
+                .wrongByteCount(expected: 1920 * 1080 * 4, actual: 1920 * 1080 * 4 - 1)
+            )
+        }
+    }
+
+    func testLatestFrameMailboxIsBoundedToNewestFrame() {
+        let mailbox = LatestFrameMailbox()
+        let first = EmulatorFrame(
+            pixels: Data(count: 4), width: 1, height: 1, sequence: 1,
+            emulatorTimestampMicroseconds: 1, receivedMonotonicNanoseconds: 1
+        )
+        let second = EmulatorFrame(
+            pixels: Data(count: 4), width: 1, height: 1, sequence: 2,
+            emulatorTimestampMicroseconds: 2, receivedMonotonicNanoseconds: 2
+        )
+        mailbox.publish(first)
+        mailbox.publish(second)
+        XCTAssertEqual(mailbox.takeLatest()?.sequence, 2)
+        XCTAssertNil(mailbox.takeLatest())
+        XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 1)
+    }
+
+    func testAVDRestoreAllowsOnlyTheAppliedConfiguration() throws {
+        XCTAssertEqual(
+            try AVDTransactionGuard.restoreDecision(
+                currentSHA256: "applied", originalSHA256: "original", appliedSHA256: "applied"
+            ),
+            .restoreBackup
+        )
+    }
+
+    func testAVDRestoreDoesNotOverwriteAConflictingConfiguration() {
+        XCTAssertThrowsError(try AVDTransactionGuard.restoreDecision(
+            currentSHA256: "changed-by-someone-else",
+            originalSHA256: "original",
+            appliedSHA256: "applied"
+        )) { error in
+            XCTAssertEqual(error as? AVDTransactionGuardError, .conflictingCurrentConfiguration)
+        }
+    }
+
+    func testRuntimeProfileRejectsUnsupportedValues() {
+        let baseline = TFTMACRuntimeProfile.playable
+        let candidate = baseline.with(vCPU: 99, ramMiB: 1, refreshHz: 144, asgDrawFlushInterval: 7)
+        XCTAssertEqual(candidate.vCPU, baseline.vCPU)
+        XCTAssertEqual(candidate.ramMiB, baseline.ramMiB)
+        XCTAssertEqual(candidate.refreshHz, baseline.refreshHz)
+        XCTAssertEqual(candidate.asgDrawFlushInterval, baseline.asgDrawFlushInterval)
+        XCTAssertEqual(candidate.width, 1920)
+        XCTAssertEqual(candidate.height, 1080)
+    }
+
+    func testRuntimeProfileAcceptsSafeExperimentValues() {
+        let candidate = TFTMACRuntimeProfile.playable.with(
+            vCPU: 8,
+            ramMiB: 6144,
+            refreshHz: 30,
+            asgDrawFlushInterval: 400
+        )
+        XCTAssertEqual(candidate.vCPU, 8)
+        XCTAssertEqual(candidate.ramMiB, 6144)
+        XCTAssertEqual(candidate.refreshHz, 30)
+        XCTAssertEqual(candidate.asgDrawFlushInterval, 400)
+        XCTAssertEqual(candidate.identifier, "tftmac_native_6144m_8c_30hz_flush400")
+    }
+
+    func testRuntimeLeaseRejectsASecondLiveOwner() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tftmac-lease-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = try TFTMACRuntimeLease.acquire(stateRoot: root)
+        defer { first.release() }
+        XCTAssertThrowsError(try TFTMACRuntimeLease.acquire(stateRoot: root)) { error in
+            guard case RuntimeLeaseError.alreadyOwned = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testAVDRecoveryRejectsBackupOutsideCaptureRoot() {
+        XCTAssertThrowsError(try AVDTransactionGuard.validateRecoveryPaths(
+            markerConfigURL: URL(fileURLWithPath: "/runtime/TFT.avd/config.ini"),
+            expectedConfigURL: URL(fileURLWithPath: "/runtime/TFT.avd/config.ini"),
+            backupURL: URL(fileURLWithPath: "/tmp/untrusted/avd-config.before.ini"),
+            captureRoot: URL(fileURLWithPath: "/captures", isDirectory: true)
+        )) { error in
+            XCTAssertEqual(error as? AVDTransactionGuardError, .unexpectedRecoveryPath)
+        }
+    }
+
+    func testMemoryKillClassifierAcceptsConfirmedVictims() {
+        XCTAssertTrue(TelemetrySignalClassifier.isConfirmedGuestMemoryKill(
+            "08-30 04:10:00.000 I lmkd: Kill 'com.riotgames.league.teamfighttactics' (4024), uid 10123, oom_score_adj 900"
+        ))
+        XCTAssertTrue(TelemetrySignalClassifier.isConfirmedGuestMemoryKill(
+            "08-30 04:10:00.000 I lowmemorykiller: Killing 'com.example.background' (4025), adj 950"
+        ))
+        XCTAssertTrue(TelemetrySignalClassifier.isConfirmedGuestMemoryKill(
+            "kernel: Out of memory: Killed process 4024 (TFTMain) total-vm:1234kB"
+        ))
+    }
+
+    func testMemoryKillClassifierRejectsBootAndSetupNoise() {
+        let nonKills = [
+            "lmkd: Connection with lmkd established",
+            "lowmemorykiller: lowmemorykiller data connection established",
+            "lmkd: memevent failed to attach",
+            "lmkd: android_trigger_vendor_lmk_kill tracepoint unavailable",
+            "lmkd: Using psi monitors for memory pressure detection",
+            "com.riotgames.league.teamfighttactics: java.lang.OutOfMemoryError",
+            "ActivityManager: Killing com.riotgames.league.teamfighttactics for cached #17",
+            "kernel: oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null)"
+        ]
+        for line in nonKills {
+            XCTAssertFalse(TelemetrySignalClassifier.isConfirmedGuestMemoryKill(line), line)
+        }
+    }
 }

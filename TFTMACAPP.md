@@ -429,7 +429,7 @@ Required additional flags/direction:
 Use isolated ADB:
 
 ```text
-ANDROID_ADB_SERVER_PORT=5040
+ANDROID_ADB_SERVER_PORT=5038
 ```
 
 Preserve the current renderer/audio/CPU/RAM/display/compatibility arguments from the active RuntimeProfile.

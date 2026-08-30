@@ -2,10 +2,15 @@ import AppKit
 
 @MainActor
 final class MainWindowController: NSWindowController {
-    init() {
-        let contentView = EmbeddedEmulatorView(frame: NSRect(x: 0, y: 0, width: 1280, height: 720))
+    let emulatorView: EmbeddedEmulatorView
+
+    init(mailbox: LatestFrameMailbox) {
+        emulatorView = EmbeddedEmulatorView(
+            frame: NSRect(x: 0, y: 0, width: 1920, height: 1080),
+            mailbox: mailbox
+        )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 1920, height: 1080),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -15,12 +20,17 @@ final class MainWindowController: NSWindowController {
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.minSize = NSSize(width: 960, height: 540)
         window.center()
-        window.contentView = contentView
+        window.contentView = emulatorView
         super.init(window: window)
         shouldCascadeWindows = false
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    func enterNativeFullscreen() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        window.toggleFullScreen(nil)
     }
 }

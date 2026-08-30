@@ -17,15 +17,15 @@ const PLAY_PROFILE_LABEL = 'TFT Ultra Tablet - 13.5in Freeform / Galaxy Tab S10 
 const PLAY_DISPLAY_WIDTH = 2960;
 const PLAY_DISPLAY_HEIGHT = 1848;
 const PLAY_DISPLAY_DENSITY = 320;
-const PLAY_RAM_MB = 8192;
+const PLAY_RAM_MB = 5120;
 const BASELINE_PROFILE = Object.freeze({
-  id: 'tftmac_official_baseline_v1',
-  label: 'TFTMAC official playable baseline',
+  id: 'tftmac_5gb_native_v1',
+  label: 'TFTMAC native playable 5 GiB baseline',
   width: 1920,
   height: 1080,
   density: 320,
   vcpu: 6,
-  ramMB: 6144,
+  ramMB: 5120,
   refreshHz: 60,
   glTransport: 'virtio-gpu-asg',
   asgWriteBufferSize: 1048576,
@@ -36,9 +36,11 @@ const BASELINE_PROFILE = Object.freeze({
   angleEnabledFeatures: 'exposeNonConformantExtensionsAndVersions:exposeES32ForTesting',
   angleDisabledFeatures: 'preferSubmitAtFBOBoundary'
 });
-const ADB_PORT = '5040';
-const SERIAL = 'emulator-5592';
-const EMULATOR_PORT = '5592';
+// Preserve the donor topology that completed real TFT games in the logged-in
+// macOS user session. 5040/5592 was the service-context regression.
+const ADB_PORT = '5038';
+const SERIAL = 'emulator-5582';
+const EMULATOR_PORT = '5582';
 const EXTERNAL_ROOT = '/Volumes/MAC MINI M4/TFTMAC/Runtime';
 function resolveConsoleUserHome() {
   const userResult = spawnSync('/usr/bin/stat', ['-f', '%Su', '/dev/console'], { encoding: 'utf8' });
@@ -771,7 +773,7 @@ function restoreBaselineAVD(runtime) {
   return { restored: true, configPath, configSHA256: sha256File(configPath) };
 }
 
-function startBaselineEmulator(runtime, captureDir, ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id) {
+function startBaselineEmulator(runtime, captureDir, ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, embeddedControl = false) {
   if (!runtime.avdHome || !runtime.avdIni || !runtime.avdDir) throw new Error(`Official AVD ${AVD_NAME} is not present under the external runtime.`);
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
@@ -787,7 +789,8 @@ function startBaselineEmulator(runtime, captureDir, ramMB = BASELINE_PROFILE.ram
     '-no-hidpi-scaling',
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
-  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
+  if (embeddedControl) args.push('-qt-hide-window', '-grpc-use-token', '-idle-grpc-timeout', '300');
+  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1' && !embeddedControl) {
     const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
     const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
     const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 64);
@@ -811,10 +814,32 @@ function startBaselineEmulator(runtime, captureDir, ramMB = BASELINE_PROFILE.ram
     MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE: '64',
     MVK_CONFIG_FAST_MATH_ENABLED: '1'
   };
-  const child = spawn(runtime.emulator, args, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
+  delete env.ADB_VENDOR_KEYS;
+  const hostApp = path.join(repoRoot, 'dist', 'TFTMAC.app', 'Contents', 'Resources', 'TFTMAC Emulator Host.app');
+  if (!exists(hostApp)) throw new Error(`TFTMAC_EMULATOR_HOST_MISSING: build the native app first: ${hostApp}`);
+  const openArgs = [
+    '-n', '-W',
+    '--env', `TFT_EMULATOR=${runtime.emulator}`,
+    '--env', `TFT_ADB_SERVER_PORT=${ADB_PORT}`,
+    '--env', `ANDROID_ADB_SERVER_PORT=${ADB_PORT}`,
+    '--env', 'ADB_MDNS_AUTO_CONNECT=',
+    '--env', `ANDROID_SDK_ROOT=${runtime.sdkRoot}`,
+    '--env', `ANDROID_AVD_HOME=${runtime.avdHome}`,
+    '--env', 'ANDROID_EMULATOR_USE_SYSTEM_LIBS=0',
+    '--env', `ANGLE_FEATURE_OVERRIDES_ENABLED=${env.ANGLE_FEATURE_OVERRIDES_ENABLED}`,
+    '--env', `ANGLE_FEATURE_OVERRIDES_DISABLED=${env.ANGLE_FEATURE_OVERRIDES_DISABLED}`,
+    '--env', `MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=${env.MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS}`,
+    '--env', `MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=${env.MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE}`,
+    '--env', `MVK_CONFIG_FAST_MATH_ENABLED=${env.MVK_CONFIG_FAST_MATH_ENABLED}`,
+    '--env', `TFT_HOST_STDOUT=${path.join(captureDir, 'emulator.stdout.log')}`,
+    '--env', `TFT_HOST_STDERR=${path.join(captureDir, 'emulator.stderr.log')}`,
+    hostApp, '--args', ...args
+  ];
+  const child = spawn('/usr/bin/open', openArgs, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
   child.unref();
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
-    utc: nowISO(), event: 'BASELINE_EMULATOR_STARTED', pid: child.pid, args,
+    utc: nowISO(), event: 'BASELINE_EMULATOR_STARTED', launcherPid: child.pid, args,
+    launcher: '/usr/bin/open -n -W --env ... --args ...', adbVendorKeysPresent: false,
     profile: controlProfileId,
     env: {
       ANGLE_FEATURE_OVERRIDES_ENABLED: env.ANGLE_FEATURE_OVERRIDES_ENABLED,
@@ -878,7 +903,7 @@ function baselineRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = 
   return state;
 }
 
-async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval) {
+async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval, embeddedControl = false) {
   const preAudit = runtimeProcessAudit();
   const hasEmulator = preAudit.processes.some(item => item.kind === 'ANDROID_EMULATOR');
   if (!hasEmulator) {
@@ -902,7 +927,7 @@ async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfi
   if (!runtime.avdIni || !runtime.avdConfig || !runtime.avdDir) throw new Error(`Required official Play AVD ${AVD_NAME} was not found.`);
   ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
   const prepared = prepareBaselineAVD(runtime, drawFlushInterval);
-  const windowFit = prepareEmulatorWindowFit(runtime, BASELINE_PROFILE.width, BASELINE_PROFILE.height);
+  const windowFit = embeddedControl ? { prepared: false, reason: 'HIDDEN_EMBEDDED_CONTROL' } : prepareEmulatorWindowFit(runtime, BASELINE_PROFILE.width, BASELINE_PROFILE.height);
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
   for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
@@ -923,8 +948,11 @@ async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfi
   let emulatorPid = null;
   try {
     adbServer(runtime);
-    emulatorPid = startBaselineEmulator(runtime, captureDir, ramMB, controlProfileId);
+    const launcherPid = startBaselineEmulator(runtime, captureDir, ramMB, controlProfileId, embeddedControl);
     await waitForBoot(runtime);
+    const observedEmulator = runtimeProcessAudit().processes.find(item => item.kind === 'ANDROID_EMULATOR' && item.command.includes(`-port ${EMULATOR_PORT}`));
+    if (!observedEmulator) throw new Error(`EMULATOR_PID_NOT_OBSERVED_AFTER_OPEN: console port ${EMULATOR_PORT}`);
+    emulatorPid = observedEmulator.pid;
     const guestUnlock = wakeGuestScreen(runtime, captureDir);
     const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
     const clockPreflight = await ensureGuestClock(runtime, captureDir);
@@ -932,9 +960,9 @@ async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfi
     const pkg = packageState(runtime, captureDir, false);
     const renderer = rendererState(runtime, captureDir);
     const state = {
-      schema: 1, sessionId, captureDir, samplerPid, emulatorPid, reusedRunningEmulator: false,
+      schema: 1, sessionId, captureDir, samplerPid, emulatorPid, launcherPid, reusedRunningEmulator: false,
       sdkRoot: runtime.sdkRoot, avdHome: runtime.avdHome, startedUTC: session.startedUTC,
-      packageState: pkg.state, controlProfile: controlProfileId, baselineConfigBackupPath: prepared.backupPath
+      packageState: pkg.state, controlProfile: controlProfileId, baselineConfigBackupPath: prepared.backupPath, embeddedControl
     };
     writeJSON(CONTROL_STATE, state);
     return { ...state, package: pkg, clockPreflight, runtime: runtimeObserved, renderer, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
@@ -1477,7 +1505,7 @@ function ingestApproximateLatestMatch() {
   try {
     if (initialize) db.exec(fs.readFileSync(schemaPath, 'utf8'));
     db.exec('PRAGMA foreign_keys = ON;');
-    const configId = 'tftmac_official_baseline_v1';
+    const configId = BASELINE_PROFILE.id;
     const labSessionId = `${analysis.sessionId}-match-${analysis.matchOrdinal}-approx`;
     const packageInfo = readJSON(path.join(captureDir, 'package-state.json'), {});
     const packageFile = path.join(captureDir, 'package-state.json');
@@ -1966,7 +1994,7 @@ function ingestContinuousRunIntoLab() {
     const sessionFile = readJSON(path.join(captureDir, 'session.json'), {});
     const packageFile = path.join(captureDir, 'package-state.json');
     const rendererFile = path.join(captureDir, 'renderer-state.json');
-    const currentConfigId = 'tftmac_official_baseline_v1';
+    const currentConfigId = BASELINE_PROFILE.id;
     const now = nowISO();
     db.exec('BEGIN IMMEDIATE;');
     try {
@@ -2211,12 +2239,12 @@ function ingestAnalysisIntoLab() {
           .sort((a, b) => b.mtimeMs - a.mtimeMs);
         if (metas[0]) latestTraceMetadata = readJSON(metas[0].path, null);
       } catch {}
-      const currentConfigId = 'tftmac_official_baseline_v1';
+      const currentConfigId = BASELINE_PROFILE.id;
       const candidateConfigId = 'tftmac_5gb_baseline_v1';
 
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_gameplay_ingest_at', now);
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_gameplay_baseline_session', labSessionId);
-      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 preserve continuous-run logger; 2 use pre-play app refresh when memory-pressure thresholds fire; 3 one-factor guest RAM 6144->5120 A/B; 4 test Performance Mode/FPS/graphics by setting timestamps; 5 only then graphics transport/queue experiments');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', 'Hold the proven 5120-MiB native baseline; correlate native frame windows, SurfaceFlinger deltas, memory, audio and explicit setting markers; change one restart-bound variable at a time.');
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_game_settings', JSON.stringify(analysis.match.gameSettings));
       if (latestTraceMetadata) db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('native_trace_collector_smoke', JSON.stringify({ label: latestTraceMetadata.label, durationSeconds: latestTraceMetadata.durationSeconds, byteCount: latestTraceMetadata.byteCount, sha256: latestTraceMetadata.sha256, dataSources: latestTraceMetadata.dataSources, parseState: latestTraceMetadata.parseState }));
 
@@ -2234,9 +2262,9 @@ function ingestAnalysisIntoLab() {
         refresh_hz=excluded.refresh_hz,gpu_mode=excluded.gpu_mode,audio_enabled=excluded.audio_enabled,
         graphics_transport=excluded.graphics_transport,angle_mode=excluded.angle_mode,vulkan_mode=excluded.vulkan_mode,
         moltenvk_mode=excluded.moltenvk_mode,presentation_mode=excluded.presentation_mode,state=excluded.state,notes=excluded.notes`);
-      const currentNotes = 'First playable official TFT control: API36 Play ARM64, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream, MoltenVK/Metal. First full match placed 1st.';
-      configStmt.run(currentConfigId,null,'TFTMAC official playable baseline v0',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,6144,1920,1080,320,60,'host',1,'virtio-gpu-asg','GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
-      configStmt.run(candidateConfigId,currentConfigId,'RAM 5 GiB candidate',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,5120,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE',now,'One-factor candidate: only guest RAM changes from 6144 MB to 5120 MB; 4096 MB is deferred because observed guest headroom makes a 2 GiB cut too aggressive.');
+      const currentNotes = 'Current native baseline: API36 Play ARM64, 5038/5582 donor identity, 5 GiB, authenticated gRPC raw frames, AppKit/Metal presentation, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream and MoltenVK/Metal.';
+      configStmt.run(currentConfigId,null,'TFTMAC native playable 5 GiB baseline',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),BASELINE_PROFILE.vcpu,BASELINE_PROFILE.ramMB,BASELINE_PROFILE.width,BASELINE_PROFILE.height,BASELINE_PROFILE.density,BASELINE_PROFILE.refreshHz,'host',1,BASELINE_PROFILE.glTransport,'GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','native AppKit Metal embedded','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
+      configStmt.run(candidateConfigId,'tftmac_official_baseline_v1','RAM 5 GiB candidate (historical)',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,5120,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as historical 6 GiB baseline','same as historical baseline','same as historical baseline','same as historical baseline','HISTORICAL',now,'Preserved historical 6144 -> 5120 MiB experiment receipt; current authority is tftmac_5gb_native_v1.');
 
       db.prepare(`INSERT INTO sessions(
         id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
@@ -2320,7 +2348,7 @@ function ingestAnalysisIntoLab() {
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,candidate_config_id=excluded.candidate_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
-        .run('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION',currentConfigId,candidateConfigId,'HEAVY',1,'PLANNED',1,'Same official TFT version, same renderer/transport/display/vCPU; compare full-match or matched heavy-combat resource pressure plus native frame timing once available.',now,null,'Safer first RAM intervention selected after Game 2: reduce one GiB only and compare continuous-run pressure.');
+        .run('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION','tftmac_official_baseline_v1',candidateConfigId,'HEAVY',1,'COMPLETE',1,'Historical one-factor experiment preserved; current native runs hold 5120 MiB unless a new explicit experiment is selected.',now,now,'Historical RAM experiment closed by promotion of the 5120-MiB native baseline.');
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
@@ -4066,7 +4094,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       const safeConfigHash = !hashOwner || hashOwner === runtimeConfigId ? observedConfigHash : null;
       const runtimeConfigExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(runtimeConfigId));
       if (!runtimeConfigExists) {
-        const baselineId = 'tftmac_official_baseline_v1';
+        const baselineId = BASELINE_PROFILE.id;
         const baselineExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(baselineId));
         const parentConfigId = runtimeConfigId !== baselineId && baselineExists ? baselineId : null;
         db.prepare(`INSERT INTO runtime_configs(
@@ -4673,6 +4701,7 @@ async function main() {
   if (action === 'start') { json(await startControl()); return; }
   if (action === 'start-baseline-control') { json(await startBaselineControl()); return; }
   if (action === 'start-baseline-control-5gb') { json(await startBaselineControl(5120, 'tftmac_5gb_baseline_v1', 800)); return; }
+  if (action === 'start-native-controller-probe') { json(await startBaselineControl(5120, 'tftmac_5gb_baseline_v1', 800, true)); return; }
   if (action === 'start-baseline-control-5gb-flush400') { json(await startBaselineControl(5120, 'tftmac_5gb_flush400_exp_v1', 400)); return; }
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'play-probe') { json(await playProbe()); return; }

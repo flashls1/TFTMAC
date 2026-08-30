@@ -1,10 +1,12 @@
 # TFTMAC Direct-Play Control Build
 
-**Status:** Execution authority for the fast control build  
+**Status:** SUPERSEDED HISTORICAL CONTROL-BUILD RECEIPT
 **Date:** 2026-08-28  
 **Project:** `TFTMAC`  
 **Repository:** `flashls1/TFTMAC`  
 **Purpose:** Build the smallest trustworthy TFT-on-Mac control product, launch the current official TFT client through Google Play/Riot authority, and capture enough synchronized telemetry to make subsequent performance work causal rather than speculative.
+
+> This dated direct-play/Node control plan is preserved as evidence. It is not current launch authority. Current native authority is `ssot/runtime-authority.json` and `TFTMAC_GPU_RUNTIME_SSOT.md`; in particular, do not reuse this receipt's `5040/5592` service-context identity or 6144-MiB control value.
 
 ---
 

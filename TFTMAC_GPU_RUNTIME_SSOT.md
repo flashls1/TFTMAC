@@ -1,7 +1,7 @@
 # TFTMAC Runtime — Single Source of Truth
 
 **Status:** CURRENT RUNTIME AUTHORITY  
-**Updated:** 2026-08-29  
+**Updated:** 2026-08-30
 **Project:** TFTMAC
 
 ## Current production/control runtime
@@ -11,8 +11,8 @@ TFTMAC uses the released Google Android Emulator already proven on the target Ap
 ```text
 Runtime root: /Volumes/MAC MINI M4/TFTMAC/Runtime
 Android Emulator: 37.1.11.0 (build 15917651)
-ADB server: isolated port 5040
-Emulator console: 5592
+ADB server: donor port 5038
+Emulator console: 5582
 AVD: TFT_Ultra_Tablet
 Guest image: official Google Play ARM64 image
 Target display: 1920x1080 / 60 Hz
@@ -20,7 +20,9 @@ Package: com.riotgames.league.teamfighttactics
 Installer/update authority: com.android.vending
 ```
 
-The current playable control profile is `tftmac_official_baseline_v1` at 6 vCPU / 6144 MB, Medium graphics, 60 FPS, Performance OFF. Ultra High is a measured rejected configuration on the target M4 host because of severe lag.
+The current native playable profile is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, Medium graphics, 60 FPS, Performance OFF. Ultra High is a measured rejected configuration on the target M4 host because of severe lag.
+
+The launcher boundary is frozen: TFTMAC starts its packaged `TFTMAC Emulator Host.app` through `/usr/bin/open -n -W --env ... --args ...` in the logged-in user session. It does not directly spawn QEMU from a Node/service context and does not inject `ADB_VENDOR_KEYS`. The previous `5040/5592` direct-service identity is retained only in historical evidence as the ADB-authorization regression.
 
 ## EmulatorController authority
 

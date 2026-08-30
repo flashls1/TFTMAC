@@ -1,0 +1,307 @@
+# TFTMAC Native Runtime Knowledge Base
+
+**Authority date:** 2026-08-30
+
+**Product target:** Native macOS TFT client experience backed by the official Android TFT package
+
+**Current profile:** `tftmac_5gb_native_v1`
+
+## 1. Current outcome ledger
+
+| Claim | State | Decisive evidence |
+| --- | --- | --- |
+| TFTMAC is a real native Mac app | VERIFIED | AppKit `NSWindow`, native macOS full-screen space, Metal presenter, normal menus/window behavior |
+| Full display is 1920x1080 | VERIFIED | AX window receipt was origin `0,0`, size `1920x1080`, `AXFullScreen=true`; gRPC frames are exactly 1920x1080 RGBA |
+| Correctly oriented live Android video | VERIFIED | Live screenshot and input mapping on native Metal output |
+| Donor-compatible launch architecture | VERIFIED | Packaged `TFTMAC Emulator Host.app` launched with `/usr/bin/open -n -W --env ... --args ...` in the logged-in Mac session |
+| Correct ADB identity | VERIFIED | ADB server `5038`, console `5582`, serial `emulator-5582`; observed transition `offline -> unauthorized -> device` |
+| No manual ADB key injection | VERIFIED | `ADB_VENDOR_KEYS` absent in launch receipt; inherited service socket/address variables cleared |
+| Authenticated hidden-emulator control | VERIFIED | Exact PID-bound `pid_*.ini`, loopback gRPC `8554`, bearer token used in memory only, Emulator `37.1.11.0` authenticated |
+| Native frame transport | VERIFIED | Raw gRPC `RGBA8888`, 8,294,400 bytes per 1920x1080 frame; 16-MiB request/response limits on pinned gRPC transport |
+| Native presentation near 60 Hz in lobby | VERIFIED | Live session observed source-window max `61.1` and Metal-output max `60.5`; these are transport/output metrics, not Unreal FPS |
+| Official current TFT launches | VERIFIED | Package `com.riotgames.league.teamfighttactics`, version `18.1-5402721`, SplashActivity then `com.epicgames.unreal.GameActivity`, PID observed |
+| Riot account can reach the TFT lobby | VERIFIED | Live rendered lobby on the existing signed-in official app state |
+| Mouse and keyboard transport | VERIFIED | Native view coordinate transform and gRPC input; ADB authorization dialog accepted through the native view; input SQL records counts/coordinates, never typed content |
+| CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
+| User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
+| Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
+| Release build/install integrity | VERIFIED | Native-only verifier passed 14/14 tests; `/Applications/TFTMAC.app` is deep-code-sign valid, version 2.0.0 (build 2), embeds its Mac icon, and its executable SHA-256 matches the verified `dist` build |
+
+Primary live acceptance capture:
+
+```text
+~/Library/Application Support/TFTMAC/Captures/
+  2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94/
+```
+
+Final release receipts:
+
+```text
+Verified executable SHA-256:
+  4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49
+
+Live match/lobby plus clean shutdown:
+  2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c
+
+Exact icon-inclusive installed release launch:
+  2026-08-30T09-30-17.189Z-68f1bb24-f660-4245-9750-823b7da703a4
+```
+
+The first receipt reached Unreal `GameActivity`, rendered a live match and the
+fully colored post-match lobby, recorded source/output maxima of 60.95/60.53,
+zero sequence drops, active 48-kHz stereo output with zero underruns, and zero
+confirmed memory kills. Its normal Quit sealed SQL as `STOPPED`, confirmed the
+owned emulator exit, restored the exact AVD hash, and removed both transaction
+and lease markers. The second receipt is the exact final bundle left open for
+play. Its live native window was re-verified at origin `0,0`, size `1920x1080`,
+`AXFullScreen=true`; SQL later observed source/output maxima of 60.99/60.33,
+active 48-kHz stereo output with one active track and zero underruns, and zero
+confirmed memory kills. Four cumulative sequence gaps appeared only after
+repeatedly backgrounding the app and switching Spaces for release captures; the
+separate uninterrupted match/lobby receipt retained zero sequence drops. The
+installed-release session also captured one real
+Riot `MobileFREWebViewActivity` input-dispatch ANR after a five-second
+MotionEvent timeout. That process recovered automatically from PID 2348 to PID
+4439; the session remained `RUNNING`, with no fatal, Vulkan, or audio-error
+aggregate. Secure Android PIN entry remains deliberately manual.
+
+## 2. Non-negotiable runtime invariants
+
+These values are product authority, not suggestions:
+
+```text
+Engine fact: Unreal Engine
+Runtime root: /Volumes/MAC MINI M4/TFTMAC/Runtime
+Emulator: Google Android Emulator 37.1.11 / build 15917651
+AVD: TFT_Ultra_Tablet / API36 Google Play ARM64
+Package: com.riotgames.league.teamfighttactics
+Launcher: /usr/bin/open -n -W -> packaged TFTMAC Emulator Host.app
+ADB server: 5038
+Console: 5582
+Serial: emulator-5582
+ADB_VENDOR_KEYS: absent
+Controller: authenticated loopback gRPC, default port 8554
+Display: 1920x1080 / 320 dpi / 60-Hz default
+CPU/RAM default: 6 vCPU / 5120 MiB
+GPU/audio: host / CoreAudio
+Graphics transport: virtio-gpu-asg
+ASG: 1 MiB write buffer / 16 KiB write step / 32 KiB ring / flush 800
+ANGLE enabled: exposeNonConformantExtensionsAndVersions:exposeES32ForTesting
+ANGLE disabled: preferSubmitAtFBOBoundary
+MoltenVK requested: synchronous submits 0 / max active command buffers 64 / fast math 1
+```
+
+The previous `5040 / 5592 / emulator-5592` service-context route is a historical regression. It must remain only as failure evidence. It is not a fallback and must never overwrite current authority.
+
+## 3. Architecture and ownership boundaries
+
+```text
+Official TFT Unreal GameActivity
+  -> Android application graphics contract
+  -> ANGLE GLES compatibility layer
+  -> guest Vulkan/ranchu
+  -> virtio-gpu-asg + gfxstream
+  -> host Vulkan
+  -> emulator-bundled MoltenVK
+  -> Apple Metal executes emulator rendering
+  -> authenticated EmulatorController raw RGBA stream
+  -> latest-only TFTMAC mailbox
+  -> persistent native Metal queue / triple texture storage
+  -> AppKit full-screen Mac window
+```
+
+There are two Metal owners:
+
+1. MoltenVK uses Metal internally for the emulator's host Vulkan work.
+2. TFTMAC uses its own Metal presenter for the completed Android image.
+
+Do not assign a stall to Unreal, ANGLE, gfxstream, MoltenVK, TFTMAC Metal, or macOS presentation from a metric owned by a different boundary.
+
+## 4. What the FPS display means
+
+The overlay is intentionally explicit:
+
+```text
+SRC <rate> · OUT <rate>
+```
+
+- `SRC` is the rate of distinct images received through authenticated gRPC.
+- `OUT` is the native Metal presentation cadence.
+- Neither number is automatically Unreal engine FPS.
+- A static Android image may be re-presented at 60 OUT while SRC is lower.
+- Unreal/guest/display attribution requires marked SurfaceFlinger deltas and, for deep diagnosis, a bounded Perfetto FrameTimeline trace.
+- `dumpsys gfxinfo` is blind to the native Unreal/Vulkan workload and must not be used as primary FPS authority.
+
+## 5. Native logging system
+
+Every app launch creates a private session directory:
+
+```text
+~/Library/Application Support/TFTMAC/Captures/<session-id>/
+```
+
+The directory is mode `0700`. Queryable authority is `TFTMAC_NATIVE_RUNTIME.sqlite`; local sidecars include `native-events.jsonl`, emulator stdout/stderr, a reversible AVD backup, and session-scoped `logcat.raw.txt`.
+
+| SQL table | What it establishes | Normal cadence |
+| --- | --- | --- |
+| `sessions` | Start/end/status/profile | One row per app run |
+| `runtime_receipts` | Ports, launcher, AVD, renderer requests, profile | At startup |
+| `events` | Lifecycle, package, ADB transitions, markers, failures | Event-driven |
+| `frame_samples` | Visual/hash checkpoints, dimensions, sequence | First frame and bounded checkpoints |
+| `frame_interval_windows` | Source ingress count, drops, mean/p95/max interval | One-second windows |
+| `presentation_samples` | SRC/OUT rate, mailbox replacement and drops | About once per second |
+| `resource_samples` | QEMU CPU/RSS, TFT PID, resumed activity | Five seconds |
+| `guest_memory_samples` | MemTotal/MemAvailable/swap | Five seconds |
+| `clock_sync_samples` | Host/guest monotonic alignment and RTT | Thirty seconds |
+| `surfaceflinger_samples` | Render rate and cumulative total/HWC/GPU misses | Start/end and 30 seconds during gameplay |
+| `audio_samples` | CoreAudio receipt plus active output/rate/stereo/tracks/underruns | Start/end and 30 seconds during gameplay |
+| `logcat_aggregates` | Counts only: ANR, input timeout, fatal, LMK/OOM, skipped frames, ANGLE/Vulkan warnings, PCM errors | Five seconds |
+| `game_process_sessions` | TFT PID start/end | PID transition |
+| `input_samples` | Mouse coordinate/button and keyboard character count/special key | Input event; no typed content |
+
+Raw logcat is local sensitive data. It is excluded from SQL and must never be uploaded or pasted without deliberate sanitization. It begins at a guest timestamp taken after ADB authorization so stale ring-buffer events do not contaminate the run.
+
+`memory_kill_count` is intentionally conservative: it counts only an LMKD line
+that names an actual kill victim or a kernel `Out of memory: Killed process`
+line. LMKD connection, memevent, tracepoint, monitor and policy setup messages
+remain in the private raw log but do not become false-positive kills in SQL.
+
+Useful queries:
+
+```sql
+-- Run and exact profile
+SELECT * FROM sessions;
+SELECT receipt_key, receipt_value, confidence
+FROM runtime_receipts ORDER BY id;
+
+-- Frame ingress and native output
+SELECT started_monotonic_ns, frame_count, sequence_drop_count,
+       mean_interval_ms, p95_interval_ms, maximum_interval_ms
+FROM frame_interval_windows ORDER BY started_monotonic_ns;
+
+SELECT sampled_monotonic_ns, source_fps, presentation_fps,
+       mailbox_replacements, sequence_drops
+FROM presentation_samples ORDER BY sampled_monotonic_ns;
+
+-- Marked gameplay correlation
+SELECT kind, monotonic_ns FROM events
+WHERE kind IN ('MATCH_ENTRY','COMBAT_START','VISIBLE_STUTTER','MATCH_END')
+ORDER BY monotonic_ns;
+
+-- SurfaceFlinger deltas belong inside a marked window
+SELECT sample_label, monotonic_ns, render_rate_hz,
+       total_missed_frames, hwc_missed_frames, gpu_missed_frames
+FROM surfaceflinger_samples ORDER BY monotonic_ns;
+
+-- Sound-health regressions
+SELECT sample_label, active_output, sample_rate_hz, stereo_output,
+       active_tracks, partial_underruns, empty_underruns
+FROM audio_samples ORDER BY monotonic_ns;
+
+-- Crash, memory and renderer signals without exposing raw log text
+SELECT * FROM logcat_aggregates
+WHERE anr_count + fatal_count + memory_kill_count
+    + angle_warning_count + vulkan_warning_count + audio_error_count > 0;
+```
+
+## 6. Performance Lab controls
+
+The app's `Performance Lab…` window persists only validated, restart-bound values. Restart is mandatory so the logger has one attributable profile and the AVD transaction remains reversible.
+
+| Variable | Safe UI domain | Default | Evidence rule |
+| --- | --- | --- | --- |
+| vCPU | `4, 6, 8` | `6` | One-factor test; watch host CPU and frame windows |
+| Guest RAM | `4096, 5120, 6144 MiB` | `5120` | 5120 is KEEP; 4096 remains deferred unless a deliberate test is run |
+| Refresh target | `30, 60 Hz` | `60` | Do not confuse refresh target with engine FPS |
+| ASG draw flush | `400, 800` | `800` | 400 is experimental; score SurfaceFlinger delta and host CPU overhead |
+
+The following remain fixed in the UI: 1920x1080, 320 dpi, ports, AVD/image, official package, host GPU, CoreAudio, ASG buffer/step/ring, ANGLE compatibility flags, MoltenVK requests and native presenter design.
+
+The Telemetry menu records exact user-observed boundaries:
+
+```text
+Command-Shift-1  MATCH_ENTRY
+Command-Shift-2  COMBAT_START
+Command-Shift-3  VISIBLE_STUTTER
+Command-Shift-4  MATCH_END
+```
+
+## 7. Experiment protocol
+
+1. Start from `tftmac_5gb_native_v1`.
+2. Change exactly one restart-bound variable.
+3. Quit cleanly and relaunch; never mutate an AVD profile mid-match.
+4. Keep the same TFT build, graphics preset, FPS cap, workload phase and login state where practical.
+5. Mark match entry, combat, visible stutters and match end.
+6. Compare frame-window p95/max, SurfaceFlinger counter deltas, QEMU CPU/RSS, guest available memory, ANR/fatal/LMK counts and audio underruns.
+7. Reject any boot, ADB, package, crash, memory, audio or usability regression.
+8. KEEP only after a comparable repeat plus cold confirmation.
+9. Record why a candidate was kept or rejected; never promote from a single lobby sample.
+
+Current product decisions:
+
+- KEEP 5120 MiB. Sustained donor runs showed lower pressure direction than 6144 MiB while retaining guest headroom.
+- DEFER 4096 MiB. It lacks sufficient heavy-game safety margin.
+- KEEP Medium / 60 / Performance OFF as the currently usable in-game control.
+- REJECT Ultra High for current usability; direct user observation found severe lag, without fabricating a numeric FPS.
+- TEST 800 -> 400 ASG flush only as a controlled candidate, never bundled with another change.
+- KEEP raw gRPC as the working native presentation transport now.
+- DEFER MMAP until producer readiness, tear-free integrity, frame-age and performance are empirically proven.
+
+A transient black/white end-of-match frame was investigated before release.
+The following guest-side screenshot and native Metal frame both showed the same
+fully colored lobby, so no graphics feature override was promoted from that
+single transient. `BypassVulkanDeviceFeatureOverrides` remains an unproven
+one-factor diagnostic candidate only; use it only if a same-moment guest/native
+capture proves repeatable missing board materials during active combat.
+
+## 8. ZoeMC and graphics-council conclusion
+
+The earlier 10,000-world simulation was reproducible but used subjective priors. It was correctly retained as hypothesis-ordering evidence, not as proof of a winning architecture. ZoeMC v0.2 concluded that real authenticated frame delivery was the decisive next test.
+
+That test has now resolved the first branch:
+
+- Raw authenticated gRPC is empirically viable for correct 1920x1080 native lobby presentation and input.
+- MMAP remains a possible later efficiency optimization, not a requirement to play TFT.
+- Direct MMAP zero-copy is invalid without producer-readiness/integrity fencing.
+- Direct MoltenVK texture handoff has no supported resource-sharing contract.
+- Encoded video/scrcpy and an external emulator window do not satisfy the native product target.
+
+Specialist boundary findings retained from the council:
+
+- Unreal owns game/render/RHI workload behavior, not macOS panel visibility.
+- ANGLE owns the GLES-to-Vulkan compatibility boundary; exposed ES3.2 is a named nonconformant workload adapter, not conformance proof.
+- gfxstream/ASG owns guest-to-host graphics command transport; requested ring/buffer values are not per-frame latency proof.
+- MoltenVK owns host Vulkan-to-Metal translation; environment values are requested until effective readback is available.
+- TFTMAC owns the final frame copy, orientation, scaling, input transform, output cadence and native Mac experience.
+- Fortnite/Unreal guidance supplies transferable measurement categories, not TFT-specific capability or performance proof.
+
+Source research artifacts:
+
+- `outputs/ZoeMC_TFTMAC_Unreal_Graphics_v0.2/REPORT.md`
+- `outputs/ZoeMC_TFTMAC_Unreal_Graphics_v0.2/VARIABLE_MANIFEST.json`
+- `outputs/ZoeMC_TFTMAC_Unreal_Graphics_v0.2/NEXT_TESTS.md`
+- `outputs/TFTMAC_UNREAL_GRAPHICS_COUNCIL_FINDINGS.md`
+
+## 9. Safety and recovery
+
+- TFTMAC acquires an exclusive interprocess lease before touching the shared AVD.
+- Launch fails closed if `TFT_Ultra_Tablet`, console `5582`, or controller `8554` is already occupied.
+- The emulator command line carries a unique per-session marker.
+- Cleanup kills only the exact process that still matches that ownership marker.
+- AVD configuration is backed up, hashed, applied atomically and restored only after the owned emulator exits.
+- Interrupted recovery accepts only the exact discovered AVD config path and a backup inside TFTMAC's capture root.
+- A repeated Quit remains `terminateLater`; it cannot bypass telemetry sealing or AVD restoration.
+- Google/Riot passwords, MFA, CAPTCHA and consent remain manual official-UI actions and are never logged or automated.
+- Android secure-lock content may be intentionally blank in the authenticated screenshot stream. TFTMAC wakes the display, shows an explicit prompt, accepts manual PIN keyboard input, records only character counts, and never stores the PIN.
+
+## 10. Remaining decisive gaps
+
+1. User confirms sound is audible at the Mac speakers/headphones.
+2. Complete one full match in the installed native build and mark entry/combat/stutter/end.
+3. Correlate a bounded active-combat Perfetto trace with SQL clock sync and SurfaceFlinger deltas before attributing a graphics bottleneck.
+4. Validate whether MMAP improves CPU/frame age without tearing; keep raw gRPC if it does not.
+5. Treat source rate, output rate, guest frame timing and panel visibility as separate clocks and claims.
+6. If black/white or missing board materials recur during active combat, mark `VISIBLE_STUTTER` and take guest/native screenshots at the same instant before changing ANGLE, Vulkan, gfxstream or MoltenVK flags.
+
+These are optimization and final user-acceptance gaps. They do not undo the proven native launch, lobby, rendering, input, official-package or software-audio path.
