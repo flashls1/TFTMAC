@@ -1,8 +1,24 @@
 {
   "schema": 1,
   "authoritativeProject": "tftmac",
+  "completedAt": "2026-08-30T04:22:00Z",
   "projects": {
-    "tftmac2": { "state": "PENDING_UNIQUE_CONTENT_CHECK" },
-    "tftmac-runtime": { "state": "PENDING_PUBLISHED_HEAD_REVIEW", "publishedHead": "994cf8d8524b87cc03c7decb4b253fc7be2253c7" }
-  }
+    "tftmac2": {
+      "state": "RETIRED",
+      "catalogName": "RETIRED - TFTMAC2",
+      "uniqueContentCheck": "PASS",
+      "classification": "ALREADY_SUPERSEDED",
+      "evidence": "Only Clara foundation files existed; no active changes, operations, release, or unique implementation."
+    },
+    "tftmac-runtime": {
+      "state": "RETIRED",
+      "catalogName": "RETIRED - TFTMAC Runtime",
+      "publishedHeadReviewed": "994cf8d8524b87cc03c7decb4b253fc7be2253c7",
+      "publishedChange": "7c24d6df-bb78-4a4d-9c8f-1b4028871f60",
+      "publishedChangeClosed": true,
+      "classification": "REJECTED_OBSOLETE",
+      "evidence": "Unique Phase-2 work belonged to the retired source-built AEMU/Android-17 compatibility route (MoltenVK provoking-vertex investigation). Current TFTMAC independently proves the stock Android Emulator 37.1.11 runtime and official Google Play TFT path without that source-build dependency, so no old compatibility code is migrated."
+    }
+  },
+  "claraCatalogResult": "TFTMAC is the only non-retired TFT project identity."
 }
