@@ -666,7 +666,7 @@ INSERT OR REPLACE INTO components(id,name,kind,layer,ownership,status,purpose,no
 
 INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
 ('ev_host_26_6_2','2026-08-28T04:07:47.479Z','host_preflight','ssot/host-preflight.json','c32ab07bdc18afa5ea261c4ab702f75a087319bce6f8cfe0efff9a3f898e5b97','Current host is Apple M4 Mac mini Mac16,10, arm64, 16 GB RAM, macOS 26.6.2 build 25G83; selected Xcode is 26.6 build 17F113 with macOS SDK 26.5.','DIRECT','This is current machine truth and must qualify every host-build compatibility claim.'),
-('ev_legacy_target12','2026-08-27T01:46:26.991Z','source_build_contract','scripts/build-mactician.command','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','Retired donor production Swift and emulator-host binaries explicitly targeted arm64-apple-macosx12.0; historical launcher metadata also declared minimum macOS 12.0.','DIRECT','This is strong project-local evidence that 12.0 is a real compatibility target, not an invented number.'),
+('ev_legacy_target12','2026-08-27T01:46:26.991Z','source_build_contract','historical:removed-build-script','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','Retired donor production Swift and emulator-host binaries explicitly targeted arm64-apple-macosx12.0; historical launcher metadata also declared minimum macOS 12.0.','DIRECT','This is strong project-local evidence that 12.0 is a real compatibility target, not an invented number.'),
 ('ev_phase1_target1014_fail','2026-08-28T05:10:20.931Z','compiler_failure','/Volumes/MAC MINI M4/TFTMAC/Build/logs/phase1-build.stderr.log',NULL,'Phase 1 advanced through Ninja step 885/9854 and failed because AEMU host tooling set macOS deployment target 10.14 while source uses std::filesystem APIs marked available from macOS 10.15.','DIRECT','The current build worker is FAILED, not RUNNING. The failure is host build-contract compatibility, not a graphics capability failure.'),
 ('ev_aemu_legacy_target1014','2026-08-28T05:19:00Z','source_audit','external/qemu/android/scripts/unix/gen-android-sdk-toolchain.sh',NULL,'Locked AEMU helper carries OSX_DEPLOYMENT_TARGET=10.14 / OSX_REQUIRED=10.14 despite current upstream macOS development guidance requiring SDK 10.15 or later.','DIRECT','Treat this helper value as stale upstream build plumbing.'),
 ('ev_legacy_stack','2026-08-27T01:46:26.986Z','release_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','Retired donor release evidence pins Platform Tools 36.0.2, Android Emulator 37.1.11 build 15917651, Android 36 Google APIs ARM64 system image r07, and TFT PBE 18.1-5212127.','DIRECT','Exact archived donor component set.'),
@@ -695,7 +695,7 @@ INSERT OR REPLACE INTO source_documents(id,path,sha256,role,authority_rank,tempo
 ('doc_tftmac_legacy','TFTMAC.md','a93a4c96a37b89033b627520bdbe848cb39b68a12d257caec31ca77ea703e37c','legacy live-profile claim',35,'CURRENT_WITH_LEGACY_CONTENT','Pre-v2 live TFT architecture claims','2026-08-28T05:19:03.867Z',1,'Contains Android 16/API36 and ES3.2 property-era claims; candidate evidence only.'),
 ('doc_graphics_legacy','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','06b7f5bf6ed6a84e7be2f3f296563a0fa9b436ec462eca0700d5bd8483490c59','live engine evidence + legacy adapter design',45,'CURRENT_WITH_LEGACY_CONTENT','Live TFT engine identification and pre-v2 adapter architecture','2026-08-28T05:19:03.867Z',1,'Live package inspection remains useful; architecture is not v2 authority.'),
 ('doc_readme_legacy','README.md','810e1d7117f4e9f6253d680bef270958f18645d7e275dcf9384c7db1a8cd6a13','Retired donor overview',30,'DONOR','Legacy product requirements/version pins/performance summary','2026-08-28T05:19:03.867Z',1,'Do not treat nonconformant GLES3.2-era behavior as v2 acceptance.'),
-('doc_mactician_build','scripts/build-mactician.command','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','legacy build implementation evidence',50,'DONOR','macOS 12 deployment, signing, packaging','2026-08-28T05:19:03.867Z',0,'Strong donor for native macOS compatibility target.'),
+('doc_legacy_build','historical:removed-build-script','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','legacy build implementation evidence',50,'DONOR','macOS 12 deployment, signing, packaging','2026-08-28T05:19:03.867Z',0,'Strong donor for native macOS compatibility target.'),
 ('doc_legacy_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','legacy exact version manifest',55,'DONOR','Retired donor Android/emulator/game component pins','2026-08-28T05:19:03.867Z',0,'Exact archived component versions.'),
 ('doc_benchmarks','docs/benchmarks.md','526507229e293e92155fc3ba588bc48d6a149cc7c164d24e5d10ac33755d7965','historical performance evidence',55,'HISTORICAL','M1 Max / Android36 / Emulator37.1.11 performance experiments','2026-08-28T05:19:03.867Z',0,'Scene-specific results; not current acceptance thresholds.'),
 ('doc_native_gles','docs/native-gles-transport-experiment.md','9b92313317a5eebd1900f5008c9db7018f467b20b6a6029dfc33523f240c650c','historical graphics capability research',65,'HISTORICAL','ANGLE/gfxstream/native GLES source and runtime experiments','2026-08-28T05:19:03.867Z',0,'Contains valuable negative evidence and emu-main-dev donor build results.'),
@@ -758,11 +758,11 @@ INSERT OR REPLACE INTO stack_profile_members(stack_id,version_id,role,required) 
 ('stack_v2_current','vc_android37_r6','guest',1),
 ('stack_v2_current','vc_aemu_locked','source runtime',1),
 ('stack_v2_current','vc_tft_live1616','workload',1),
-('stack_mactician104','vc_mactician104','launcher/runtime product',1),
-('stack_mactician104','vc_emulator37111','emulator',1),
-('stack_mactician104','vc_platformtools3602','platform tools',1),
-('stack_mactician104','vc_android36_r07','guest image',1),
-('stack_mactician104','vc_pbe1815212127','workload',1),
+('stack_legacy_launcher104','vc_legacy_launcher104','launcher/runtime product',1),
+('stack_legacy_launcher104','vc_emulator37111','emulator',1),
+('stack_legacy_launcher104','vc_platformtools3602','platform tools',1),
+('stack_legacy_launcher104','vc_android36_r07','guest image',1),
+('stack_legacy_launcher104','vc_pbe1815212127','workload',1),
 ('stack_m1max_benchmark','vc_emulator37111','emulator',1),
 ('stack_m1max_benchmark','vc_pbe1815212127','workload',1),
 ('stack_stock37111_api37','vc_emulator37111','stock emulator',1),
@@ -887,7 +887,7 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T05:20:00Z','Host compatibility model','Separated current host macOS 26.6.2, Xcode 26.6, SDK 26.5 and deployment target into independent compatibility dimensions.','ev_host_26_6_2'),
 ('2026-08-28T05:20:00Z','Version strategy','Added current/older Xcode, Emulator, Android guest, retired-donor and historical source-build versions with explicit provenance and limitations.',NULL),
 ('2026-08-28T05:20:00Z','Document truth model','Classified current authority, legacy donor, historical evidence and stale documents so obsolete claims cannot masquerade as current state.',NULL),
-('2026-08-28T05:20:00Z','Deployment target','Promoted macOS 12.0 as first Phase1 parity candidate; rejected inherited 10.14 and unsupported 10.15 targets.','ev_mactician_target12');
+('2026-08-28T05:20:00Z','Deployment target','Promoted macOS 12.0 as first Phase1 parity candidate; rejected inherited 10.14 and unsupported 10.15 targets.','ev_legacy_target12');
 
 -- ---------------------------------------------------------------------------
 -- Historical runtime/profile/benchmark coverage
@@ -1018,11 +1018,11 @@ INSERT OR REPLACE INTO artifact_registry(id,path,artifact_kind,layer,role,status
 ('ar_map','ssot/TFTMAC_ENGINEERING_MAP.sql','knowledge_graph','reasoning','Persistent dependency/version/evidence map','CURRENT_AUTHORITY','Update before architecture-changing action','doc_map',NULL),
 ('ar_v2tool','tools/tftmac-v2.mjs','orchestration_code','host_build','Phase0/Phase1/external storage/build compatibility/map validation','CURRENT_IMPLEMENTATION','Changes require validation and map evidence','doc_v2_tool',NULL),
 ('ar_tftmac_shell','tftmac/Sources/TFTMACApp.swift','native_app_source','presentation','Pre-v2 native TFTMAC UI/runtime controller','DONOR','Do not promote unchanged; remove old storage and spoof assumptions first','doc_tftmac_app',NULL),
-('ar_mactician_build','scripts/build-mactician.command','build_script','donor','Proven macOS12 native build/sign/package path','DONOR','Harvest compatibility patterns only','doc_mactician_build',NULL),
-('ar_mactician_runtime','launcher/Sources/RuntimeController.swift','runtime_controller','donor','Legacy process/runtime orchestration and environment injection','DONOR','Harvest state/lifecycle patterns; paths/profiles are legacy','doc_legacy_architecture',NULL),
-('ar_mactician_paths','launcher/Sources/LauncherPaths.swift','path_model','donor','Legacy Application Support SDK/AVD layout','HISTORICAL','Do not use for v2 bulk runtime path','doc_legacy_architecture',NULL),
-('ar_ref_play36','reference/avd/config.ini','avd_reference','guest','Android36 Play-class AVD donor','HISTORICAL','Read-only evidence','doc_readme_mactician',NULL),
-('ar_ref_root36','reference/rootable-avd/config.ini','avd_reference','guest','Android36 rootable execution donor','HISTORICAL','Read-only evidence','doc_readme_mactician',NULL),
+('ar_legacy_build','historical:removed-build-script','build_script','donor','Proven macOS12 native build/sign/package path','DONOR','Harvest compatibility patterns only','doc_legacy_build',NULL),
+('ar_legacy_runtime','historical:removed-runtime-controller','runtime_controller','donor','Legacy process/runtime orchestration and environment injection','DONOR','Harvest state/lifecycle patterns; paths/profiles are legacy','doc_legacy_architecture',NULL),
+('ar_legacy_paths','historical:removed-path-model','path_model','donor','Legacy Application Support SDK/AVD layout','HISTORICAL','Do not use for v2 bulk runtime path','doc_legacy_architecture',NULL),
+('ar_ref_play36','reference/avd/config.ini','avd_reference','guest','Android36 Play-class AVD donor','HISTORICAL','Read-only evidence','doc_readme_legacy',NULL),
+('ar_ref_root36','reference/rootable-avd/config.ini','avd_reference','guest','Android36 rootable execution donor','HISTORICAL','Read-only evidence','doc_readme_legacy',NULL),
 ('ar_native_gles_host_patch','artifacts/gfxstream-gles32-host-capability-prototype.patch','prototype_patch','graphics_transport','Historical GLES3.2 host capability prototype','EXPERIMENTAL','Do not apply to locked source without fresh causal evidence','doc_native_gles',NULL),
 ('ar_native_gles_alias_patch','artifacts/gfxstream-gles32-guest-proc-alias-prototype.patch','prototype_patch','guest_graphics','Historical proc-alias prototype','REJECTED','Retain for evidence only; runtime loader already resolved aliases','doc_native_gles',NULL),
 ('ar_performance_candidates','scripts/performance-candidates.json','experiment_manifest','performance','Historical reproducible performance candidates','HISTORICAL','Do not infer promotion from file presence','doc_benchmarks',NULL);
@@ -1341,7 +1341,7 @@ INSERT OR REPLACE INTO map_meta(key,value) VALUES
 ('latest_5gb_trend','Latest closed 5 GiB run split into 10-minute windows: heavy-gameplay CPU ~245-277%, emulator RSS ~6.1-6.5 GiB, host available ~5.1-5.5 GiB, guest available ~1.64-1.75 GiB. Across the full ~106-minute run compressed memory rose ~2.72 GiB and host available fell ~2.62 GiB. Pressure accumulates over time, but disconnect did not coincide with guest-memory collapse.'),
 ('latest_5gb_vs_6gb','Directional whole-run comparison: pageout rate 6 GiB ~207.18/min vs 5 GiB ~133.54/min (-35.55%); compressed mean ~0.45 GiB lower and compressed p95 ~1.65 GiB lower on 5 GiB. Workload mixes differ, so 5 GiB is retained but not promoted as a final causal fact.'),
 ('current_ram_decision','KEEP 5 GiB for continued development; DO NOT cut to 4 GiB now. Heavy-gameplay guest available memory already reaches ~1.64 GiB, so another 1 GiB cut has insufficient safety margin without stronger evidence.'),
-('current_presentation_candidate','Stage one-factor gfxstream/ASG candidate mactician_compatible_5gb_flush400_v1: drawFlushInterval 800 -> 400 only. Motivation: broad prior run added +524 HWC misses with +0 GPU misses, and AOSP defines this parameter as balancing host-GPU starvation against notification overhead. Do not combine with RAM, graphics preset, FPS, Performance Mode or other transport changes.'),
+('current_presentation_candidate','Stage one-factor gfxstream/ASG candidate tftmac_5gb_flush400_exp_v1: drawFlushInterval 800 -> 400 only. Motivation: broad prior run added +524 HWC misses with +0 GPU misses, and AOSP defines this parameter as balancing host-GPU starvation against notification overhead. Do not combine with RAM, graphics preset, FPS, Performance Mode or other transport changes.'),
 ('current_preplay_pressure_thresholds','Between-game TFT app refresh threshold tightened to host compressed >=3.75 GiB or host available <=4.75 GiB based on the 5 GiB end-of-run trend; refresh preserves emulator and logger.');
 
 INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
@@ -1355,13 +1355,13 @@ INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T23:47:00Z','Logger reliability hardening','Decoupled raw capture sealing and cleanup from SQLite normalization so post-processing cannot strand or invalidate a long run.','ev_logger_raw_seal');
 
 INSERT OR REPLACE INTO map_meta(key,value) VALUES
-('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; mactician_compatible_5gb_v1; raw capture SEALED; SQLite COMPLETE; 18/18 required artifacts present; manifest f17014ce217742682898a4562aa873a58d8d3fed09b765603c6d4052ea49aa6b.'),
+('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; tftmac_5gb_baseline_v1; raw capture SEALED; SQLite COMPLETE; 18/18 required artifacts present; manifest f17014ce217742682898a4562aa873a58d8d3fed09b765603c6d4052ea49aa6b.'),
 ('latest_closed_run_memory','Second sustained 5 GiB run reproduced the operating envelope. Full run weighted means: host available 5.425 GiB, host compressed 2.793 GiB, guest available 2.224 GiB, emulator RSS 5829 MiB. Heavy 10-minute windows reached CPU 229-288%, guest available about 1.70-1.90 GiB, host available about 5.01-5.26 GiB, compressed about 2.97-3.40 GiB. Keep 5120 MB; do not reduce to 4096 MB.'),
 ('latest_closed_run_pageouts','Current 5 GiB run: 10711 pageouts over 3860.24s = 166.48/min including cold boot. Excluding the first 10-minute cold-boot/startup window, sustained rate is about 127.94/min, close to the prior 5 GiB run about 133.54/min. Old 6 GiB baseline was about 207.18/min. Directional evidence continues to favor 5 GiB.'),
 ('latest_closed_run_audio','Explicit CoreAudio held through the full run: TFT OpenSL ES 44.1 kHz stereo playback active, ranchu pcm_write I/O failures=0, mixer underruns partial=0 empty=0.'),
 ('latest_closed_run_network','TFT stayed PID 5276 and Android network 101 remained assigned. End-of-game TFT connectivity callback requests at about 19:30 were immediately assigned to network 101; no Android LOST/UNAVAIL sequence or process restart was observed.'),
 ('latest_closed_run_presentation','Post-run SurfaceFlinger state: 60 Hz, 1280x720 TFT SurfaceView scaled 1.5x to 1920x1080, total missed=562 and HWC missed=562. The old parser converted an actual zero counter to NULL; parser has been corrected to preserve zero. Current evidence continues to prioritize presentation/HWC pacing over host GPU saturation.'),
-('current_graphics_next_action','Proceed with one-factor mactician_compatible_5gb_flush400_v1 experiment: ASG drawFlushInterval 800 -> 400 only, after validating the corrected zero-counter parser and sealed-run comparison. Keep RAM=5120, Medium/60/Performance OFF, CoreAudio, ANGLE/Vulkan/gfxstream/MoltenVK, resolution and all other transport fields fixed.');
+('current_graphics_next_action','Proceed with one-factor tftmac_5gb_flush400_exp_v1 experiment: ASG drawFlushInterval 800 -> 400 only, after validating the corrected zero-counter parser and sealed-run comparison. Keep RAM=5120, Medium/60/Performance OFF, CoreAudio, ANGLE/Vulkan/gfxstream/MoltenVK, resolution and all other transport fields fixed.');
 
 COMMIT;
 
