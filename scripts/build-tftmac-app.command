@@ -49,7 +49,7 @@ for spec in \
 iconutil -c icns "$ICON_WORK/TFTMAC.iconset" -o "$RESOURCES/TFTMAC.icns"
 cp -f "$ICON_WORK/icon_1024x1024.png" "$RESOURCES/TFTMAC-1024.png"
 
-# Compile only the new stock-runtime TFTMAC shell. The legacy Mactician/PBE launcher is not linked.
+# Compile only the new stock-runtime TFTMAC shell. The retired donor/PBE launcher is not linked.
 typeset -a SWIFT_SOURCES
 SWIFT_SOURCES=("$SOURCES_DIR"/*.swift)
 xcrun swiftc \
@@ -72,8 +72,8 @@ cp -f "$PROJECT_DIR/ssot/STACK.lock.yaml" "$RESOURCES/ssot/STACK.lock.yaml"
 git -C "$PROJECT_DIR" rev-parse HEAD > "$RESOURCES/Tools/build-commit.txt"
 
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
-if rg -n 'CFBundle(DisplayName|Name).*Emulator|<string>Emulator</string>|<string>Mactician</string>' "$CONTENTS/Info.plist"; then
-    print -u2 "TFTMAC app metadata contains legacy Emulator/Mactician branding."
+if rg -n 'CFBundle(DisplayName|Name).*Emulator|<string>Emulator</string>' "$CONTENTS/Info.plist"; then
+    print -u2 "TFTMAC app metadata contains legacy Emulator branding."
     exit 1
 fi
 

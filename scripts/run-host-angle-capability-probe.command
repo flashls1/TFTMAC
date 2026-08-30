@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly PROJECT_DIR="${0:A:h:h}"
 readonly MODE="${1:-}"
-readonly SDK_ROOT="${TFT_ROOT_SDK:-${TFT_ANDROID_SDK_ROOT:-$HOME/Library/Application Support/Mactician/sdk}}"
+readonly SDK_ROOT="${TFT_ROOT_SDK:-${TFT_ANDROID_SDK_ROOT:-/Volumes/MAC MINI M4/TFTMAC/Runtime/sdk}}"
 readonly ANGLE_DIR="$SDK_ROOT/emulator/lib64/gles_angle"
 readonly EGL_LIBRARY="$ANGLE_DIR/libEGL.dylib"
 readonly GLES_LIBRARY="$ANGLE_DIR/libGLESv2.dylib"

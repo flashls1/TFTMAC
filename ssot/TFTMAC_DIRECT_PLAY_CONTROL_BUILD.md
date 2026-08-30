@@ -183,8 +183,8 @@ Riot's own in-game content/update services
 
 Explicitly forbidden as production authority:
 
-- Mactician's hosted TFT feed;
-- Mactician's bundled TFT package;
+- the retired donor's hosted TFT feed;
+- the retired donor's bundled TFT package;
 - stale PBE package pins;
 - community APK mirrors;
 - public APK download sites;
@@ -192,7 +192,7 @@ Explicitly forbidden as production authority:
 - re-signed Riot binaries;
 - patched Riot gameplay binaries.
 
-Mactician is a donor/reference implementation only.
+The retired implementation is donor/reference evidence only.
 
 ## 5.1 PackageStateManager
 
@@ -338,7 +338,7 @@ The first official-package control should be as close to stock Google behavior a
 
 Use the known donor graphics configuration only to the minimum extent required to cross a real compatibility boundary. Every non-default graphics control must be captured in `runtime-state.json` and `renderer-state.json`.
 
-Do not inherit Mactician's nonconformant GLES-version exposure into the product silently. If TFT requires it for this control, label it explicitly as a temporary compatibility adapter and keep the existing genuine-capability laboratory as the truth test.
+Do not inherit the retired donor's nonconformant GLES-version exposure into the product silently. If TFT requires it for this control, label it explicitly as a temporary compatibility adapter and keep the existing genuine-capability laboratory as the truth test.
 
 ---
 
@@ -372,7 +372,7 @@ No presentation system is allowed to reintroduce guest software video encoding.
 
 Use the strongest reusable open-source/donor product patterns already in the repository instead of re-inventing basic launcher UX.
 
-Allowed Mactician donor concepts/code patterns under its applicable license include:
+Allowed retired-donor concepts/code patterns under their applicable license include:
 
 - SwiftUI launcher structure;
 - install/readiness/running/failure states;
@@ -992,7 +992,7 @@ The direct-play control is **PASS** only when all of these are true:
 12. The logger starts before emulator/game launch and continues through shutdown.
 13. Required runtime, package, renderer, clock, and frame-timing artifacts are captured.
 14. A session artifact manifest is hashed.
-15. No Mactician server/feed/bundled Riot package is required.
+15. No retired-donor server/feed/bundled Riot package is required.
 16. No giant AEMU source checkout is required for ordinary launch.
 17. Poor FPS is allowed at this gate if the workload is playable enough to produce valid measurements.
 

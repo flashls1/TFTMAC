@@ -24,7 +24,7 @@ This file supersedes the old production direction based on:
 - API 37 as the required production guest;
 - custom ANGLE as normal production work;
 - scrcpy, video encoding, screenshots, or software streaming as the gameplay display path;
-- Mactician's hosted TFT feed/updater/orchestration;
+- the retired donor's hosted TFT feed/updater/orchestration;
 - third-party Riot APK distribution;
 - per-match telemetry as the primary performance model.
 
@@ -161,7 +161,7 @@ Do not silently default the app to Ultra High. Medium/60/OFF is the current play
 # 3. Non-negotiable architecture rules
 
 1. **Stock Google Android Emulator remains the normal runtime.** No mandatory source-built AEMU tree.
-2. **Mactician remains untouched as donor/control evidence.** Do not make the shipping app depend on Mactician servers, feed, updater, or orchestration.
+2. **Retired donor evidence remains untouched as donor/control evidence.** Do not make the shipping app depend on retired donor servers, feed, updater, or orchestration.
 3. **Official Google Play/Riot package only.** Do not mirror, repack, patch, or re-sign Riot binaries.
 4. **The Android source framebuffer stays 1920×1080.** Native window resizing changes presentation size, not guest resolution.
 5. **No visible Qt/QEMU UI in production.** The emulator runs hidden.

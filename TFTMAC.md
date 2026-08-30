@@ -49,6 +49,6 @@ node tools/clara-task.mjs acceptance
 
 ## Unreal transition
 
-The original Mactician PBE implementation is intentionally preserved as donor/reference code. When Riot's live Android client exposes Unreal runtime evidence, TFTMAC can activate a separately validated `UnrealEnhancedAdapter` using the donor ANGLE/MoltenVK/DeviceProfiles research. Until then, the working native live path remains isolated and is never replaced by an unproven Unreal overlay.
+The original retired donor PBE implementation is intentionally preserved as donor/reference code. When Riot's live Android client exposes Unreal runtime evidence, TFTMAC can activate a separately validated `UnrealEnhancedAdapter` using the donor ANGLE/MoltenVK/DeviceProfiles research. Until then, the working native live path remains isolated and is never replaced by an unproven Unreal overlay.
 
 See `docs/TFTMAC_GRAPHICS_ARCHITECTURE.md` for the graphics and fallback design.

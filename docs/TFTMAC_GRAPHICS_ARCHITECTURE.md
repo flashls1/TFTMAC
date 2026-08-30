@@ -22,7 +22,7 @@ TFTMAC uses a two-layer architecture:
 
 2. **Engine adapter**
    - `LiveNativeAdapter`: current Google Play live client, stock Riot runtime;
-   - `UnrealEnhancedAdapter`: future/live Unreal client, harvesting the proven Mactician PBE renderer work;
+   - `UnrealEnhancedAdapter`: future/live Unreal client, harvesting the proven retired-donor PBE renderer work;
    - adapters are selected by evidence, never by version-string guesswork.
 
 ## Engine detection
@@ -47,7 +47,7 @@ Current live evidence after the completed in-game patch:
 - post-patch process/storage inspection found no Unreal runtime evidence
 - the current live client therefore remains on Riot's native Android runtime for this build
 
-The Unreal adapter remains prepared from Mactician donor work and must activate only when future live runtime evidence proves the engine transition.
+The Unreal adapter remains prepared from retired-donor work and must activate only when future live runtime evidence proves the engine transition.
 
 ## Graphics presets
 
@@ -87,7 +87,7 @@ Safe enhancement surface:
 
 ## UnrealEnhancedAdapter
 
-When live TFT exposes the Unreal runtime, harvest Mactician's proven PBE work rather than rediscovering it.
+When live TFT exposes the Unreal runtime, harvest the proven retired-donor PBE work rather than rediscovering it.
 
 Candidate stack:
 
