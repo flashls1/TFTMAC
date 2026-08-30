@@ -79,6 +79,66 @@ function writeJSON(file, value) { ensureDir(path.dirname(file)); fs.writeFileSyn
 function sha256File(file) { const h = crypto.createHash('sha256'); h.update(fs.readFileSync(file)); return h.digest('hex'); }
 function matchNumber(text, pattern) { const match = String(text ?? '').match(pattern); return match ? Number(match[1]) : null; }
 
+function bootstrapNativeGate1Authority() {
+  const runtime = discover();
+  const installedProto = path.join(runtime.sdkRoot, 'emulator', 'lib', 'emulator_controller.proto');
+  if (!exists(installedProto)) throw new Error(`INSTALLED_EMULATOR_CONTROLLER_PROTO_MISSING: ${installedProto}`);
+  const vendorRoot = path.join(repoRoot, 'Vendor', 'AndroidEmulator');
+  const vendoredProto = path.join(vendorRoot, 'emulator_controller.proto');
+  const sourcePath = path.join(vendorRoot, 'SOURCE.json');
+  ensureDir(vendorRoot);
+  const installedSHA256 = sha256File(installedProto);
+  if (exists(vendoredProto)) {
+    const currentSHA256 = sha256File(vendoredProto);
+    if (currentSHA256 !== installedSHA256) {
+      throw new Error(`EMULATOR_CONTROLLER_PROTO_DRIFT: vendored=${currentSHA256} installed=${installedSHA256}`);
+    }
+  } else {
+    fs.copyFileSync(installedProto, vendoredProto);
+  }
+  const phase0 = readJSON(path.join(repoRoot, 'ssot', 'phase0-source.json'), {});
+  const source = {
+    schema: 1,
+    observedAt: nowISO(),
+    authority: 'INSTALLED_ANDROID_EMULATOR',
+    emulatorVersion: runtime.emulatorVersion,
+    emulatorBinary: runtime.emulator,
+    installedProtoPath: installedProto,
+    installedProtoSHA256: installedSHA256,
+    vendoredProtoPath: path.relative(repoRoot, vendoredProto),
+    vendoredProtoSHA256: sha256File(vendoredProto),
+    aemuAuthority: {
+      branch: phase0.aemuBranch ?? null,
+      qemuCommit: phase0.commits?.qemu ?? null,
+      aemuCommit: phase0.commits?.aemu ?? null,
+      manifestSHA256: phase0.manifestSHA256 ?? null
+    },
+    contract: 'The vendored protocol bytes come directly from the installed stock Android Emulator runtime used by TFTMAC. Build/generation must fail on byte drift until the authority is intentionally refreshed.'
+  };
+  writeJSON(sourcePath, source);
+  return {
+    action: 'NATIVE_GATE1_EMULATOR_PROTOCOL_FROZEN',
+    emulatorVersion: runtime.emulatorVersion,
+    installedProto,
+    installedProtoSHA256: installedSHA256,
+    vendoredProto: path.relative(repoRoot, vendoredProto),
+    source: path.relative(repoRoot, sourcePath),
+    sourceSHA256: sha256File(sourcePath)
+  };
+}
+
+function nativeGate1Script(scriptName, actionName) {
+  const script = path.join(repoRoot, 'scripts', scriptName);
+  if (!exists(script)) throw new Error(`NATIVE_GATE1_SCRIPT_MISSING: ${script}`);
+  const result = command('/bin/zsh', [script], { allowFailure: true, timeout: 3600000, maxBuffer: 128 * 1024 * 1024 });
+  if (result.status !== 0) {
+    const stdoutTail = result.stdout.slice(-24000);
+    const stderrTail = result.stderr.slice(-24000);
+    throw new Error(`${actionName}_FAILED\nSTDOUT_TAIL:\n${stdoutTail}\nSTDERR_TAIL:\n${stderrTail}`);
+  }
+  return { action: actionName, status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() || null };
+}
+
 function command(executablePath, args = [], options = {}) {
   const result = spawnSync(executablePath, args, {
     encoding: 'utf8',
@@ -4715,6 +4775,9 @@ async function main() {
   if (action === 'prepare') { json(prepareAVD()); return; }
   if (action === 'engineering-map-selftest') { json(engineeringMapSelfTest()); return; }
   if (action === 'lab-selftest') { json(labSelfTest()); return; }
+  if (action === 'native-gate1-bootstrap') { json(bootstrapNativeGate1Authority()); return; }
+  if (action === 'native-gate1-build') { json(nativeGate1Script('build-native-app.command', 'NATIVE_GATE1_BUILD')); return; }
+  if (action === 'native-gate1-test') { json(nativeGate1Script('test-native-app.command', 'NATIVE_GATE1_TEST')); return; }
   if (action === 'build') { json(buildApp()); return; }
   if (action === 'install-app') { json(installApp()); return; }
   if (action === 'launch-app') { json(launchApp()); return; }

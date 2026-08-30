@@ -1,0 +1,198 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* TFTMACApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* TFTMACApplication.swift */; };
+		100000000000000000000002 /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* AppCoordinator.swift */; };
+		100000000000000000000003 /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* MainWindowController.swift */; };
+		100000000000000000000004 /* EmbeddedEmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* EmbeddedEmulatorView.swift */; };
+		100000000000000000000005 /* ViewportMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* ViewportMapper.swift */; };
+		100000000000000000000006 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* main.swift */; };
+		100000000000000000000007 /* TFTMACGate1Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* TFTMACGate1Tests.swift */; };
+		100000000000000000000008 /* ViewportMapper.swift in Tests */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* ViewportMapper.swift */; };
+		100000000000000000000011 /* GRPCCore in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000001 /* GRPCCore */; };
+		100000000000000000000012 /* GRPCNIOTransportHTTP2 in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000002 /* GRPCNIOTransportHTTP2 */; };
+		100000000000000000000013 /* GRPCProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000003 /* GRPCProtobuf */; };
+		100000000000000000000014 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000004 /* SwiftProtobuf */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* TFTMACApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TFTMACApplication.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
+		200000000000000000000003 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
+		200000000000000000000004 /* EmbeddedEmulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedEmulatorView.swift; sourceTree = "<group>"; };
+		200000000000000000000005 /* ViewportMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewportMapper.swift; sourceTree = "<group>"; };
+		200000000000000000000006 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		200000000000000000000007 /* TFTMACGate1Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TFTMACGate1Tests.swift; sourceTree = "<group>"; };
+		200000000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000011 /* TFTMAC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TFTMAC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000012 /* EmbeddedControlProbe */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = EmbeddedControlProbe; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000013 /* TFTMACTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TFTMACTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		300000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000011 /* GRPCCore in Frameworks */,
+				100000000000000000000012 /* GRPCNIOTransportHTTP2 in Frameworks */,
+				100000000000000000000013 /* GRPCProtobuf in Frameworks */,
+				100000000000000000000014 /* SwiftProtobuf in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		300000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		300000000000000000000003 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		400000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000002 /* TFTMAC */,
+				400000000000000000000005 /* Probes */,
+				400000000000000000000007 /* Tests */,
+				400000000000000000000009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 /* TFTMAC */ = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000003 /* App */,
+				400000000000000000000004 /* Presentation */,
+				200000000000000000000008 /* Info.plist */,
+			);
+			path = TFTMAC;
+			sourceTree = "<group>";
+		};
+		400000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000001 /* TFTMACApplication.swift */,
+				200000000000000000000002 /* AppCoordinator.swift */,
+				200000000000000000000003 /* MainWindowController.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		400000000000000000000004 /* Presentation */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000004 /* EmbeddedEmulatorView.swift */,
+				200000000000000000000005 /* ViewportMapper.swift */,
+			);
+			path = Presentation;
+			sourceTree = "<group>";
+		};
+		400000000000000000000005 /* Probes */ = {isa = PBXGroup; children = (400000000000000000000006 /* EmbeddedControlProbe */,); path = Probes; sourceTree = "<group>"; };
+		400000000000000000000006 /* EmbeddedControlProbe */ = {isa = PBXGroup; children = (200000000000000000000006 /* main.swift */,); path = EmbeddedControlProbe; sourceTree = "<group>"; };
+		400000000000000000000007 /* Tests */ = {isa = PBXGroup; children = (400000000000000000000008 /* TFTMACTests */,); path = Tests; sourceTree = "<group>"; };
+		400000000000000000000008 /* TFTMACTests */ = {isa = PBXGroup; children = (200000000000000000000007 /* TFTMACGate1Tests.swift */,); path = TFTMACTests; sourceTree = "<group>"; };
+		400000000000000000000009 /* Products */ = {isa = PBXGroup; children = (200000000000000000000011 /* TFTMAC.app */, 200000000000000000000012 /* EmbeddedControlProbe */, 200000000000000000000013 /* TFTMACTests.xctest */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		500000000000000000000001 /* TFTMAC */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 900000000000000000000002 /* Build configuration list for PBXNativeTarget "TFTMAC" */;
+			buildPhases = (700000000000000000000001 /* Sources */, 300000000000000000000001 /* Frameworks */, 800000000000000000000001 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			name = TFTMAC;
+			packageProductDependencies = (D00000000000000000000001 /* GRPCCore */, D00000000000000000000002 /* GRPCNIOTransportHTTP2 */, D00000000000000000000003 /* GRPCProtobuf */, D00000000000000000000004 /* SwiftProtobuf */);
+			productName = TFTMAC;
+			productReference = 200000000000000000000011 /* TFTMAC.app */;
+			productType = "com.apple.product-type.application";
+		};
+		500000000000000000000002 /* EmbeddedControlProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 900000000000000000000003 /* Build configuration list for PBXNativeTarget "EmbeddedControlProbe" */;
+			buildPhases = (700000000000000000000002 /* Sources */, 300000000000000000000002 /* Frameworks */);
+			buildRules = ();
+			dependencies = ();
+			name = EmbeddedControlProbe;
+			productName = EmbeddedControlProbe;
+			productReference = 200000000000000000000012 /* EmbeddedControlProbe */;
+			productType = "com.apple.product-type.tool";
+		};
+		500000000000000000000003 /* TFTMACTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 900000000000000000000004 /* Build configuration list for PBXNativeTarget "TFTMACTests" */;
+			buildPhases = (700000000000000000000003 /* Sources */, 300000000000000000000003 /* Frameworks */);
+			buildRules = ();
+			dependencies = ();
+			name = TFTMACTests;
+			productName = TFTMACTests;
+			productReference = 200000000000000000000013 /* TFTMACTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		600000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2600; LastUpgradeCheck = 2600;};
+			buildConfigurationList = 900000000000000000000001 /* Build configuration list for PBXProject "TFTMAC" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = 400000000000000000000001;
+			packageReferences = (A00000000000000000000001 /* XCRemoteSwiftPackageReference "grpc-swift-2" */, A00000000000000000000002 /* XCRemoteSwiftPackageReference "grpc-swift-nio-transport" */, A00000000000000000000003 /* XCRemoteSwiftPackageReference "grpc-swift-protobuf" */, A00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-protobuf" */);
+			productRefGroup = 400000000000000000000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (500000000000000000000001 /* TFTMAC */, 500000000000000000000002 /* EmbeddedControlProbe */, 500000000000000000000003 /* TFTMACTests */);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		800000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		700000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005,); runOnlyForDeploymentPostprocessing = 0; };
+		700000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000006,); runOnlyForDeploymentPostprocessing = 0; };
+		700000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000007, 100000000000000000000008,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		B00000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 6.0;}; name = Debug; };
+		B00000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 6.0;}; name = Release; };
+		B00000000000000000000011 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = TFTMAC/Info.plist; MACOSX_DEPLOYMENT_TARGET = 15.0; MARKETING_VERSION = 2.0.0; PRODUCT_BUNDLE_IDENTIFIER = com.flashls1.tftmac; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0;}; name = Debug; };
+		B00000000000000000000012 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = TFTMAC/Info.plist; MACOSX_DEPLOYMENT_TARGET = 15.0; MARKETING_VERSION = 2.0.0; PRODUCT_BUNDLE_IDENTIFIER = com.flashls1.tftmac; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0;}; name = Release; };
+		B00000000000000000000021 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Debug; };
+		B00000000000000000000022 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Release; };
+		B00000000000000000000031 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.flashls1.tftmac.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Debug; };
+		B00000000000000000000032 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ARCHS = arm64; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.flashls1.tftmac.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SWIFT_VERSION = 6.0;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		900000000000000000000001 /* Build configuration list for PBXProject "TFTMAC" */ = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000001, B00000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		900000000000000000000002 /* Build configuration list for PBXNativeTarget "TFTMAC" */ = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000011, B00000000000000000000012,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		900000000000000000000003 /* Build configuration list for PBXNativeTarget "EmbeddedControlProbe" */ = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000021, B00000000000000000000022,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		900000000000000000000004 /* Build configuration list for PBXNativeTarget "TFTMACTests" */ = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000031, B00000000000000000000032,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A00000000000000000000001 /* XCRemoteSwiftPackageReference "grpc-swift-2" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/grpc/grpc-swift-2.git"; requirement = {kind = exactVersion; version = 2.4.2;}; };
+		A00000000000000000000002 /* XCRemoteSwiftPackageReference "grpc-swift-nio-transport" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/grpc/grpc-swift-nio-transport.git"; requirement = {kind = exactVersion; version = 2.9.1;}; };
+		A00000000000000000000003 /* XCRemoteSwiftPackageReference "grpc-swift-protobuf" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/grpc/grpc-swift-protobuf.git"; requirement = {kind = exactVersion; version = 2.4.1;}; };
+		A00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/apple/swift-protobuf.git"; requirement = {kind = exactVersion; version = 1.38.1;}; };
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D00000000000000000000001 /* GRPCCore */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000001 /* XCRemoteSwiftPackageReference "grpc-swift-2" */; productName = GRPCCore; };
+		D00000000000000000000002 /* GRPCNIOTransportHTTP2 */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000002 /* XCRemoteSwiftPackageReference "grpc-swift-nio-transport" */; productName = GRPCNIOTransportHTTP2; };
+		D00000000000000000000003 /* GRPCProtobuf */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000003 /* XCRemoteSwiftPackageReference "grpc-swift-protobuf" */; productName = GRPCProtobuf; };
+		D00000000000000000000004 /* SwiftProtobuf */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-protobuf" */; productName = SwiftProtobuf; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 600000000000000000000001 /* Project object */;
+}
