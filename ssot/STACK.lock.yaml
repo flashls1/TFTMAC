@@ -1,5 +1,5 @@
 schema: 3
-frozen_at: "2026-08-30T23:30:36Z"
+frozen_at: "2026-08-30T23:54:55Z"
 phase0_status: PASS
 
 authority:
@@ -27,13 +27,16 @@ host:
 
 release:
   version: "2.2.0"
-  build: "5"
+  build: "6"
   installed_path: "/Applications/TFTMAC.app"
-  executable_sha256: "8b647dd9c5fa269cc6843ddb75793143661e64e6496de008fff9b05afb81e0e2"
+  executable_sha256: "a860a1d4d888f6fc33af978285439e5ce7e47bf17d024a8ffe33efec54d21869"
   signing: "stable_local_identity_valid"
   signing_identity: "TFTMAC Local Code Signing"
   notarized_for_public_distribution: false
   mac_icon_embedded: true
+  official_icon_source_sha256: "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016"
+  official_icon_1024_sha256: "ed5fd83efa6e04599e82ca00f897b09813cdeac007850f6993efd601a730345f"
+  embedded_icon_icns_sha256: "010729a19f165b68edeb1fb44e8c31e450f79b3a988c95b8de090373378f6f06"
   removable_volume_permission_relaunch: PASS
   non_error_unlock_overlay: ABSENT
   native_verifier: PASS

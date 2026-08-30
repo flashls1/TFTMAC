@@ -25,7 +25,7 @@
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
 | Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
-| Release build/install integrity | VERIFIED | All 36 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 5), embeds its Mac icon and pinned Perfetto processor, and its executable SHA-256 matches `dist` |
+| Release build/install integrity | VERIFIED | All 36 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 6), embeds the official ImageGen penguin-samurai Mac icon and pinned Perfetto processor, and its executable SHA-256 matches `dist` |
 | External-runtime permission retention | VERIFIED | Stable designated requirement installed; a clean second launch immediately reopened `/Volumes/MAC MINI M4/TFTMAC/Runtime` and started QEMU without another drive-access dialog |
 | Secure-unlock display | VERIFIED | Secure unlock stays manual and logged, while non-error runtime instructions are suppressed from the Android display; live signed launch showed no TFTMAC center overlay |
 
@@ -40,7 +40,7 @@ Final release receipts:
 
 ```text
 Verified executable SHA-256:
-  8b647dd9c5fa269cc6843ddb75793143661e64e6496de008fff9b05afb81e0e2
+  a860a1d4d888f6fc33af978285439e5ce7e47bf17d024a8ffe33efec54d21869
 
 Live match/lobby plus clean shutdown:
   2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c
@@ -55,13 +55,22 @@ Build 4 primary-touch/login investigation:
   2026-08-30T20-41-22.662Z-4bdb8a3f-813d-4e70-b8bd-67c0b6b5766f
 ```
 
+Official launcher artwork is the full-bleed 1254×1254 PNG at
+`tftmac/Assets/TFTMAC-Official-Icon.png`, generated with the built-in ImageGen
+tool from the requested penguin-samurai, single-sword and exact stacked
+`TFT`/`MAC` brief. The master has no baked-in rounded rectangle or outer gutter;
+macOS owns the final corner mask. Build 6 derives and signs every `.icns`
+representation from this hash-sealed source.
+
 The first receipt reached Unreal `GameActivity`, rendered a live match and the
 fully colored post-match lobby, recorded source/output maxima of 60.95/60.53,
 zero sequence drops, active 48-kHz stereo output with zero underruns, and zero
 confirmed memory kills. Its normal Quit sealed SQL as `STOPPED`, confirmed the
 owned emulator exit, restored the exact AVD hash, and removed both transaction
-and lease markers. The second receipt is the exact final bundle left open for
-play. Its live native window was re-verified at origin `0,0`, size `1920x1080`,
+and lease markers. The second receipt covers the last runtime-identical signed
+build. Build 6 changes only release metadata and the signed launcher artwork and
+was not auto-launched. That earlier live native window was re-verified at origin
+`0,0`, size `1920x1080`,
 `AXFullScreen=true`; SQL later observed source/output maxima of 60.99/60.33,
 active 48-kHz stereo output with one active track and zero underruns, and zero
 confirmed memory kills. Four cumulative sequence gaps appeared only after

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
+ICON_SOURCE="${ROOT}/tftmac/Assets/TFTMAC-Official-Icon.png"
+ICON_SOURCE_SHA256="d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016"
 if [[ -z "${DEVELOPER_DIR:-}" ]]; then
   if [[ -d /Applications/Xcode-26.6.0.app/Contents/Developer ]]; then
     export DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer
@@ -19,6 +21,14 @@ SIGNING_IDENTITY_HASH="$(/usr/bin/security find-identity -v -p codesigning \
 
 [[ -n "${SIGNING_IDENTITY_HASH}" ]] || {
   print -u2 "TFTMAC requires the stable '${SIGNING_IDENTITY_NAME}' identity. Run scripts/ensure-local-signing-identity.command once."
+  exit 1
+}
+[[ -s "${ICON_SOURCE}" ]] || {
+  print -u2 "The official TFTMAC icon source is missing: ${ICON_SOURCE}"
+  exit 1
+}
+[[ "$(/usr/bin/shasum -a 256 "${ICON_SOURCE}" | /usr/bin/awk '{print $1}')" == "${ICON_SOURCE_SHA256}" ]] || {
+  print -u2 "The official TFTMAC icon source failed its SHA-256 receipt."
   exit 1
 }
 
@@ -41,9 +51,9 @@ trap cleanup EXIT
 /bin/mkdir -p "${ROOT}/dist"
 /usr/bin/ditto "${APP}" "${DIST}"
 
-# The Info.plist declares TFTMAC.icns. Generate and embed every required Mac
-# representation before signing so Finder and the Dock never show a generic app.
-/usr/bin/xcrun swift "${ROOT}/tftmac/GenerateIcon.swift" "${ICON_WORK}/icon_1024x1024.png"
+# The Info.plist declares TFTMAC.icns. Downsample the official generated
+# 1:1 master and embed every required Mac representation before signing.
+/usr/bin/sips -z 1024 1024 "${ICON_SOURCE}" --out "${ICON_WORK}/icon_1024x1024.png" >/dev/null
 /bin/mkdir -p "${ICON_WORK}/TFTMAC.iconset" "${DIST}/Contents/Resources"
 for specification in \
   '16 icon_16x16.png' \
