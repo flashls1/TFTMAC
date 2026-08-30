@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "observedAt": "2026-08-30T09:30:17Z",
+  "observedAt": "2026-08-30T23:30:36Z",
   "gate": "Native full-screen playable runtime acceptance",
   "result": "PASS",
   "runtimeRoot": "/Volumes/MAC MINI M4/TFTMAC/Runtime",
@@ -27,6 +27,13 @@
     "audio": "coreaudio",
     "graphicsTransport": "virtio-gpu-asg",
     "asgDrawFlushInterval": 800
+  },
+  "androidWebView": {
+    "package": "com.google.android.webview",
+    "preRepairVersion": "133.0.6943.137",
+    "currentVersion": "151.0.7922.199",
+    "updateSource": "com.android.vending",
+    "riotLoginActivity": "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
   },
   "package": {
     "name": "com.riotgames.league.teamfighttactics",
@@ -56,22 +63,35 @@
   },
   "finalInstalledRelease": {
     "path": "/Applications/TFTMAC.app",
-    "version": "2.0.0",
-    "build": "2",
-    "executableSHA256": "4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49",
+    "version": "2.2.0",
+    "build": "5",
+    "executableSHA256": "8b647dd9c5fa269cc6843ddb75793143661e64e6496de008fff9b05afb81e0e2",
     "deepCodeSignatureValid": true,
+    "signingIdentity": "TFTMAC Local Code Signing",
+    "adHocSigned": false,
+    "designatedRequirement": "identifier com.flashls1.tftmac and certificate root AD42350FDE69323BA63D0E0C6604AC347C506F0C",
     "macIconEmbedded": true,
     "nativeVerifier": "PASS",
-    "unitTestsPassed": 14,
+    "unitTestsPassed": 36,
+    "rapidCombatABImplementation": "STATIC_VERIFIED_RUNTIME_BENCHMARK_PENDING",
+    "perfettoTraceProcessorVersion": "58.2",
+    "perfettoTraceProcessorSHA256": "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa",
     "liveMatchAndCleanShutdownCapture": "2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c",
-    "installedReleaseLaunchCapture": "2026-08-30T09-30-17.189Z-68f1bb24-f660-4245-9750-823b7da703a4",
+    "priorSignedReleaseCleanShutdownCapture": "2026-08-30T20-24-24.969Z-998c4e53-ff91-4cf3-8002-21543dc5d46f",
+    "priorVersionLaunchCapture": "2026-08-30T20-41-22.662Z-4bdb8a3f-813d-4e70-b8bd-67c0b6b5766f",
+    "currentReleaseLaunchAcceptance": "PENDING_USER_COMBAT_BENCHMARK",
+    "removableVolumePermissionRetainedAcrossRelaunch": true,
+    "nonErrorUnlockOverlayVisible": false,
     "confirmedMemoryKills": 0,
-    "secureAndroidUnlock": "MANUAL_ONLY"
+    "secureAndroidUnlock": "MANUAL_ONLY",
+    "primaryInputTransport": "EmulatorController.sendTouch",
+    "primaryTouchReceipt": "PRIMARY_TOUCH_INPUT_ACTIVE"
   },
   "evidenceOperations": [
     "native-events:CONTROLLER_AUTHENTICATED",
     "native-events:ADB_DEVICE_AUTHORIZED",
     "native-events:FIRST_NATIVE_FRAME",
+    "native-events:PRIMARY_TOUCH_INPUT_ACTIVE",
     "native-events:OFFICIAL_TFT_PACKAGE_RECEIPT",
     "native-events:TFT_LAUNCH_REQUESTED",
     "native-events:TFT_PROCESS_STARTED",

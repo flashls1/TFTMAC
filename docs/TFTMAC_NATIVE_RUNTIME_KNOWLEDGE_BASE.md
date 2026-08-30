@@ -21,11 +21,13 @@
 | Native presentation near 60 Hz in lobby | VERIFIED | Live session observed source-window max `61.1` and Metal-output max `60.5`; these are transport/output metrics, not Unreal FPS |
 | Official current TFT launches | VERIFIED | Package `com.riotgames.league.teamfighttactics`, version `18.1-5402721`, SplashActivity then `com.epicgames.unreal.GameActivity`, PID observed |
 | Riot account can reach the TFT lobby | VERIFIED | Live rendered lobby on the existing signed-in official app state |
-| Mouse and keyboard transport | VERIFIED | Native view coordinate transform and gRPC input; ADB authorization dialog accepted through the native view; input SQL records counts/coordinates, never typed content |
+| Primary touch and keyboard transport | VERIFIED | Mac primary-pointer down/drag/up uses EmulatorController `TouchEvent` with stable identifier `0` and pressure `1 -> 0`; keyboard remains gRPC evdev input; SQL records coordinates, pressure, counts and special keys, never typed content |
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
 | Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
-| Release build/install integrity | VERIFIED | Native-only verifier passed 14/14 tests; `/Applications/TFTMAC.app` is deep-code-sign valid, version 2.0.0 (build 2), embeds its Mac icon, and its executable SHA-256 matches the verified `dist` build |
+| Release build/install integrity | VERIFIED | All 36 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 5), embeds its Mac icon and pinned Perfetto processor, and its executable SHA-256 matches `dist` |
+| External-runtime permission retention | VERIFIED | Stable designated requirement installed; a clean second launch immediately reopened `/Volumes/MAC MINI M4/TFTMAC/Runtime` and started QEMU without another drive-access dialog |
+| Secure-unlock display | VERIFIED | Secure unlock stays manual and logged, while non-error runtime instructions are suppressed from the Android display; live signed launch showed no TFTMAC center overlay |
 
 Primary live acceptance capture:
 
@@ -38,13 +40,19 @@ Final release receipts:
 
 ```text
 Verified executable SHA-256:
-  4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49
+  8b647dd9c5fa269cc6843ddb75793143661e64e6496de008fff9b05afb81e0e2
 
 Live match/lobby plus clean shutdown:
   2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c
 
-Exact icon-inclusive installed release launch:
-  2026-08-30T09-30-17.189Z-68f1bb24-f660-4245-9750-823b7da703a4
+Stable-signed release launch plus clean shutdown:
+  2026-08-30T20-24-24.969Z-998c4e53-ff91-4cf3-8002-21543dc5d46f
+
+Second launch proving retained drive consent:
+  2026-08-30T20-25-43.388Z-8373817a-5c4c-4b47-9459-8c2a8751b096
+
+Build 4 primary-touch/login investigation:
+  2026-08-30T20-41-22.662Z-4bdb8a3f-813d-4e70-b8bd-67c0b6b5766f
 ```
 
 The first receipt reached Unreal `GameActivity`, rendered a live match and the
@@ -150,16 +158,78 @@ The directory is mode `0700`. Queryable authority is `TFTMAC_NATIVE_RUNTIME.sqli
 | `frame_samples` | Visual/hash checkpoints, dimensions, sequence | First frame and bounded checkpoints |
 | `frame_interval_windows` | Source ingress count, drops, mean/p95/max interval | One-second windows |
 | `presentation_samples` | SRC/OUT rate, mailbox replacement and drops | About once per second |
+| `game_frame_intervals` | Exact TFT SurfaceView actual-present intervals, jank/severe flags and missed-vsync equivalents | Every newly observed guest frame |
+| `game_frame_windows` | TFT FPS, 1% low, p50/p95/p99/max, jank/severe counts and explicit unavailable status | One-second windows |
+| `stream_freshness_windows` | Sampled content changes, repeated images, longest static run and transport loss | One-second windows |
+| `host_presentation_windows` | Final Metal completion/GPU timing, unique/repeated source use, drawable misses and command errors | One-second windows |
 | `resource_samples` | QEMU CPU/RSS, TFT PID, resumed activity | Five seconds |
 | `guest_memory_samples` | MemTotal/MemAvailable/swap | Five seconds |
+| `host_resource_samples` | Host available/compressed/swap/pageouts, thermal state and AC/battery source | Five seconds |
 | `clock_sync_samples` | Host/guest monotonic alignment and RTT | Thirty seconds |
 | `surfaceflinger_samples` | Render rate and cumulative total/HWC/GPU misses | Start/end and 30 seconds during gameplay |
 | `audio_samples` | CoreAudio receipt plus active output/rate/stereo/tracks/underruns | Start/end and 30 seconds during gameplay |
 | `logcat_aggregates` | Counts only: ANR, input timeout, fatal, LMK/OOM, skipped frames, ANGLE/Vulkan warnings, PCM errors | Five seconds |
+| `pipeline_log_aggregates` | Counts only real gfxstream/ASG/Vulkan/MoltenVK/shader/fence warnings, errors, stalls and timeouts | Five seconds |
+| `graphics_pipeline_snapshots` | Effective TFT SurfaceView, ANGLE, gfxstream, MoltenVK, host device and guest EGL/Vulkan identity | Thirty seconds during gameplay |
+| `diagnostic_artifacts` | Raw and normalized trace paths/hashes, pinned processor hash, normalized SQL summary and analysis state | Event-driven |
+| `combat_benchmarks` | Named preset, complete configuration hash, coverage, validity, exact layer and combat metrics | Benchmark boundary |
+| `combat_incidents` | Bad-window or visible-stutter trigger, frame state, trace sequence and explicit unknown boundary | Event-driven during benchmark |
+| `combat_comparisons` | Control/candidate deltas, correctness, observer overhead and HOME_RUN/PROMISING/REJECT/INCONCLUSIVE decision | Candidate benchmark end |
 | `game_process_sessions` | TFT PID start/end | PID transition |
-| `input_samples` | Mouse coordinate/button and keyboard character count/special key | Input event; no typed content |
+| `input_samples` | Primary-touch coordinate/pressure, secondary-mouse button, and keyboard character count/special key | Input event; no typed content |
 
 Raw logcat is local sensitive data. It is excluded from SQL and must never be uploaded or pasted without deliberate sanitization. It begins at a guest timestamp taken after ADB authorization so stale ring-buffer events do not contaminate the run.
+
+### Rapid Combat A/B workflow (2.2.0)
+
+The Telemetry menu now owns `Start Combat Benchmark`, `Mark Visible Stutter`
+and `End Combat Benchmark`. A run is valid after 300 seconds and closes
+automatically at 480 seconds. Automatic incident traces are armed only inside
+that window, require two adjacent bad one-second windows, have a 120-second
+cooldown, and are capped at two in addition to the 20-second start trace.
+
+`Control` is the exact 1920x1080/320-dpi/60-Hz, 6-vCPU, 5120-MiB proven
+configuration. `Home Run A` changes only the official in-game Performance Mode
+Beta confirmation and the emulator features `NativeTextureDecompression` and
+`NoDelayCloseColorBuffer`. All other values are locked. Every run stores the
+canonical configuration JSON and SHA-256 plus the official TFT package version.
+
+Every valid Perfetto artifact is processed locally by the packaged
+`trace_processor_shell` v58.2 ARM64 binary. Its pinned SHA-256 is
+`d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa`.
+If normalization fails or that receipt changes, TFTMAC removes the unprocessed
+raw trace and records the failure; it does not retain a trace indefinitely in a
+raw-only state. The persistent comparison authority is:
+
+```text
+~/Library/Application Support/TFTMAC/TFTMAC_LAB.sqlite
+```
+
+The 2.2.0 build/install, SQL schema, preset invariants and decision engine are
+verified. A real Control/Home Run A combat pair remains runtime acceptance and
+must not be claimed until the user runs it.
+
+### Riot login input contract
+
+Build 4 removed the desktop-mouse assumption from primary interaction. A Mac
+left press, drag and release now becomes Android multitouch identifier `0`,
+with non-zero pressure while in contact and an unconditional zero-pressure
+release at the last valid Android coordinate. The live build-4 capture logged
+`PRIMARY_TOUCH_INPUT_ACTIVE`; pressure-down and pressure-up rows were persisted
+without credential content.
+
+The same investigation found the guest WebView provider at
+`133.0.6943.137`. Google Play exposed and installed the signed stable update
+`151.0.7922.199`; Riot's `MobileFREWebViewActivity` restarted on that provider.
+WebView is a mutable guest dependency and its exact version belongs in runtime
+receipts whenever login behavior changes.
+
+Riot's official form labels the first field `USERNAME`. It requires the private
+Riot account login username, not an email address and not the public Riot ID
+(`Name#Tag`). Riot's official recovery flow starts from the account email and
+sends back the username: <https://recovery.riotgames.com/en-us/forgot-username>.
+Passwords, usernames, email addresses and form screenshots are never retained
+as TFTMAC evidence.
 
 `memory_kill_count` is intentionally conservative: it counts only an LMKD line
 that names an actual kill victim or a kernel `Out of memory: Killed process`
@@ -183,6 +253,17 @@ SELECT sampled_monotonic_ns, source_fps, presentation_fps,
        mailbox_replacements, sequence_drops
 FROM presentation_samples ORDER BY sampled_monotonic_ns;
 
+-- Player-visible TFT guest frame truth
+SELECT started_monotonic_ns, status, unavailable_reason,
+       effective_fps, one_percent_low_fps,
+       p95_interval_ms, p99_interval_ms, maximum_interval_ms,
+       jank_count, severe_count, missed_vsync_equivalents
+FROM game_frame_windows ORDER BY started_monotonic_ns;
+
+-- Delivery freshness and final Mac presenter are separate boundaries
+SELECT * FROM stream_freshness_windows ORDER BY started_monotonic_ns;
+SELECT * FROM host_presentation_windows ORDER BY started_monotonic_ns;
+
 -- Marked gameplay correlation
 SELECT kind, monotonic_ns FROM events
 WHERE kind IN ('MATCH_ENTRY','COMBAT_START','VISIBLE_STUTTER','MATCH_END')
@@ -202,7 +283,16 @@ FROM audio_samples ORDER BY monotonic_ns;
 SELECT * FROM logcat_aggregates
 WHERE anr_count + fatal_count + memory_kill_count
     + angle_warning_count + vulkan_warning_count + audio_error_count > 0;
+
+SELECT * FROM pipeline_log_aggregates
+WHERE gfxstream_warning_count + asg_stall_count + vulkan_error_count
+    + moltenvk_warning_count + shader_error_count + fence_timeout_count > 0;
 ```
+
+Run `scripts/summarize-native-session.command` with no argument for the latest
+capture or pass one capture directory. It validates SQLite first, summarizes
+every evidence layer, and reports missing telemetry explicitly without printing
+raw logs, credentials or tokens.
 
 ## 6. Performance Lab controls
 
@@ -225,6 +315,11 @@ Command-Shift-2  COMBAT_START
 Command-Shift-3  VISIBLE_STUTTER
 Command-Shift-4  MATCH_END
 ```
+
+`COMBAT_START` and `VISIBLE_STUTTER` also request a bounded 15-second Perfetto
+ring trace. Severe actual-present degradation may request a rate-limited trace
+automatically. A raw trace is evidence to normalize later, not an automatic
+root-cause verdict.
 
 ## 7. Experiment protocol
 
@@ -276,6 +371,10 @@ Specialist boundary findings retained from the council:
 - TFTMAC owns the final frame copy, orientation, scaling, input transform, output cadence and native Mac experience.
 - Fortnite/Unreal guidance supplies transferable measurement categories, not TFT-specific capability or performance proof.
 
+The complete Unreal/Fortnite transfer map, attribution gates, owned patch
+points and current unknown ledger are maintained in
+`docs/TFTMAC_UNREAL_PIPELINE_OBSERVABILITY.md`.
+
 Source research artifacts:
 
 - `outputs/ZoeMC_TFTMAC_Unreal_Graphics_v0.2/REPORT.md`
@@ -293,7 +392,7 @@ Source research artifacts:
 - Interrupted recovery accepts only the exact discovered AVD config path and a backup inside TFTMAC's capture root.
 - A repeated Quit remains `terminateLater`; it cannot bypass telemetry sealing or AVD restoration.
 - Google/Riot passwords, MFA, CAPTCHA and consent remain manual official-UI actions and are never logged or automated.
-- Android secure-lock content may be intentionally blank in the authenticated screenshot stream. TFTMAC wakes the display, shows an explicit prompt, accepts manual PIN keyboard input, records only character counts, and never stores the PIN.
+- Android secure-lock content may be intentionally blank in the authenticated screenshot stream. TFTMAC wakes the display and accepts manual PIN keyboard input without placing instructions over Android. SQL records the unlock-required state and input character counts, never the PIN.
 
 ## 10. Remaining decisive gaps
 

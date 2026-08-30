@@ -28,6 +28,20 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(source.y, 540, accuracy: 0.001)
     }
 
+    func testPrimaryTouchKeepsItsIdentifierUntilZeroPressureRelease() {
+        var sequence = PrimaryTouchSequence()
+        let point = TouchPoint(x: 1716, y: 898)
+        let contact = sequence.contact(at: point)
+        let release = sequence.release(at: nil)
+
+        XCTAssertEqual(contact?.identifier, TouchInput.primaryIdentifier)
+        XCTAssertEqual(release?.identifier, contact?.identifier)
+        XCTAssertEqual(release.map { TouchPoint(x: $0.x, y: $0.y) }, point)
+        XCTAssertEqual(contact?.pressure, 1)
+        XCTAssertEqual(release?.pressure, 0)
+        XCTAssertNil(sequence.release(at: nil))
+    }
+
     func testNativeRGBAFrameContractAcceptsExact1080pFrame() throws {
         XCTAssertNoThrow(try FrameContract.validate(
             width: 1920,
@@ -110,6 +124,24 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(candidate.identifier, "tftmac_native_6144m_8c_30hz_flush400")
     }
 
+    func testRapidCombatExperimentHasExactlyTwoNamedPresets() {
+        XCTAssertEqual(RuntimeExperimentPreset.allCases.map(\.rawValue), ["control", "home_run_a"])
+    }
+
+    func testHomeRunAChangesOnlyTheTwoApprovedEmulatorFeatures() {
+        let control = TFTMACRuntimeProfile.playable.with(experimentPreset: .control)
+        let candidate = TFTMACRuntimeProfile.playable.with(experimentPreset: .homeRunA)
+        XCTAssertEqual(control.effectiveEmulatorFeatures, RuntimeExperimentPreset.baselineEmulatorFeatures)
+        XCTAssertEqual(
+            candidate.effectiveEmulatorFeatures,
+            RuntimeExperimentPreset.baselineEmulatorFeatures + ["NativeTextureDecompression", "NoDelayCloseColorBuffer"]
+        )
+        XCTAssertEqual(control.vCPU, candidate.vCPU)
+        XCTAssertEqual(control.ramMiB, candidate.ramMiB)
+        XCTAssertEqual(control.asgDrawFlushInterval, candidate.asgDrawFlushInterval)
+        XCTAssertNotEqual(control.experimentConfigurationReceipt.sha256, candidate.experimentConfigurationReceipt.sha256)
+    }
+
     func testRuntimeLeaseRejectsASecondLiveOwner() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("tftmac-lease-test-\(UUID().uuidString)", isDirectory: true)
@@ -160,5 +192,33 @@ final class TFTMACGate1Tests: XCTestCase {
         for line in nonKills {
             XCTAssertFalse(TelemetrySignalClassifier.isConfirmedGuestMemoryKill(line), line)
         }
+    }
+
+    func testPipelineClassifierRejectsNormalConfigurationReceipts() {
+        let normalLines = [
+            "gfxstream: using Vulkan host renderer",
+            "virtio-gpu-asg write buffer size 1048576",
+            "MoltenVK version 1.4 initialized",
+            "shader cache directory ready",
+            "sync fence support enabled"
+        ]
+        for line in normalLines {
+            XCTAssertEqual(TelemetrySignalClassifier.pipelineSignals(in: line), PipelineLogSignals(), line)
+        }
+    }
+
+    func testPipelineClassifierNamesDiagnosticBoundaries() {
+        XCTAssertEqual(
+            TelemetrySignalClassifier.pipelineSignals(in: "gfxstream warning: host queue stalled"),
+            PipelineLogSignals(gfxstreamWarningCount: 1)
+        )
+        XCTAssertEqual(
+            TelemetrySignalClassifier.pipelineSignals(in: "virtio-gpu-asg timeout waiting for ring fence"),
+            PipelineLogSignals(asgStallCount: 1, fenceTimeoutCount: 1)
+        )
+        XCTAssertEqual(
+            TelemetrySignalClassifier.pipelineSignals(in: "[MVK] Vulkan error: shader compilation failed"),
+            PipelineLogSignals(vulkanErrorCount: 1, moltenVKWarningCount: 1, shaderErrorCount: 1)
+        )
     }
 }

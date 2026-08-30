@@ -6,16 +6,28 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var runtimeController: TFTMACRuntimeController?
     private var settingsWindowController: RuntimeSettingsWindowController?
+    private var activeProfile: TFTMACRuntimeProfile = .playable
     private var terminationInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = MainWindowController(mailbox: mailbox)
         mainWindowController = controller
         let activeProfile = TFTMACRuntimeProfile.load()
-        let runtime = TFTMACRuntimeController(profile: activeProfile, mailbox: mailbox) { [weak controller] text, isError in
-            controller?.emulatorView.setStatus(text, isError: isError)
-        }
+        self.activeProfile = activeProfile
+        let runtime = TFTMACRuntimeController(
+            profile: activeProfile,
+            mailbox: mailbox,
+            status: { [weak controller] text, isError in
+                controller?.emulatorView.setStatus(text, isError: isError)
+            },
+            gameFrame: { [weak controller] window in
+                controller?.emulatorView.setGameFrameWindow(window)
+            }
+        )
         runtimeController = runtime
+        controller.emulatorView.onTouchInput = { [weak runtime] input in
+            runtime?.sendTouch(input)
+        }
         controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons in
             runtime?.sendMouse(x: x, y: y, buttons: buttons)
         }
@@ -24,6 +36,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         }
         controller.emulatorView.onPresentationSample = { [weak runtime] sample in
             runtime?.recordPresentation(sample)
+        }
+        controller.emulatorView.onHostPresentationWindow = { [weak runtime] sample in
+            runtime?.recordHostPresentation(sample)
         }
         controller.showWindow(nil)
         controller.window?.makeFirstResponder(controller.emulatorView)
@@ -47,8 +62,36 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     @objc func markMatchEntry(_ sender: Any?) { recordMarker("MATCH_ENTRY") }
-    @objc func markCombatStart(_ sender: Any?) { recordMarker("COMBAT_START") }
-    @objc func markVisibleStutter(_ sender: Any?) { recordMarker("VISIBLE_STUTTER") }
+    @objc func startCombatBenchmark(_ sender: Any?) {
+        let confirmed: Bool
+        if activeProfile.experimentPreset.requiresManualPerformanceModeBetaConfirmation {
+            let alert = NSAlert()
+            alert.messageText = "Confirm TFT Performance Mode Beta"
+            alert.informativeText = "Start only after official TFT Performance Mode Beta is ON. TFTMAC records this confirmation but does not change Riot settings or credentials."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Performance Mode Beta Is On — Start")
+            alert.addButton(withTitle: "Cancel")
+            confirmed = alert.runModal() == .alertFirstButtonReturn
+            guard confirmed else { return }
+        } else {
+            confirmed = false
+        }
+        runtimeController?.startCombatBenchmark(performanceModeConfirmed: confirmed)
+    }
+    @objc func markVisibleStutter(_ sender: Any?) { runtimeController?.markVisibleStutter() }
+    @objc func endCombatBenchmark(_ sender: Any?) {
+        var correctnessPassed = true
+        if activeProfile.experimentPreset == .homeRunA {
+            let alert = NSAlert()
+            alert.messageText = "Did Home Run A preserve correctness?"
+            alert.informativeText = "Reject the run if boot, graphics, input, audio, login, or gameplay correctness regressed. TFTMAC will restore Control for the next launch."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "All Correct — End")
+            alert.addButton(withTitle: "Reject: Correctness Problem")
+            correctnessPassed = alert.runModal() == .alertFirstButtonReturn
+        }
+        runtimeController?.endCombatBenchmark(correctnessPassed: correctnessPassed)
+    }
     @objc func markMatchEnd(_ sender: Any?) { recordMarker("MATCH_END") }
 
     @objc func revealCaptureFolder(_ sender: Any?) {

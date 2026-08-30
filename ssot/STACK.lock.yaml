@@ -1,5 +1,5 @@
 schema: 3
-frozen_at: "2026-08-30T09:30:17Z"
+frozen_at: "2026-08-30T23:30:36Z"
 phase0_status: PASS
 
 authority:
@@ -26,15 +26,22 @@ host:
   hardware_model: "Mac16,10"
 
 release:
-  version: "2.0.0"
-  build: "2"
+  version: "2.2.0"
+  build: "5"
   installed_path: "/Applications/TFTMAC.app"
-  executable_sha256: "4f684ccea98b83a5451e8e614a795615d47970368b7e5273d92537ddc10c0a49"
-  signing: "ad_hoc_local_valid"
+  executable_sha256: "8b647dd9c5fa269cc6843ddb75793143661e64e6496de008fff9b05afb81e0e2"
+  signing: "stable_local_identity_valid"
+  signing_identity: "TFTMAC Local Code Signing"
   notarized_for_public_distribution: false
   mac_icon_embedded: true
+  removable_volume_permission_relaunch: PASS
+  non_error_unlock_overlay: ABSENT
   native_verifier: PASS
-  unit_tests_passed: 14
+  unit_tests_passed: 36
+  rapid_combat_ab: "STATIC_VERIFIED_RUNTIME_BENCHMARK_PENDING"
+  current_release_launch_acceptance: "PENDING_USER_COMBAT_BENCHMARK"
+  perfetto_trace_processor_version: "58.2"
+  perfetto_trace_processor_sha256: "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
 
 android_command_line_tools:
   archive: "commandlinetools-mac_arm64-15859902_latest.zip"
@@ -52,6 +59,8 @@ android:
   adb_server_port: 5038
   platform_tools_revision: "37.0.1"
   emulator_revision: "37.1.11"
+  webview_provider: "com.google.android.webview"
+  webview_version: "151.0.7922.199"
   platform_revision: "1"
   build_tools_revision: "37.0.0"
 

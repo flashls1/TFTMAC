@@ -14,7 +14,7 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command is unavailable: $1"
 }
 
-for tool in git jq node plutil rg shasum xcodebuild zsh; do
+for tool in codesign git jq node plutil rg security shasum xcodebuild zsh; do
   require_command "$tool"
 done
 
@@ -35,6 +35,8 @@ for required in \
   scripts/generate-emulator-proto.command \
   scripts/build-tftmac-app.command \
   scripts/build-native-app.command \
+  scripts/install-trace-processor.command \
+  scripts/ensure-local-signing-identity.command \
   scripts/test-native-app.command \
   ssot/STACK.lock.yaml \
   ssot/runtime-authority.json; do
@@ -45,6 +47,14 @@ plutil -lint "$INFO" >/dev/null || fail "Info.plist is invalid"
 [[ "$(plutil -extract CFBundleDisplayName raw "$INFO")" == "TFTMAC" ]] || fail "unexpected app display name"
 [[ "$(plutil -extract CFBundleExecutable raw "$INFO")" == "TFTMAC" ]] || fail "unexpected app executable"
 [[ "$(plutil -extract CFBundleIdentifier raw "$INFO")" == "com.flashls1.tftmac" ]] || fail "unexpected bundle identifier"
+readonly INFO_VERSION="$(plutil -extract CFBundleShortVersionString raw "$INFO")"
+readonly INFO_BUILD="$(plutil -extract CFBundleVersion raw "$INFO")"
+readonly AUTHORITY_VERSION="$(jq -r '.finalInstalledRelease.version' ssot/runtime-authority.json)"
+readonly AUTHORITY_BUILD="$(jq -r '.finalInstalledRelease.build' ssot/runtime-authority.json)"
+[[ "$INFO_VERSION" == "$AUTHORITY_VERSION" ]] || fail "source and release-authority versions differ"
+[[ "$INFO_BUILD" == "$AUTHORITY_BUILD" ]] || fail "source and release-authority builds differ"
+[[ "$(plutil -extract NSRemovableVolumesUsageDescription raw "$INFO")" == *"Android emulator runtime"* ]] \
+  || fail "removable-volume purpose string is missing"
 
 # There is one executable build authority. The compatibility entrypoint may
 # delegate to it, but it may never rebuild or install the retired Node shell.
@@ -66,7 +76,16 @@ jq -e '
   .emulator.adbVendorKeysInjected == false and
   .runtimeProfile.vcpu == 6 and
   .runtimeProfile.ramMiB == 5120 and
-  .runtimeProfile.display == "1920x1080"
+  .runtimeProfile.display == "1920x1080" and
+  .finalInstalledRelease.version == "2.2.0" and
+  .finalInstalledRelease.build == "5" and
+  .finalInstalledRelease.signingIdentity == "TFTMAC Local Code Signing" and
+  .finalInstalledRelease.adHocSigned == false and
+  .finalInstalledRelease.removableVolumePermissionRetainedAcrossRelaunch == true and
+  .finalInstalledRelease.nonErrorUnlockOverlayVisible == false and
+  .finalInstalledRelease.unitTestsPassed == 36 and
+  .finalInstalledRelease.primaryInputTransport == "EmulatorController.sendTouch" and
+  .androidWebView.currentVersion == "151.0.7922.199"
 ' ssot/runtime-authority.json >/dev/null || fail "native runtime authority drifted"
 
 for locked in \
@@ -77,10 +96,30 @@ for locked in \
   'adb_server_port: 5038' \
   'ram_mb: 5120' \
   'selected: A' \
+  'version: "2.2.0"' \
+  'build: "5"' \
+  'signing: "stable_local_identity_valid"' \
   'mac_icon_embedded: true' \
-  'unit_tests_passed: 14'; do
+  'removable_volume_permission_relaunch: PASS' \
+  'non_error_unlock_overlay: ABSENT' \
+  'unit_tests_passed: 36' \
+  'webview_version: "151.0.7922.199"'; do
   rg -q -F -- "$locked" ssot/STACK.lock.yaml || fail "active stack lock drifted: $locked"
 done
+
+readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
+[[ "$TEST_FUNCTION_COUNT" == "36" ]] || fail "native test inventory drifted: expected 36, found $TEST_FUNCTION_COUNT"
+
+readonly INSTALLED_APP="/Applications/TFTMAC.app"
+[[ -d "$INSTALLED_APP" ]] || fail "released native app is not installed"
+codesign --verify --deep --strict "$INSTALLED_APP" || fail "installed native app signature is invalid"
+[[ "$(plutil -extract CFBundleShortVersionString raw "$INSTALLED_APP/Contents/Info.plist")" == "$INFO_VERSION" ]] \
+  || fail "installed app version differs from source"
+[[ "$(plutil -extract CFBundleVersion raw "$INSTALLED_APP/Contents/Info.plist")" == "$INFO_BUILD" ]] \
+  || fail "installed app build differs from source"
+readonly INSTALLED_EXECUTABLE_SHA="$(shasum -a 256 "$INSTALLED_APP/Contents/MacOS/TFTMAC" | awk '{print $1}')"
+[[ "$INSTALLED_EXECUTABLE_SHA" == "$(jq -r '.finalInstalledRelease.executableSHA256' ssot/runtime-authority.json)" ]] \
+  || fail "installed executable hash differs from release authority"
 
 readonly PROTO_SHA="$(shasum -a 256 "$PROTO" | awk '{print $1}')"
 readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"
@@ -132,6 +171,8 @@ if [[ "${TFTMAC_SKIP_NATIVE_BUILD:-0}" != "1" ]]; then
   /bin/zsh scripts/build-native-app.command
   [[ -s dist/TFTMAC.app/Contents/Resources/TFTMAC.icns ]] || fail "native app icon is missing"
   [[ -s dist/TFTMAC.app/Contents/Resources/TFTMAC-1024.png ]] || fail "native app icon source is missing"
+  [[ "$(shasum -a 256 dist/TFTMAC.app/Contents/Resources/trace_processor_shell | awk '{print $1}')" == "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa" ]] \
+    || fail "pinned Perfetto trace_processor is missing or invalid"
   /bin/zsh scripts/test-native-app.command
 fi
 

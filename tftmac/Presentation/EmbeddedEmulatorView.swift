@@ -33,22 +33,146 @@ private final class PresenterGPUState: @unchecked Sendable {
     }
 }
 
+private final class HostPresentationTelemetry: @unchecked Sendable {
+    private struct WindowState {
+        var startedMonotonicNS: UInt64
+        var submittedFrames = 0
+        var completedFrames = 0
+        var uniqueSourceUploads = 0
+        var repeatedSourcePresents = 0
+        var drawableMisses = 0
+        var encoderMisses = 0
+        var commandBufferMisses = 0
+        var commandErrors = 0
+        var completionLatenciesMS = [Double]()
+        var gpuTimesMS = [Double]()
+    }
+
+    private let lock = NSLock()
+    private var window = WindowState(startedMonotonicNS: DispatchTime.now().uptimeNanoseconds)
+    // A 60 Hz presenter needs only about 60 entries/window; this cap protects telemetry itself
+    // from becoming a source of memory pressure if the display rate changes.
+    private let maximumSamples = 256
+
+    func recordSubmitted(uniqueSourceUpload: Bool) {
+        lock.lock()
+        window.submittedFrames += 1
+        if uniqueSourceUpload {
+            window.uniqueSourceUploads += 1
+        } else {
+            window.repeatedSourcePresents += 1
+        }
+        lock.unlock()
+    }
+
+    func recordDrawableMiss() {
+        lock.lock()
+        window.drawableMisses += 1
+        lock.unlock()
+    }
+
+    func recordEncoderMiss() {
+        lock.lock()
+        window.encoderMisses += 1
+        lock.unlock()
+    }
+
+    func recordCommandBufferMiss() {
+        lock.lock()
+        window.commandBufferMisses += 1
+        lock.unlock()
+    }
+
+    func recordCompletion(submittedMonotonicNS: UInt64, commandBuffer: MTLCommandBuffer) {
+        let completedMonotonicNS = DispatchTime.now().uptimeNanoseconds
+        let completionMS = Double(completedMonotonicNS &- submittedMonotonicNS) / 1_000_000
+        let gpuStart = commandBuffer.gpuStartTime
+        let gpuEnd = commandBuffer.gpuEndTime
+        let gpuMS: Double? = gpuStart > 0 && gpuEnd >= gpuStart ? (gpuEnd - gpuStart) * 1_000 : nil
+        // A completed-handler normally sees `.completed` or `.error`; treat any other terminal
+        // outcome as failed so the persisted count does not hide cancelled/abnormal work.
+        let wasError = commandBuffer.status != .completed || commandBuffer.error != nil
+
+        lock.lock()
+        window.completedFrames += 1
+        if wasError { window.commandErrors += 1 }
+        if window.completionLatenciesMS.count < maximumSamples {
+            window.completionLatenciesMS.append(completionMS)
+        }
+        if let gpuMS, window.gpuTimesMS.count < maximumSamples {
+            window.gpuTimesMS.append(gpuMS)
+        }
+        lock.unlock()
+    }
+
+    /// Drains a bounded approximately-one-second host window. Completion callbacks may arrive on
+    /// Metal worker threads, so the whole snapshot/reset operation is lock-protected.
+    func drainIfNeeded(nowMonotonicNS: UInt64) -> HostPresentationWindow? {
+        lock.lock()
+        defer { lock.unlock() }
+        let elapsedNS = nowMonotonicNS &- window.startedMonotonicNS
+        guard elapsedNS >= 1_000_000_000 else { return nil }
+        let snapshot = window
+        window = WindowState(startedMonotonicNS: nowMonotonicNS)
+        return HostPresentationWindow(
+            startedMonotonicNS: snapshot.startedMonotonicNS,
+            endedMonotonicNS: nowMonotonicNS,
+            submittedFrames: snapshot.submittedFrames,
+            completedFrames: snapshot.completedFrames,
+            uniqueSourceUploads: snapshot.uniqueSourceUploads,
+            repeatedSourcePresents: snapshot.repeatedSourcePresents,
+            // The shared schema exposes one presentation-miss field. Encoder and command-buffer
+            // misses cannot produce a drawable either, so include them while retaining separate
+            // in-memory counters above for their distinct collection paths.
+            drawableMisses: snapshot.drawableMisses + snapshot.encoderMisses + snapshot.commandBufferMisses,
+            commandErrors: snapshot.commandErrors,
+            meanCompletionLatencyMS: Self.mean(snapshot.completionLatenciesMS),
+            p95CompletionLatencyMS: Self.percentile(snapshot.completionLatenciesMS, percentile: 0.95),
+            p99CompletionLatencyMS: Self.percentile(snapshot.completionLatenciesMS, percentile: 0.99),
+            maximumCompletionLatencyMS: snapshot.completionLatenciesMS.max(),
+            meanGPUTimeMS: Self.mean(snapshot.gpuTimesMS),
+            p95GPUTimeMS: Self.percentile(snapshot.gpuTimesMS, percentile: 0.95),
+            maximumGPUTimeMS: snapshot.gpuTimesMS.max()
+        )
+    }
+
+    private static func mean(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func percentile(_ values: [Double], percentile: Double) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let index = min(sorted.count - 1, max(0, Int(ceil(Double(sorted.count) * percentile)) - 1))
+        return sorted[index]
+    }
+}
+
 @MainActor
 final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
+    var onTouchInput: ((TouchInput) -> Void)?
     var onMouseInput: ((Int32, Int32, Int32) -> Void)?
     var onKeyboardInput: ((String?, String?) -> Void)?
     var onPresentationSample: ((PresentationSample) -> Void)?
+    var onHostPresentationWindow: ((HostPresentationWindow) -> Void)?
 
     private let mailbox: LatestFrameMailbox
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let gpuState = PresenterGPUState()
+    private let hostPresentationTelemetry = HostPresentationTelemetry()
     private var textures: [MTLTexture?] = [nil, nil, nil]
     private var currentTextureSlot: Int?
     private var lastPresentedSequence: UInt32?
     private var lastSampleTime = CACurrentMediaTime()
     private var lastSamplePresentationCount: UInt64 = 0
     private var lastSampleReceivedCount: UInt64 = 0
+    private var lastSourceFPS: Double = 0
+    private var lastPresentationFPS: Double = 0
+    private var lastHostGPUTimeP95MS: Double?
+    private var gameFrameWindow: GameFrameTelemetryWindow?
+    private var primaryTouchSequence = PrimaryTouchSequence()
     private let statusLabel = NSTextField(labelWithString: "Preparing native Android runtime…")
     private let fpsLabel = NSTextField(labelWithString: "0 FPS")
 
@@ -75,6 +199,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         clearColor = MTLClearColorMake(0.015, 0.018, 0.025, 1.0)
         delegate = self
         configureOverlays()
+        updatePerformanceOverlay()
     }
 
     required init(coder: NSCoder) {
@@ -84,25 +209,44 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     override var acceptsFirstResponder: Bool { true }
 
     func setStatus(_ text: String, isError: Bool) {
-        guard !text.isEmpty else {
+        // Informational runtime state belongs in SQL telemetry, not over the
+        // Android display. Only a terminal error may interrupt the game view.
+        guard isError, !text.isEmpty else {
             statusLabel.isHidden = true
             return
         }
         statusLabel.stringValue = text
-        statusLabel.textColor = isError ? .systemRed : .white
+        statusLabel.textColor = .systemRed
         statusLabel.isHidden = false
+    }
+
+    /// The runtime collector owns Android SurfaceFlinger truth. This presenter never substitutes
+    /// ingress or Metal presentation rates for actual guest frame production.
+    func setGameFrameWindow(_ window: GameFrameTelemetryWindow?) {
+        gameFrameWindow = window
+        updatePerformanceOverlay()
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        uploadNewestFrameIfPossible()
-        guard let slot = currentTextureSlot,
-              let texture = textures[slot],
-              let drawable = currentDrawable,
-              let descriptor = currentRenderPassDescriptor,
-              let buffer = commandQueue.makeCommandBuffer(),
-              let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+        let uploadedNewSource = uploadNewestFrameIfPossible()
+        guard let slot = currentTextureSlot, let texture = textures[slot] else {
+            updatePresentationSampleIfNeeded()
+            return
+        }
+        guard let drawable = currentDrawable, let descriptor = currentRenderPassDescriptor else {
+            hostPresentationTelemetry.recordDrawableMiss()
+            updatePresentationSampleIfNeeded()
+            return
+        }
+        guard let buffer = commandQueue.makeCommandBuffer() else {
+            hostPresentationTelemetry.recordCommandBufferMiss()
+            updatePresentationSampleIfNeeded()
+            return
+        }
+        guard let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            hostPresentationTelemetry.recordEncoderMiss()
             updatePresentationSampleIfNeeded()
             return
         }
@@ -125,17 +269,26 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
 
+        let submittedMonotonicNS = DispatchTime.now().uptimeNanoseconds
+        hostPresentationTelemetry.recordSubmitted(uniqueSourceUpload: uploadedNewSource)
         gpuState.beginPresentation(slot: slot)
         let state = gpuState
-        buffer.addCompletedHandler { _ in state.completePresentation(slot: slot) }
+        let telemetry = hostPresentationTelemetry
+        buffer.addCompletedHandler { commandBuffer in
+            state.completePresentation(slot: slot)
+            telemetry.recordCompletion(submittedMonotonicNS: submittedMonotonicNS, commandBuffer: commandBuffer)
+        }
         buffer.present(drawable)
         buffer.commit()
         updatePresentationSampleIfNeeded()
     }
 
-    override func mouseDown(with event: NSEvent) { sendMouse(event, buttons: 1) }
-    override func mouseDragged(with event: NSEvent) { sendMouse(event, buttons: 1) }
-    override func mouseUp(with event: NSEvent) { sendMouse(event, buttons: 0) }
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        sendTouch(event, isContact: true)
+    }
+    override func mouseDragged(with event: NSEvent) { sendTouch(event, isContact: true) }
+    override func mouseUp(with event: NSEvent) { sendTouch(event, isContact: false) }
     override func rightMouseDown(with event: NSEvent) { sendMouse(event, buttons: 2) }
     override func rightMouseDragged(with event: NSEvent) { sendMouse(event, buttons: 2) }
     override func rightMouseUp(with event: NSEvent) { sendMouse(event, buttons: 0) }
@@ -166,9 +319,10 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         onKeyboardInput?(String(text.prefix(1024)), nil)
     }
 
-    private func uploadNewestFrameIfPossible() {
-        guard let frame = mailbox.takeLatest() else { return }
-        guard let slot = gpuState.availableUploadSlot(excluding: currentTextureSlot) else { return }
+    @discardableResult
+    private func uploadNewestFrameIfPossible() -> Bool {
+        guard let frame = mailbox.takeLatest() else { return false }
+        guard let slot = gpuState.availableUploadSlot(excluding: currentTextureSlot) else { return false }
         if textures[slot] == nil {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba8Unorm_srgb,
@@ -181,7 +335,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             textures[slot] = device?.makeTexture(descriptor: descriptor)
             textures[slot]?.label = "TFTMAC Android frame \(slot)"
         }
-        guard let texture = textures[slot] else { return }
+        guard let texture = textures[slot] else { return false }
         frame.pixels.withUnsafeBytes { bytes in
             guard let baseAddress = bytes.baseAddress else { return }
             texture.replace(
@@ -193,19 +347,34 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         }
         currentTextureSlot = slot
         lastPresentedSequence = frame.sequence
+        return true
     }
 
-    private func sendMouse(_ event: NSEvent, buttons: Int32) {
+    private func androidPoint(for event: NSEvent) -> TouchPoint? {
         let location = convert(event.locationInWindow, from: nil)
         let mapper = ViewportMapper(
             sourceSize: CGSize(width: FrameContract.width, height: FrameContract.height),
             viewportSize: bounds.size
         )
-        guard let source = mapper.sourcePoint(for: location) else { return }
+        guard let source = mapper.sourcePoint(for: location) else { return nil }
         let x = Int32(max(0, min(FrameContract.width - 1, Int(source.x.rounded()))))
         let topOriginY = FrameContract.height - 1 - Int(source.y.rounded())
         let y = Int32(max(0, min(FrameContract.height - 1, topOriginY)))
-        onMouseInput?(x, y, buttons)
+        return TouchPoint(x: x, y: y)
+    }
+
+    private func sendTouch(_ event: NSEvent, isContact: Bool) {
+        let point = androidPoint(for: event)
+        let input = isContact
+            ? primaryTouchSequence.contact(at: point)
+            : primaryTouchSequence.release(at: point)
+        guard let input else { return }
+        onTouchInput?(input)
+    }
+
+    private func sendMouse(_ event: NSEvent, buttons: Int32) {
+        guard let point = androidPoint(for: event) else { return }
+        onMouseInput?(point.x, point.y, buttons)
     }
 
     private func updatePresentationSampleIfNeeded() {
@@ -218,7 +387,8 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         let mailboxSnapshot = mailbox.snapshot()
         let receivedDelta = mailboxSnapshot.receivedFrames - lastSampleReceivedCount
         let sourceFPS = Double(receivedDelta) / elapsed
-        fpsLabel.stringValue = String(format: "SRC %.0f · OUT %.0f", sourceFPS, presentationFPS)
+        lastSourceFPS = sourceFPS
+        lastPresentationFPS = presentationFPS
         let sample = PresentationSample(
             presentedFrames: total,
             presentationFPS: presentationFPS,
@@ -231,6 +401,30 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         lastSamplePresentationCount = total
         lastSampleReceivedCount = mailboxSnapshot.receivedFrames
         lastSampleTime = now
+        if let hostWindow = hostPresentationTelemetry.drainIfNeeded(nowMonotonicNS: DispatchTime.now().uptimeNanoseconds) {
+            lastHostGPUTimeP95MS = hostWindow.p95GPUTimeMS
+            onHostPresentationWindow?(hostWindow)
+        }
+        updatePerformanceOverlay()
+    }
+
+    private func updatePerformanceOverlay() {
+        let guestLine: String
+        if let gameFrameWindow, case .available = gameFrameWindow.status {
+            let low = gameFrameWindow.onePercentLowFPS.map { String(format: "%.0f", $0) } ?? "—"
+            let p99 = gameFrameWindow.p99MS.map { String(format: "%.1f", $0) } ?? "—"
+            guestLine = String(format: "TFT %.0f · 1%% %@ · P99 %@ms", gameFrameWindow.effectiveFPS, low, p99)
+        } else {
+            guestLine = "TFT —"
+        }
+        let gpu = lastHostGPUTimeP95MS.map { String(format: "%.1f", $0) } ?? "—"
+        fpsLabel.stringValue = String(
+            format: "%@\nPIPE %.0f · MAC %.0f · GPU %@ms",
+            guestLine,
+            lastSourceFPS,
+            lastPresentationFPS,
+            gpu
+        )
     }
 
     private func configureOverlays() {
@@ -241,11 +435,13 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         statusLabel.wantsLayer = true
         statusLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
         statusLabel.layer?.cornerRadius = 10
+        statusLabel.isHidden = true
         addSubview(statusLabel)
 
         fpsLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .bold)
         fpsLabel.textColor = .white
-        fpsLabel.alignment = .center
+        fpsLabel.alignment = .right
+        fpsLabel.maximumNumberOfLines = 2
         fpsLabel.translatesAutoresizingMaskIntoConstraints = false
         fpsLabel.wantsLayer = true
         fpsLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.62).cgColor
@@ -259,8 +455,8 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             fpsLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             fpsLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            fpsLabel.widthAnchor.constraint(equalToConstant: 142),
-            fpsLabel.heightAnchor.constraint(equalToConstant: 28)
+            fpsLabel.widthAnchor.constraint(equalToConstant: 300),
+            fpsLabel.heightAnchor.constraint(equalToConstant: 46)
         ])
     }
 

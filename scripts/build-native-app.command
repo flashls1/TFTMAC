@@ -13,6 +13,14 @@ DERIVED="${ROOT}/.build/native-release"
 APP="${DERIVED}/Build/Products/Release/TFTMAC.app"
 DIST="${ROOT}/dist/TFTMAC.app"
 ICON_WORK="$(mktemp -d /private/tmp/tftmac-native-icon.XXXXXX)"
+SIGNING_IDENTITY_NAME="${TFTMAC_CODE_SIGN_IDENTITY_NAME:-TFTMAC Local Code Signing}"
+SIGNING_IDENTITY_HASH="$(/usr/bin/security find-identity -v -p codesigning \
+  | /usr/bin/awk -v name="${SIGNING_IDENTITY_NAME}" 'index($0, "\"" name "\"") { print $2; exit }')"
+
+[[ -n "${SIGNING_IDENTITY_HASH}" ]] || {
+  print -u2 "TFTMAC requires the stable '${SIGNING_IDENTITY_NAME}' identity. Run scripts/ensure-local-signing-identity.command once."
+  exit 1
+}
 
 cleanup() {
   /bin/rm -rf "${ICON_WORK}"
@@ -56,6 +64,17 @@ done
 /usr/bin/iconutil -c icns "${ICON_WORK}/TFTMAC.iconset" -o "${DIST}/Contents/Resources/TFTMAC.icns"
 /bin/cp "${ICON_WORK}/icon_1024x1024.png" "${DIST}/Contents/Resources/TFTMAC-1024.png"
 
+# Perfetto v58.2 mac-arm64 is pinned by the official manifest SHA-256. Raw
+# combat traces are normalized locally with this exact executable before the
+# app records any causal trace conclusion.
+TRACE_PROCESSOR="$(/bin/zsh "${ROOT}/scripts/install-trace-processor.command")"
+/bin/cp "${TRACE_PROCESSOR}" "${DIST}/Contents/Resources/trace_processor_shell"
+/bin/chmod 755 "${DIST}/Contents/Resources/trace_processor_shell"
+[[ "$(/usr/bin/shasum -a 256 "${DIST}/Contents/Resources/trace_processor_shell" | /usr/bin/awk '{print $1}')" == "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa" ]] || {
+  print -u2 "Packaged Perfetto trace_processor failed its pinned SHA-256 receipt."
+  exit 1
+}
+
 # Package a TFTMAC-owned Mac application host for Android Emulator. Launching
 # this nested app with /usr/bin/open keeps the emulator and ADB identity inside
 # the logged-in user's macOS session, matching the proven donor architecture.
@@ -68,9 +87,11 @@ HOST_MACOS="${HOST_APP}/Contents/MacOS"
   -o "${HOST_MACOS}/TFTMACEmulatorHost"
 /bin/cp "${ROOT}/RuntimeHost/Info.plist" "${HOST_APP}/Contents/Info.plist"
 /usr/bin/plutil -lint "${HOST_APP}/Contents/Info.plist" >/dev/null
-/usr/bin/codesign --force --sign - --timestamp=none "${HOST_APP}"
+/usr/bin/codesign --force --sign "${SIGNING_IDENTITY_HASH}" --timestamp=none "${HOST_APP}"
 
-/usr/bin/codesign --force --deep --sign - --timestamp=none "${DIST}"
+/usr/bin/codesign --force --deep --sign "${SIGNING_IDENTITY_HASH}" --timestamp=none "${DIST}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${DIST}"
+/usr/bin/codesign -dvv "${DIST}" 2>&1 \
+  | /usr/bin/grep -F "Authority=${SIGNING_IDENTITY_NAME}" >/dev/null
 
 echo "Native TFTMAC built: ${DIST}"

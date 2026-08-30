@@ -13,11 +13,22 @@ The working stock Android runtime is external to the repository and is not rebui
 
 ## Build
 
+Create TFTMAC's stable local-only signing identity once:
+
+```sh
+/bin/zsh scripts/ensure-local-signing-identity.command
+```
+
+The identity remains in the current user's login Keychain so macOS can retain
+the removable-volume grant across changed local builds. It is not a Developer
+ID and is not suitable for public distribution.
+
 ```sh
 /bin/zsh scripts/build-native-app.command
 ```
 
-The Release application is produced under the ignored native build directory and copied to `dist/TFTMAC.app` for local use. Local validation uses ad-hoc signing.
+The Release application is produced under the ignored native build directory,
+copied to `dist/TFTMAC.app`, and signed as `TFTMAC Local Code Signing`.
 
 ## Test
 

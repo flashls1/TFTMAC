@@ -1,0 +1,184 @@
+# TFTMAC Unreal graphics observability and patch map
+
+Authority date: 2026-08-30
+
+## Fixed premise and engineering objective
+
+TFT uses Epic's Unreal Engine technology. Fortnite and other shipped Unreal
+Android titles are therefore valid architecture and experiment references. The
+reference does not make every TFT runtime choice identical: the exact Unreal
+branch, RHI, renderer features, shader keys, PSO cache, swapchain, device
+profile, and CVars must be identified from this TFT run before a connector is
+changed.
+
+The absence of Riot's signed game source changes the interception point. It
+does not make the graphics pipeline unknowable. TFTMAC can observe and change
+the components it owns: the Android/emulator configuration, AEMU/gfxstream,
+ANGLE when active, MoltenVK when active, the native frame transport, and the
+final Metal presenter. A future source-built gfxstream can add a shared
+`frame_id` at every guest/host handoff without modifying Riot's APK.
+
+## Transferable Unreal model
+
+The useful Unreal reference pipeline is:
+
+```text
+GameThread simulation
+  -> RenderThread command construction
+  -> optional RHIThread / graphics API submission
+  -> guest GPU queue and swapchain
+  -> Android compositor actual presentation
+```
+
+Unreal Insights can name GameThread, RenderThread, RHIThread, GPU and PSO work
+when the application build exposes those trace channels. TFTMAC must leave
+those internal spans `UNKNOWN` when the signed TFT build does not expose them.
+Android platform traces still establish CPU scheduling, compositor deadlines,
+GPU memory, and what the player actually saw.
+
+## Runtime paths that evidence must distinguish
+
+Only a per-session pipeline snapshot may promote one of these candidates:
+
+1. Unreal Vulkan -> guest Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
+2. Unreal GLES/EGL -> ANGLE Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
+3. Unreal GLES/EGL -> native guest GLES -> gfxstream -> host rendering.
+4. Another renderer selected by the installed TFT/emulator build.
+
+ANGLE applies only when the game selected a GLES/EGL path and Android selected
+ANGLE for that package. MoltenVK applies only when the host Vulkan backend
+actually loaded it. Requested launch flags are hypotheses; normal runtime log
+identity and effective guest properties are evidence.
+
+## Three clocks that must never be merged
+
+| Label | Measurement | Valid claim |
+| --- | --- | --- |
+| `TFT` | Exact TFT `GameActivity` BLAST SurfaceView, SurfaceFlinger actual-present timestamps | Frames the guest compositor actually presented for TFT |
+| `PIPE` | Authenticated EmulatorController image arrivals plus sampled content identity | Transport delivery and whether delivered images changed |
+| `MAC` | TFTMAC's final Metal command completion and presentation loop | Health of the native Mac presentation of an already completed Android image |
+
+`PIPE 60` and `MAC 60` can coexist with a frozen or repeatedly presented TFT
+frame. Neither is Unreal FPS. The overlay must show `TFT —` when the exact
+SurfaceView cannot be selected or its timestamps cannot be read; it must never
+substitute another clock.
+
+## Implemented data contract
+
+Every native app start creates a private SQLite session. The 2.2 telemetry
+extension adds:
+
+| Table | Evidence |
+| --- | --- |
+| `game_frame_intervals` | Every newly observed actual-present interval, jank flag, severe flag and missed-vsync equivalent |
+| `game_frame_windows` | One-second TFT FPS, 1% low, p50/p95/p99/max, jank, severe stalls, missed vsyncs, layer identity, refresh period and explicit availability reason |
+| `stream_freshness_windows` | Changed/identical sampled content, longest identical run and sequence loss |
+| `host_presentation_windows` | Final Metal submissions/completions, unique/repeated sources, drawable/command errors, completion and GPU timing |
+| `pipeline_log_aggregates` | Counts of real warning/error/stall lines at gfxstream, ASG, Vulkan, MoltenVK, shader and fence boundaries; normal configuration lines do not become failures |
+| `graphics_pipeline_snapshots` | Per-run evidence for the active TFT surface, ANGLE, gfxstream, MoltenVK, host device and effective guest EGL/Vulkan settings |
+| `diagnostic_artifacts` | SHA-256, byte count, trigger and analysis state for bounded Perfetto captures |
+| `host_resource_samples` | Host available/compressed/swap/pageouts, thermal state and power source at five seconds |
+| `combat_benchmarks` | Named preset, configuration SHA, 300/480-second boundaries, coverage, validity and summary metrics |
+| `combat_incidents` | Adjacent bad-window/visible-stutter triggers, trace sequence, evidence confidence and explicit unknowns |
+| `combat_comparisons` | Control/candidate deltas and deterministic HOME_RUN/PROMISING/REJECT/INCONCLUSIVE result |
+
+SurfaceFlinger history polls overlap. The collector establishes a first-poll
+boundary, de-duplicates actual-present timestamps, resets on layer replacement,
+and records bounded-history loss explicitly rather than inventing one giant
+frame interval. Interval inserts are committed once per poll so the logger does
+not create dozens of disk transactions per second.
+
+The fixed Combat Benchmark captures one 20-second/32-MiB start trace and up to
+two 15-second/32-MiB incident traces. Automatic capture is combat-only, requires
+two adjacent bad one-second windows and retains the 120-second cooldown. Traces
+include SurfaceFlinger, FrameTimeline, layers, Android GPU memory, scheduler
+switch/wakeup/waking events, process/system stats, TFT process identity and
+guest CPU-frequency events when exposed. Every retained trace is hash-sealed
+and normalized immediately with pinned Perfetto `trace_processor_shell` v58.2;
+normalization output and hashes are written to SQL. Failure deletes the
+unprocessed raw trace and records a trace failure.
+
+## Attribution gates
+
+| Candidate blocker | Evidence required before naming it |
+| --- | --- |
+| Guest display/frame pacing | TFT actual-present misses or long intervals, with bounded SurfaceFlinger/FrameTimeline evidence |
+| Unreal CPU thread | A missed frame correlated with named Unreal spans, or at minimum TFT process runnable/running pressure; without named spans report only process CPU pressure |
+| gfxstream/ASG transport | Queue depth or submit-to-host receive time from an instrumented gfxstream build; warning counts alone are not latency proof |
+| Host emulator GPU | Host renderer command completion crossing display deadlines plus supported Metal/GPU counters |
+| PSO/shader hitch | A PSO compile/miss event coincident with the hitch in a controlled UE trace; a fight-only spike is not sufficient |
+| ANGLE mismatch | A session snapshot proves ANGLE is active and a one-factor controlled change improves actual-present percentiles without a correctness regression |
+| MoltenVK behavior | A snapshot proves MoltenVK is active and its own queue/pipeline-cache instrumentation or a controlled build isolates the change |
+| TFTMAC final presenter | Guest `TFT` stays healthy while `MAC` completion, GPU time, drawable misses or repeated presentations regress |
+
+## Safe code and configuration intervention points
+
+1. Native logger/controller: markers, clock alignment, capture health, loss
+   counters, SurfaceFlinger timing and Perfetto lifecycle. This is implemented.
+2. Source-built gfxstream/AEMU: emit one monotonic frame ID and timestamps at
+   guest submit, host receive, host queue, host GPU scheduled/completed and
+   output present. This is the highest-value next code patch after a real combat
+   trace identifies an unresolved guest/host queue gap.
+3. ANGLE source/build, only if active: log renderer/feature selection, shader
+   translation/cache time, queue waits and relevant extension negotiation.
+4. MoltenVK source/build, only if active: log pipeline creation/cache hits,
+   queue submit, command-buffer scheduling/completion and swapchain behavior.
+5. TFTMAC's final Metal presenter: change copy/storage/scheduling only when the
+   `MAC` layer, not the guest layer, is the first failing boundary.
+6. A controlled Unreal Android reference app on the identical emulator stack:
+   expose Unreal Insights and systematic PSO/frame-pacing experiments. It
+   proves stack capability and causal signatures, not TFT internals by proxy.
+
+Do not patch the signed TFT APK, inject code into Riot's process, copy
+Fortnite's PSO cache, or label a guessed shader as Riot's. Unreal/Fortnite
+practices remain valuable as test hypotheses: PSO precaching, work off the
+interactive frame, stable Android frame pacing, device-profile quality tiers,
+and one-factor RHI experiments.
+
+## Combat experiment protocol
+
+1. Run the locked `control` preset for a representative 5-8 minute heavy-combat window.
+2. Restart with `home_run_a`, manually confirm official TFT Performance Mode Beta is ON, and repeat a comparable window.
+3. Mark every visible stutter; the run ends manually after five minutes or automatically at eight minutes.
+4. Compare the 5 seconds before and after each marker: TFT actual-present p95,
+   p99, max, 1% low, consecutive misses, stream freshness, Mac presenter, CPU,
+   memory, thermal/frequency evidence available in the trace, and pipeline
+   errors.
+5. Classify the first divergent boundary; leave later boundaries as effects.
+6. If the composite wins, run the five-minute cold confirmation before separating its two components.
+7. Repeat a comparable fight and a cold-start confirmation. Reject correctness,
+   boot, ADB, audio, memory, login, or usability regressions.
+8. Use the automatic trace-active/trace-inactive comparison; over 5% change marks causal trace conclusions `OBSERVER_OVERHEAD_INVALID` while retaining performance data.
+
+## Current unknowns to close with data
+
+- Exact TFT Unreal branch and mobile renderer feature set.
+- Active per-run RHI and all negotiated graphics extensions/features.
+- Game/Render/RHI thread spans when the signed build does not expose them.
+- TFT shader/PSO keys, cache hit rate and compile timing.
+- gfxstream queue depth and per-frame guest-submit-to-host-receive latency.
+- MoltenVK pipeline-cache and queue timing inside the emulator process.
+- Host Metal saturation counters for the emulator renderer, distinct from the
+  final TFTMAC presenter.
+- Observer overhead during a comparable major fight.
+
+An unknown is not filled by a Fortnite assumption. Fortnite/Unreal tells us
+which mechanism and signature to test; the correlated TFT run tells us whether
+that mechanism is active and failing here.
+
+## Primary technical references
+
+- Epic, platform-native Android profiling: <https://dev.epicgames.com/documentation/unreal-engine/profile-android-projects-with-platformnative-tools>
+- Epic, Unreal Insights channels: <https://dev.epicgames.com/documentation/unreal-engine/unreal-insights-reference-in-unreal-engine-5>
+- Epic, mobile frame pacing: <https://dev.epicgames.com/documentation/unreal-engine/frame-pacing-for-mobile-devices>
+- Epic, PSO cache optimization: <https://dev.epicgames.com/documentation/unreal-engine/optimizing-rendering-with-pso-caches-in-unreal-engine>
+- Epic, PSO precaching: <https://dev.epicgames.com/documentation/unreal-engine/pso-precaching-for-unreal-engine>
+- Android, game frame-rate optimization: <https://developer.android.com/games/optimize/framerate>
+- Android, frame pacing: <https://source.android.com/docs/core/graphics/frame-pacing>
+- Perfetto, FrameTimeline: <https://perfetto.dev/docs/data-sources/frametimeline>
+- Perfetto, GPU data sources: <https://perfetto.dev/docs/data-sources/gpu>
+- Google gfxstream source: <https://github.com/google/gfxstream>
+- ANGLE source: <https://android.googlesource.com/platform/packages/modules/ANGLE/+/refs/heads/main/>
+- Khronos Vulkan specification: <https://registry.khronos.org/vulkan/specs/latest/pdf/vkspec.pdf>
+- MoltenVK runtime guide: <https://github.com/KhronosGroup/MoltenVK/blob/main/Docs/MoltenVK_Runtime_UserGuide.md>
+- Apple, Metal performance analysis: <https://developer.apple.com/documentation/xcode/analyzing-the-performance-of-your-metal-app/>

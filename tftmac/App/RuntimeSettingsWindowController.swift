@@ -2,6 +2,7 @@ import AppKit
 
 @MainActor
 final class RuntimeSettingsWindowController: NSWindowController {
+    private let experimentButton = NSPopUpButton()
     private let vCPUButton = NSPopUpButton()
     private let ramButton = NSPopUpButton()
     private let refreshButton = NSPopUpButton()
@@ -13,7 +14,7 @@ final class RuntimeSettingsWindowController: NSWindowController {
     init(profile: TFTMACRuntimeProfile) {
         originalProfile = profile
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 470),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 510),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -29,6 +30,7 @@ final class RuntimeSettingsWindowController: NSWindowController {
 
     func refreshFromSavedProfile() {
         originalProfile = TFTMACRuntimeProfile.load()
+        select(originalProfile.experimentPreset, in: experimentButton)
         select(originalProfile.vCPU, in: vCPUButton)
         select(originalProfile.ramMiB, in: ramButton)
         select(originalProfile.refreshHz, in: refreshButton)
@@ -51,16 +53,23 @@ final class RuntimeSettingsWindowController: NSWindowController {
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 3
 
+        experimentButton.addItems(withTitles: RuntimeExperimentPreset.allCases.map(\.displayName))
         vCPUButton.addItems(withTitles: TFTMACRuntimeProfile.supportedVCPU.map(String.init))
         ramButton.addItems(withTitles: TFTMACRuntimeProfile.supportedRAMMiB.map { "\($0) MiB" })
         refreshButton.addItems(withTitles: TFTMACRuntimeProfile.supportedRefreshHz.map { "\($0) Hz" })
         flushButton.addItems(withTitles: TFTMACRuntimeProfile.supportedASGDrawFlushIntervals.map { "\($0) µs" })
+        for button in [vCPUButton, ramButton, refreshButton, flushButton] {
+            button.isEnabled = false
+            button.toolTip = "Locked for the controlled Combat Benchmark so the preset is the only changed variable."
+        }
+        select(profile.experimentPreset, in: experimentButton)
         select(profile.vCPU, in: vCPUButton)
         select(profile.ramMiB, in: ramButton)
         select(profile.refreshHz, in: refreshButton)
         select(profile.asgDrawFlushInterval, in: flushButton)
 
         let grid = NSGridView(views: [
+            [fieldLabel("Launch experiment"), experimentButton],
             [fieldLabel("Virtual CPUs"), vCPUButton],
             [fieldLabel("Android RAM"), ramButton],
             [fieldLabel("Guest refresh target"), refreshButton],
@@ -122,8 +131,13 @@ final class RuntimeSettingsWindowController: NSWindowController {
         if let candidate { button.selectItem(withTitle: candidate) }
     }
 
+    private func select(_ preset: RuntimeExperimentPreset, in button: NSPopUpButton) {
+        button.selectItem(withTitle: preset.displayName)
+    }
+
     @objc private func restoreBaseline(_ sender: Any?) {
         let baseline = TFTMACRuntimeProfile.playable
+        select(.control, in: experimentButton)
         select(baseline.vCPU, in: vCPUButton)
         select(baseline.ramMiB, in: ramButton)
         select(baseline.refreshHz, in: refreshButton)
@@ -132,16 +146,9 @@ final class RuntimeSettingsWindowController: NSWindowController {
     }
 
     @objc private func saveSettings(_ sender: Any?) {
-        guard let vCPU = selectedInteger(vCPUButton),
-              let ram = selectedInteger(ramButton),
-              let refresh = selectedInteger(refreshButton),
-              let flush = selectedInteger(flushButton) else { return }
-        let next = TFTMACRuntimeProfile.playable.with(
-            vCPU: vCPU,
-            ramMiB: ram,
-            refreshHz: refresh,
-            asgDrawFlushInterval: flush
-        )
+        guard let preset = selectedExperimentPreset() else { return }
+        if preset.requiresManualPerformanceModeBetaConfirmation, !confirmHomeRunA() { return }
+        let next = TFTMACRuntimeProfile.playable.with(experimentPreset: preset)
         next.save()
         onSave?(originalProfile, next)
         originalProfile = next
@@ -150,5 +157,19 @@ final class RuntimeSettingsWindowController: NSWindowController {
 
     private func selectedInteger(_ button: NSPopUpButton) -> Int? {
         button.titleOfSelectedItem?.split(separator: " ").first.flatMap { Int($0) }
+    }
+
+    private func selectedExperimentPreset() -> RuntimeExperimentPreset? {
+        RuntimeExperimentPreset.allCases.first { $0.displayName == experimentButton.titleOfSelectedItem }
+    }
+
+    private func confirmHomeRunA() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Enable Home Run A Performance Mode?"
+        alert.informativeText = "Before continuing, manually enable official TFT Performance Mode Beta in the game and confirm it is on. The next launch will request only NativeTextureDecompression and NoDelayCloseColorBuffer in addition to the proven emulator feature baseline. Restore Proven Baseline returns to the control preset."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Performance Mode Beta Is On")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }

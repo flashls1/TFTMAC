@@ -29,7 +29,12 @@ The application does not package or publish TFT APKs. The supported Android pack
 
 ## Signing
 
-Local development builds are ad-hoc signed. A public distribution may later use the project's Apple Developer identity, hardened runtime, notarization, and stapling through a separately approved release configuration. Credentials and signing secrets never belong in Git.
+Local builds use the stable `TFTMAC Local Code Signing` identity created once by
+`scripts/ensure-local-signing-identity.command`. This lets macOS recognize
+updated local builds as the same app and retain removable-volume consent. The
+private key remains in the user's login Keychain and never enters Git. This
+local identity is not a public distribution identity; public distribution still
+requires Developer ID signing, hardened runtime, notarization, and stapling.
 
 ## Release evidence
 
