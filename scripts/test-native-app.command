@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-26.6.0.app/Contents/Developer}"
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  if [[ -d /Applications/Xcode-26.6.0.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer
+  else
+    export DEVELOPER_DIR="$(xcode-select -p)"
+  fi
+fi
 DERIVED="${ROOT}/.build/native-tests"
 
 /usr/bin/xcodebuild \
