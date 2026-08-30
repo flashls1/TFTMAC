@@ -880,8 +880,21 @@ function baselineRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = 
 
 async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval) {
   const preAudit = runtimeProcessAudit();
-  const hasActiveRuntime = preAudit.processes.some(item => ['ANDROID_EMULATOR', 'TFTMAC_SAMPLER'].includes(item.kind));
-  if (!hasActiveRuntime && preAudit.adb5040 === 'LISTENER_PRESENT') cleanupTftmacAdbResidue();
+  const hasEmulator = preAudit.processes.some(item => item.kind === 'ANDROID_EMULATOR');
+  if (!hasEmulator) {
+    const staleSamplers = preAudit.processes.filter(item => item.kind === 'TFTMAC_SAMPLER');
+    for (const sampler of staleSamplers) {
+      try { process.kill(sampler.pid, 'SIGTERM'); } catch {}
+    }
+    if (staleSamplers.length) await sleep(250);
+    for (const sampler of staleSamplers) {
+      if (processAlive(sampler.pid)) {
+        try { process.kill(sampler.pid, 'SIGKILL'); } catch {}
+      }
+    }
+    cleanupTftmacAdbResidue();
+    if (staleSamplers.length) await sleep(100);
+  }
   singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
@@ -907,9 +920,10 @@ async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfi
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'SAMPLER_STARTED', pid: samplerPid });
   await sleep(350);
   if (!processAlive(samplerPid)) throw new Error(`LOGGER_START_FAILED: sampler PID ${samplerPid} did not remain alive.`);
-  adbServer(runtime);
-  const emulatorPid = startBaselineEmulator(runtime, captureDir, ramMB, controlProfileId);
+  let emulatorPid = null;
   try {
+    adbServer(runtime);
+    emulatorPid = startBaselineEmulator(runtime, captureDir, ramMB, controlProfileId);
     await waitForBoot(runtime);
     const guestUnlock = wakeGuestScreen(runtime, captureDir);
     const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
@@ -4579,13 +4593,24 @@ function cleanupTftmacAdbResidue() {
   const auditBefore = runtimeProcessAudit();
   const tftmacAdb = auditBefore.processes.filter(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command));
   if (!tftmacAdb.length) return { action: 'TFTMAC_ADB_RESIDUE_ABSENT', auditBefore, auditAfter: auditBefore };
-  const runtime = discover();
-  const killed = command(runtime.adb, ['-P', ADB_PORT, 'kill-server'], { env: runtime.env, allowFailure: true, timeout: 10000 });
+  for (const item of tftmacAdb) {
+    try { process.kill(item.pid, 'SIGTERM'); } catch {}
+  }
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && tftmacAdb.some(item => processAlive(item.pid))) {
+    const until = Date.now() + 50;
+    while (Date.now() < until) {}
+  }
+  for (const item of tftmacAdb) {
+    if (processAlive(item.pid)) {
+      try { process.kill(item.pid, 'SIGKILL'); } catch {}
+    }
+  }
   const auditAfter = runtimeProcessAudit();
   if (auditAfter.processes.some(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command))) {
-    throw new Error(`TFTMAC_ADB_RESIDUE_CLEANUP_FAILED: ${(killed.stderr || killed.stdout || '').trim()}`);
+    throw new Error('TFTMAC_ADB_RESIDUE_CLEANUP_FAILED: private ADB listener remains on port 5040');
   }
-  return { action: 'TFTMAC_ADB_RESIDUE_CLEANED', killedPids: tftmacAdb.map(item => item.pid), killStatus: killed.status, auditBefore, auditAfter };
+  return { action: 'TFTMAC_ADB_RESIDUE_CLEANED', killedPids: tftmacAdb.map(item => item.pid), auditBefore, auditAfter };
 }
 
 function singleRuntimePreflight() {
