@@ -18,6 +18,8 @@
 		100000000000000000000012 /* GRPCNIOTransportHTTP2 in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000002 /* GRPCNIOTransportHTTP2 */; };
 		100000000000000000000013 /* GRPCProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000003 /* GRPCProtobuf */; };
 		100000000000000000000014 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000004 /* SwiftProtobuf */; };
+		100000000000000000000015 /* emulator_controller.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* emulator_controller.pb.swift */; };
+		100000000000000000000016 /* emulator_controller.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* emulator_controller.grpc.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +31,8 @@
 		200000000000000000000006 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		200000000000000000000007 /* TFTMACGate1Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TFTMACGate1Tests.swift; sourceTree = "<group>"; };
 		200000000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000009 /* emulator_controller.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = emulator_controller.pb.swift; sourceTree = "<group>"; };
+		200000000000000000000010 /* emulator_controller.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = emulator_controller.grpc.swift; sourceTree = "<group>"; };
 		200000000000000000000011 /* TFTMAC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TFTMAC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000012 /* EmbeddedControlProbe */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = EmbeddedControlProbe; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000013 /* TFTMACTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TFTMACTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -55,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				400000000000000000000002 /* TFTMAC */,
+				40000000000000000000000A /* Generated */,
 				400000000000000000000005 /* Probes */,
 				400000000000000000000007 /* Tests */,
 				400000000000000000000009 /* Products */,
@@ -90,6 +95,8 @@
 			path = Presentation;
 			sourceTree = "<group>";
 		};
+		40000000000000000000000A /* Generated */ = {isa = PBXGroup; children = (40000000000000000000000B /* EmulatorController */,); path = Generated; sourceTree = "<group>"; };
+		40000000000000000000000B /* EmulatorController */ = {isa = PBXGroup; children = (200000000000000000000009 /* emulator_controller.pb.swift */, 200000000000000000000010 /* emulator_controller.grpc.swift */,); path = EmulatorController; sourceTree = "<group>"; };
 		400000000000000000000005 /* Probes */ = {isa = PBXGroup; children = (400000000000000000000006 /* EmbeddedControlProbe */,); path = Probes; sourceTree = "<group>"; };
 		400000000000000000000006 /* EmbeddedControlProbe */ = {isa = PBXGroup; children = (200000000000000000000006 /* main.swift */,); path = EmbeddedControlProbe; sourceTree = "<group>"; };
 		400000000000000000000007 /* Tests */ = {isa = PBXGroup; children = (400000000000000000000008 /* TFTMACTests */,); path = Tests; sourceTree = "<group>"; };
@@ -157,7 +164,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		700000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005,); runOnlyForDeploymentPostprocessing = 0; };
+		700000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000015, 100000000000000000000016,); runOnlyForDeploymentPostprocessing = 0; };
 		700000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000006,); runOnlyForDeploymentPostprocessing = 0; };
 		700000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000007, 100000000000000000000008,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */

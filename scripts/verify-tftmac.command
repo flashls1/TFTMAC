@@ -30,6 +30,9 @@ for required in \
   "$PACKAGE_RESOLVED" \
   "$PROTO" \
   "$PROTO_SOURCE" \
+  Generated/EmulatorController/emulator_controller.pb.swift \
+  Generated/EmulatorController/emulator_controller.grpc.swift \
+  scripts/generate-emulator-proto.command \
   scripts/build-native-app.command \
   scripts/test-native-app.command; do
   [[ -f "$required" ]] || fail "required file is missing: $required"
@@ -45,8 +48,13 @@ readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"
 readonly RECORDED_INSTALLED_SHA="$(jq -r '.installedProtoSHA256' "$PROTO_SOURCE")"
 [[ "$PROTO_SHA" == "$RECORDED_PROTO_SHA" ]] || fail "vendored EmulatorController proto hash drift"
 [[ "$PROTO_SHA" == "$RECORDED_INSTALLED_SHA" ]] || fail "vendored proto no longer matches frozen installed-runtime authority"
-jq -e '.schema == 1 and .authority == "INSTALLED_ANDROID_EMULATOR" and .vendoredProtoPath == "Vendor/AndroidEmulator/emulator_controller.proto"' "$PROTO_SOURCE" >/dev/null \
+jq -e '.schema == 1 and .authority == "INSTALLED_ANDROID_EMULATOR" and .vendoredProtoPath == "Vendor/AndroidEmulator/emulator_controller.proto" and .generator.protocVersion == "36.0" and .generator.swiftProtobufVersion == "1.38.1" and .generator.grpcSwiftProtobufVersion == "2.4.1"' "$PROTO_SOURCE" >/dev/null \
   || fail "EmulatorController provenance is invalid"
+
+readonly GENERATED_PB_SHA="$(shasum -a 256 Generated/EmulatorController/emulator_controller.pb.swift | awk '{print $1}')"
+readonly GENERATED_GRPC_SHA="$(shasum -a 256 Generated/EmulatorController/emulator_controller.grpc.swift | awk '{print $1}')"
+[[ "$GENERATED_PB_SHA" == "$(jq -r '.generatedSources["Generated/EmulatorController/emulator_controller.pb.swift"]' "$PROTO_SOURCE")" ]] || fail "generated Swift protobuf source drift"
+[[ "$GENERATED_GRPC_SHA" == "$(jq -r '.generatedSources["Generated/EmulatorController/emulator_controller.grpc.swift"]' "$PROTO_SOURCE")" ]] || fail "generated Swift gRPC source drift"
 
 jq -e '
   .version == 3 and
