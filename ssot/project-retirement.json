@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "authoritativeProject": "tftmac",
+  "projects": {
+    "tftmac2": { "state": "PENDING_UNIQUE_CONTENT_CHECK" },
+    "tftmac-runtime": { "state": "PENDING_PUBLISHED_HEAD_REVIEW", "publishedHead": "994cf8d8524b87cc03c7decb4b253fc7be2253c7" }
+  }
+}

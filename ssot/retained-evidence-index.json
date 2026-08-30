@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "policy": "Decision relevance, not age. Preserve current playable baseline, package/runtime authority, promoted configuration evidence, current unresolved-failure evidence, and final native acceptance evidence. Superseded raw runs may be compacted only after their decision is represented durably.",
+  "protectedEvidence": [
+    "ssot/runtime-authority.json",
+    "ssot/storage-reclamation.json",
+    "Vendor/AndroidEmulator/SOURCE.json",
+    "ssot/TFTMAC_PERFORMANCE_LAB.sql",
+    "ssot/TFTMAC_ENGINEERING_MAP.sql"
+  ],
+  "rawPruningThisGate": "NONE_REQUIRED",
+  "reason": "The approved first cleanup does not require age-based deletion. The dominant abandoned storage target has been reclaimed; raw telemetry remains bounded by decision relevance and may be pruned later only when superseded evidence is compacted."
+}
