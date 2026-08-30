@@ -806,9 +806,9 @@ if "$ADB" -P "$ADB_SERVER_PORT" -s "$SERIAL" get-state >/dev/null 2>&1; then
     exit 4
 fi
 typeset AVD_DIR="${TFT_ROOT_AVD_HOME:-$(tft_resolve_avd_home)}/${TFT_AVD_NAME:-TftRootAffinity}.avd"
-if [[ -e "$AVD_DIR/.mactician-avd.lock" \
-        || -e "$AVD_DIR/config.ini.mactician-asg-backup" \
-        || -e "$AVD_DIR/hardware-qemu.ini.mactician-asg-backup" ]]; then
+if [[ -e "$AVD_DIR/.tftmac-avd.lock" \
+        || -e "$AVD_DIR/config.ini.tftmac-asg-backup" \
+        || -e "$AVD_DIR/hardware-qemu.ini.tftmac-asg-backup" ]]; then
     print "Final check failed: AVD rollback markers were not removed."
     exit 4
 fi

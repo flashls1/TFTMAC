@@ -8,7 +8,7 @@ readonly ANGLE_DIR="$SDK_ROOT/emulator/lib64/gles_angle"
 readonly EGL_LIBRARY="$ANGLE_DIR/libEGL.dylib"
 readonly GLES_LIBRARY="$ANGLE_DIR/libGLESv2.dylib"
 readonly SWIFTSHADER_ICD="$ANGLE_DIR/vk_swiftshader_icd.json"
-readonly BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mactician-angle-probe.XXXXXX")"
+readonly BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tftmac-angle-probe.XXXXXX")"
 readonly PROBE="$BUILD_DIR/angle-egl-capability-probe"
 
 cleanup() {

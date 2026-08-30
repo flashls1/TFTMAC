@@ -1,62 +1,20 @@
 # Changelog
 
-The current application metadata is version 1.0.4, build 40.
-
 ## Unreleased
 
-No changes yet.
-
-## 1.0.4 — 2026-08-14
-
-### Fixed
-
-- Restore four asynchronous OpenGL PSO compiler services when a TFT update
-  disables them in its inherited Android device profile, avoiding first-use
-  shader compilation stalls on the gameplay render path.
-
-## 1.0.3 — 2026-08-14
-
 ### Changed
 
-- Check the signed TFT PBE feed when the launcher becomes ready.
-- Show **Update game** in place of **Play** only when a newer verified game
-  version is available.
-- Prevent starting a known-outdated game build until its update completes.
+- Established TFTMAC as the sole product and repository identity.
+- Replaced legacy validation with the native TFTMAC build/test verifier.
+- Preserved the proven native AppKit/Metal Gate 1 implementation and frozen installed EmulatorController protocol.
+- Removed obsolete launcher, hosted update/feed, helper-host, and branding layers.
+- Moved runtime authority to the stock Google Android Emulator and official Google Play TFT lifecycle.
+- Began relational migration of retained performance evidence to TFTMAC-owned identifiers.
+- Retired source-built emulator work from the normal product path.
 
-## 1.0.2 — 2026-08-13
+### Current target
 
-### Fixed
-
-- Check for Mactician updates on every launch instead of waiting only for the
-  daily Sparkle schedule.
-- Show an explicit localized result after a game update check, including the
-  installed TFT PBE version when no newer hosted build is available.
-- Record completed game update checks in the launcher log.
-
-## 1.0.1 — 2026-08-13
-
-### Added
-
-- Added a separately signed TFT PBE update channel hosted on
-  `sergeinaumov.dev`.
-- Added in-place split APK updates that preserve Riot sign-in and local game
-  data.
-
-## 1.0.0 — 2026-08-10
-
-### Added
-
-- Initial public version of Mactician.
-
-### Changed
-
-- Restyled the active game Dock icon as a distinct Mactician play variant and
-  replaced the Android Emulator title with `Mactician: TFT PBE`.
-- Reduced Trial benchmark preparation from roughly 20 seconds to 1–3 seconds
-  by overlapping one shop decision with combat and batching reward, XP, item,
-  and replay actions.
-- Preserved valid measurements across same-emulator Trial retries, added a
-  bounded same-combat capture retry, and repaired early-exit cleanup after a
-  launcher crash.
-- Updated Performance Max with the confirmed 67% effects/LOD profile and a
-  16 KiB ASG write step; repeated Trial 1-8 proxies remained above 30 FPS.
+- Native macOS application bundle: `com.flashls1.tftmac`.
+- Stock Android Emulator 37.1.11.
+- Official Google Play package `com.riotgames.league.teamfighttactics`.
+- 1920x1080 / 60 Hz target on Apple Silicon.
