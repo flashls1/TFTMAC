@@ -50,10 +50,19 @@ enum TFTMACApplication {
         let performanceItem = NSMenuItem()
         let performanceMenu = NSMenu(title: "Telemetry")
         performanceItem.submenu = performanceMenu
+        let automaticLogger = NSMenuItem(
+            title: "Graphics Logger: Automatic While TFT Runs",
+            action: nil,
+            keyEquivalent: ""
+        )
+        automaticLogger.state = .on
+        automaticLogger.isEnabled = false
+        performanceMenu.addItem(automaticLogger)
+        performanceMenu.addItem(.separator())
         addTelemetryItem("Mark Match Entry", action: #selector(AppCoordinator.markMatchEntry(_:)), key: "1", to: performanceMenu, coordinator: coordinator)
-        addTelemetryItem("Start Combat Benchmark", action: #selector(AppCoordinator.startCombatBenchmark(_:)), key: "2", to: performanceMenu, coordinator: coordinator)
+        addTelemetryItem("Start Controlled A/B Window (Optional)", action: #selector(AppCoordinator.startCombatBenchmark(_:)), key: "2", to: performanceMenu, coordinator: coordinator)
         addTelemetryItem("Mark Visible Stutter", action: #selector(AppCoordinator.markVisibleStutter(_:)), key: "3", to: performanceMenu, coordinator: coordinator)
-        addTelemetryItem("End Combat Benchmark", action: #selector(AppCoordinator.endCombatBenchmark(_:)), key: "4", to: performanceMenu, coordinator: coordinator)
+        addTelemetryItem("End Controlled A/B Window (Optional)", action: #selector(AppCoordinator.endCombatBenchmark(_:)), key: "4", to: performanceMenu, coordinator: coordinator)
         addTelemetryItem("Mark Match End", action: #selector(AppCoordinator.markMatchEnd(_:)), key: "5", to: performanceMenu, coordinator: coordinator)
         performanceMenu.addItem(.separator())
         let reveal = performanceMenu.addItem(withTitle: "Reveal Local Capture Folder", action: #selector(AppCoordinator.revealCaptureFolder(_:)), keyEquivalent: "l")

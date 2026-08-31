@@ -2,7 +2,7 @@
 
 **Authority date:** 2026-08-30 America/Chicago
 **Formula version:** `tftmac-benchmark-v2`
-**Current runtime:** TFTMAC 2.2.0 build 7 on the M4 Mac mini
+**Current installed runtime:** TFTMAC 2.3.0 build 8 on the M4 Mac mini; automatic graphics lifecycle and complete stack receipts live-verified, first Build 8 marked gameplay benchmark pending
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
 This file is the current benchmark-analysis authority. `docs/benchmarks.md` is
@@ -18,11 +18,12 @@ historical campaign record. An agent could find the pieces, but it did not have
 one complete input/formula/output contract. This file closes that documentation
 gap.
 
-TFTMAC recognizes four evidence modes:
+TFTMAC recognizes five evidence modes:
 
 | Mode | Meaning | Authority |
 | --- | --- | --- |
 | `FULL_RUN` | A user-marked run from `MATCH_ENTRY` through `MATCH_END` | Primary evidence for continuous FPS, the complete workload, sustained resource pressure, correctness, and promotion to normal play |
+| `GRAPHICS_RUN` | Automatically observed TFT process/layer lifetime from start through process/app close | Base graphics lifecycle, exact-layer availability, stack receipt, and incident evidence; no battle classifier or user marker is required |
 | `BOUNDED_AB` | A 300–480 second continuous-gameplay window under one named preset | Fast controlled screening of one candidate against a compatible Control; currently implemented by the UI/source named Combat Benchmark |
 | `DIAGNOSTIC_ONLY` | Launch, login, lobby, unmarked gameplay, partial capture, or isolated incident | Useful for diagnosis; cannot prove full-run performance or promote a candidate |
 | `INVALID` | Missing/corrupt boundaries, inadequate coverage, changed identity, correctness failure, or other declared invalidator | Retain as negative/operational evidence; do not use for a positive performance claim |
@@ -37,6 +38,12 @@ for correctness or player experience.
 
 A lobby, a reported `SRC 60`, an `OUT 60`, a successful launch, or an emulator
 process is never a gameplay benchmark.
+
+The graphics-only optimization equation is limited to direct graphics cadence,
+tail latency, missed-vsync/severe behavior, source freshness, final-presenter
+health, stack receipts, and conservative boundary joins. CPU, RAM, thermal,
+power, and audio may invalidate correctness or explain health context, but are
+not optimization variables or a substitute graphics owner in this contract.
 
 ## 2. Evidence and claim discipline
 
@@ -156,11 +163,19 @@ different session.
 | `logcat_aggregates` | bounded sanitized ANR/fatal/LMK/renderer/audio counts | failure-class evidence, not sole cause |
 | `pipeline_log_aggregates` | gfxstream/ASG/Vulkan/MoltenVK/shader/fence signals | named warning/failure evidence, not proof of absence |
 | `graphics_pipeline_snapshots` | effective layer/API/renderer state | comparable-path gate |
+| `graphics_runs` | automatic TFT process/layer lifetime, configuration SHA, target FPS, and start/end reason | base graphics scope and lifecycle continuity |
+| `graphics_pipeline_incidents` | automatic exact-layer degradation, trace link, conservative first boundary, explicit unknowns | incident triage, never a battle classification |
 | `diagnostic_artifacts` | trace path/hash/processor/normalization | bounded causal evidence |
 | `combat_benchmarks` | finalized bounded-window identity/validity/metrics | controlled `BOUNDED_AB` result; table name is retained from the implementation |
 | `combat_incidents` | bad-window trigger, trace, boundary/unknowns | incident analysis |
 | `combat_comparisons` | Control/candidate deltas and code decision | controlled A/B output |
 | `game_process_sessions` | TFT PID lifetime | restart and process-stability evidence |
+
+The current source schema also stores canonical stack-receipt JSON/SHA-256 on
+each graphics snapshot and joins intervals to their containing frame window
+where available. This is **source-level implemented**, not runtime verified,
+until a fresh capture carries the schema. The SHA proves receipt identity, not
+that every row shares a trusted cross-process frame ID.
 
 ## 5. Time domains and legal joins
 
@@ -321,8 +336,9 @@ relative_reduction = (control_rate - candidate_rate) / control_rate
 
 ### Collection
 
-1. Launch one clean named profile and let startup logging begin before the
-   emulator/TFT path.
+1. Launch one clean named profile. The automatic logger begins before the
+   emulator/TFT path and opens a `GRAPHICS_RUN` from the observed TFT
+   process/layer lifecycle.
 2. Do not change a restart-bound setting during the run.
 3. Select `Mark Match Entry` when the actual match/game board begins.
 4. Play normally. The entire run is the dataset; do not wait for or label a
@@ -334,8 +350,9 @@ relative_reduction = (control_rate - candidate_rate) / control_rate
    app shutdown and AVD rollback.
 
 The current native menu writes `MATCH_ENTRY` and `MATCH_END`. Those two markers
-are sufficient for continuous full-run analysis. No additional phase metadata
-is required.
+are sufficient for optional full-run segmentation. No battle or semantic phase
+classifier participates in base graphics collection, graphics-run validity, or
+weakest-boundary analysis.
 
 ### Full-run validity
 
@@ -355,9 +372,17 @@ valid product evidence while its cause remains `UNKNOWN`.
 
 ### Continuous timeline and under-target periods
 
-Analyze every raw frame interval and join every available source, presenter,
-resource, memory, thermal, audio, clock, and structured-error sample across the
-entire marked range. There is no phase-selection gate.
+Analyze every raw frame interval and its available `graphics_run_id`,
+frame-window, stack-receipt-SHA, source, presenter, clock, and structured-error
+join across the range. There is no phase-selection or battle-classifier gate.
+Resource, memory, thermal, power, and audio rows remain correctness/health
+context; do not rank them as graphics weak links.
+
+For each graphics run/window, publish only these conservative views: `TFT`
+(exact SurfaceFlinger actual-present), `PIPE` (controller freshness/delivery),
+and `MAC` (final presenter). The weakest-boundary view is the first observed
+view with a failing/missing receipt; where joins cannot prove ordering or a
+trusted frame handoff is absent, output `UNKNOWN` rather than an owner.
 
 Before interpreting performance, build a completeness matrix for every table in
 the SQL data dictionary: row count inside the range, first/last timestamp,
@@ -968,7 +993,9 @@ frames.
 2. `observer_overhead_invalid` is stored but does not alter the code decision.
 3. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
 4. Clock RTT is too high in the current full run for cross-host cause.
-5. No common frame ID currently spans guest submit through final present.
+5. No common frame ID currently spans guest submit through final present. The
+   allocation-free source-built correlation ring remains a planned, gated next
+   layer; stack-receipt/frame-window joins do not replace it.
 
 These gaps limit attribution and automation; they do not erase the direct
 player-facing frame distribution already captured.

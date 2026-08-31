@@ -27,7 +27,24 @@ Useful evidence may include:
 - package version, installer, and signer evidence;
 - explicit user stutter markers.
 
-The Telemetry menu records `MATCH_ENTRY`, `COMBAT_START`, `VISIBLE_STUTTER` and `MATCH_END` on the host monotonic timeline. Use cumulative SurfaceFlinger counter deltas only inside those marked windows. `gfxinfo` is not Unreal/Vulkan frame authority. Perfetto remains a bounded on-demand diagnostic rather than an always-on observer.
+The base graphics logger is automatic: it opens from the observed TFT
+process/layer lifecycle, continues through process/layer replacement or loss,
+and seals only at TFT process or app close. It does not wait for a match marker,
+a battle classifier, or a Combat Benchmark. The Telemetry menu's
+`MATCH_ENTRY`, `VISIBLE_STUTTER`, and `MATCH_END` remain optional user context;
+the controlled Combat Benchmark remains an optional A/B protocol. `gfxinfo` is
+not Unreal/Vulkan frame authority. Perfetto remains a bounded incident
+diagnostic rather than an always-on observer.
+
+The current source schema associates automatically captured samples with
+`graphics_runs`, records a canonical graphics-stack receipt and SHA-256 at each
+snapshot, and links exact guest intervals to their containing frame window when
+available. Every exact guest interval and one-second game window also carries
+the active immutable `stack_sha256`, so stack identity survives incomplete
+window joins and later layer changes. These source-level changes require a fresh runtime capture before
+they become **VERIFIED CURRENT runtime** evidence. A stack receipt establishes
+the observed route/configuration for that sample; it does not prove causal
+ownership of a slow frame.
 
 ## Retention
 
@@ -46,3 +63,16 @@ Superseded runs should be compacted to their session ID, configuration hash, ver
 Diagnostics must not intentionally capture or publish Google/Riot credentials, tokens, cookies, account identifiers, private Android userdata, or unrelated application data. Sanitize any excerpt before sharing it.
 
 No remote telemetry service is required for the current TFTMAC runtime or acceptance path.
+
+## Conservative graphics views
+
+The automatic logger may construct per-window stack joins through
+`graphics_run_id`, direct per-frame `stack_sha256`, frame-window linkage, and
+the matching snapshot receipt. Its views are
+conservative: `TFT` identifies exact SurfaceFlinger presentation, `PIPE`
+identifies controller freshness/transport delivery, and `MAC` identifies the
+final TFTMAC presenter. A view may say which observed boundary first lacks a
+healthy receipt; it must use `UNKNOWN` when a per-frame trusted handoff is
+missing. CPU, RAM, thermal, power, and audio samples remain health/correctness
+context only in this graphics-only optimization effort; they are not candidates
+in the graphics optimization equation.

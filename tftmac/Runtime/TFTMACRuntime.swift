@@ -5,6 +5,7 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
+import Metal
 import SQLite3
 import SwiftProtobuf
 
@@ -182,17 +183,38 @@ private struct PipelineLogAggregate: Sendable {
 }
 
 private struct GraphicsPipelineSnapshot: Sendable {
+    static let requiredReceiptKeys: Set<String> = [
+        "tft_package_version", "tft_surface", "unreal_engine", "game_graphics_api", "angle",
+        "gfxstream", "moltenvk", "host_vulkan_device", "metal_device",
+        "native_presenter", "configuration_sha256"
+    ]
+
     let label: String
+    let gamePID: Int32?
+    let exactLayerName: String?
     let tftSurfaceState: String
+    let gameGraphicsAPI: String
+    let gameGraphicsAPIConfidence: String
     let angleState: String
     let gfxstreamState: String
     let moltenVKState: String
+    let emulatorVersion: String?
+    let emulatorBuildID: String?
+    let emulatorGPUSelection: String?
+    let gfxstreamFeatureReceipt: String?
+    let gfxstreamTracingState: String
+    let moltenVKVersion: String?
+    let moltenVKConfiguration: String
     let hostVulkanDevice: String?
     let vulkanComposition: Bool?
     let nativeSwapchain: Bool?
     let guestEGLImplementation: String?
     let guestVulkanImplementation: String?
     let globalAngleSelection: String?
+    let packageAngleSelection: String?
+    let metalDeviceName: String?
+    let metalRegistryID: String?
+    let receipt: GraphicsStackReceipt
 }
 
 struct StreamFreshnessWindow: Sendable {
@@ -226,6 +248,9 @@ struct HostPresentationWindow: Sendable {
 }
 
 private struct DiagnosticArtifact: Sendable {
+    let graphicsRunID: String?
+    let graphicsStackSHA256: String?
+    let captureScope: String
     let createdUTC: String
     let createdMonotonicNS: UInt64
     let kind: String
@@ -238,6 +263,23 @@ private struct DiagnosticArtifact: Sendable {
     let normalizedSHA256: String
     let normalizedSummaryCSV: String
     let traceProcessorSHA256: String
+}
+
+private struct GraphicsPipelineIncident: Sendable {
+    let incidentID: String
+    let trigger: String
+    let observedMonotonicNS: UInt64
+    let window: GameFrameTelemetryWindow
+    let traceSequence: Int?
+    let firstObservedDivergentBoundary: String
+    let causalOwner: String
+    let causalConfidence: String
+    let explicitUnknowns: [String]
+}
+
+private enum DiagnosticTraceScope: String, Sendable {
+    case combatBenchmark = "COMBAT_BENCHMARK"
+    case automaticGraphics = "AUTOMATIC_GRAPHICS"
 }
 
 struct TFTMACRuntimeError: LocalizedError, Sendable {
@@ -258,11 +300,18 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     let captureDirectory: URL
 
     private let queue = DispatchQueue(label: "com.flashls1.tftmac.telemetry")
+    private let configurationSHA256: String
+    private let targetFPS: Int
     private var database: OpaquePointer?
     private var eventLog: FileHandle?
+    private var activeGraphicsRunID: String?
+    private var activeGraphicsRunPID: Int32?
+    private var activeGraphicsStackSHA256: String?
     private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(profile: TFTMACRuntimeProfile, applicationSupport: URL) throws {
+        configurationSHA256 = profile.experimentConfigurationReceipt.sha256
+        targetFPS = profile.refreshHz
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         sessionIdentifier = formatter.string(from: Date())
@@ -278,7 +327,12 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         FileManager.default.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
         eventLog = try FileHandle(forWritingTo: logURL)
 
+        // Each capture owns a new UUID-scoped database. Historical per-session
+        // databases are immutable evidence and are never reopened or migrated.
         let databaseURL = captureDirectory.appendingPathComponent("TFTMAC_NATIVE_RUNTIME.sqlite")
+        guard !FileManager.default.fileExists(atPath: databaseURL.path) else {
+            throw TFTMACRuntimeError("A new TFTMAC capture unexpectedly collided with an existing SQL database.")
+        }
         guard sqlite3_open_v2(
             databaseURL.path,
             &database,
@@ -296,7 +350,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         recordEvent("LOGGER_INITIALIZED", payload: [
             "database": databaseURL.lastPathComponent,
             "rawEventLog": logURL.lastPathComponent,
-            "loggerStartsBeforeEmulator": true
+            "loggerStartsBeforeEmulator": true,
+            "graphics_logger_mode": "AUTOMATIC_TFT_PROCESS_LIFETIME",
+            "graphics_schema_version": 3
         ])
     }
 
@@ -324,6 +380,96 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 [.text(self.sessionIdentifier)]
             )
         }
+    }
+
+    /// Opens the single graphics lifecycle owned by the observed TFT process/layer.
+    /// The serial SQL queue is the semantic owner, so all previously submitted rows
+    /// remain outside the new run and every later row resolves to it automatically.
+    func beginOrUpdateGraphicsRun(gamePID: Int32?, exactLayerName: String?, reason: String) {
+        queue.sync {
+            let nowUTC = Self.utcNow()
+            let nowNS = DispatchTime.now().uptimeNanoseconds
+            if let activeGraphicsRunID {
+                if let activeGraphicsRunPID, let gamePID, activeGraphicsRunPID != gamePID {
+                    try? self.closeGraphicsRun(
+                        activeGraphicsRunID,
+                        endedUTC: nowUTC,
+                        endedMonotonicNS: nowNS,
+                        reason: "TFT_PROCESS_REPLACED"
+                    )
+                    self.activeGraphicsRunID = nil
+                    self.activeGraphicsRunPID = nil
+                    self.activeGraphicsStackSHA256 = nil
+                } else {
+                    try? self.execute(
+                        "UPDATE graphics_runs SET game_pid = COALESCE(?, game_pid), exact_layer_name = COALESCE(?, exact_layer_name), last_observed_utc = ?, last_observed_monotonic_ns = ? WHERE graphics_run_id = ? AND ended_utc IS NULL",
+                        [
+                            gamePID.map { .integer(Int64($0)) } ?? .null,
+                            exactLayerName.map(SQLiteValue.text) ?? .null,
+                            .text(nowUTC), .integer(Int64(bitPattern: nowNS)),
+                            .text(activeGraphicsRunID)
+                        ]
+                    )
+                    if let gamePID { self.activeGraphicsRunPID = gamePID }
+                    return
+                }
+            }
+
+            let runID = UUID().uuidString.lowercased()
+            do {
+                try self.execute(
+                    "INSERT INTO graphics_runs(graphics_run_id, session_id, game_pid, started_utc, started_monotonic_ns, last_observed_utc, last_observed_monotonic_ns, start_reason, configuration_sha256, target_fps, exact_layer_name) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        .text(runID), .text(self.sessionIdentifier),
+                        gamePID.map { .integer(Int64($0)) } ?? .null,
+                        .text(nowUTC), .integer(Int64(bitPattern: nowNS)),
+                        .text(nowUTC), .integer(Int64(bitPattern: nowNS)),
+                        .text(reason), .text(self.configurationSHA256),
+                        .integer(Int64(self.targetFPS)),
+                        exactLayerName.map(SQLiteValue.text) ?? .null
+                    ]
+                )
+                self.activeGraphicsRunID = runID
+                self.activeGraphicsRunPID = gamePID
+                self.activeGraphicsStackSHA256 = nil
+            } catch {
+                fputs("TFTMAC graphics-run error: \(error.localizedDescription)\n", stderr)
+            }
+        }
+    }
+
+    func updateGraphicsRunLayer(_ exactLayerName: String?) {
+        queue.sync {
+            guard let activeGraphicsRunID else { return }
+            try? self.execute(
+                "UPDATE graphics_runs SET exact_layer_name = ?, last_observed_utc = ?, last_observed_monotonic_ns = ? WHERE graphics_run_id = ? AND ended_utc IS NULL",
+                [
+                    exactLayerName.map(SQLiteValue.text) ?? .null,
+                    .text(Self.utcNow()),
+                    .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
+                    .text(activeGraphicsRunID)
+                ]
+            )
+        }
+    }
+
+    func endGraphicsRun(reason: String) {
+        queue.sync {
+            guard let activeGraphicsRunID else { return }
+            try? self.closeGraphicsRun(
+                activeGraphicsRunID,
+                endedUTC: Self.utcNow(),
+                endedMonotonicNS: DispatchTime.now().uptimeNanoseconds,
+                reason: reason
+            )
+            self.activeGraphicsRunID = nil
+            self.activeGraphicsRunPID = nil
+            self.activeGraphicsStackSHA256 = nil
+        }
+    }
+
+    fileprivate func currentGraphicsContext() -> (runID: String?, stackSHA256: String?) {
+        queue.sync { (activeGraphicsRunID, activeGraphicsStackSHA256) }
     }
 
     func recordEvent(_ kind: String, payload: [String: Any] = [:]) {
@@ -354,9 +500,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     ) {
         enqueue {
             try self.execute(
-                "INSERT INTO frame_samples(session_id, sequence, emulator_timestamp_us, received_monotonic_ns, width, height, byte_count, transport, sequence_drop_count, visual_sample_count, mean_luma, nonblack_fraction, minimum_rgb, maximum_rgb, minimum_alpha, maximum_alpha, content_sha256) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO frame_samples(session_id, graphics_run_id, sequence, emulator_timestamp_us, received_monotonic_ns, width, height, byte_count, transport, sequence_drop_count, visual_sample_count, mean_luma, nonblack_fraction, minimum_rgb, maximum_rgb, minimum_alpha, maximum_alpha, content_sha256) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier), .integer(Int64(frame.sequence)),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(),
+                    .integer(Int64(frame.sequence)),
                     .integer(Int64(bitPattern: frame.emulatorTimestampMicroseconds)),
                     .integer(Int64(bitPattern: frame.receivedMonotonicNanoseconds)),
                     .integer(Int64(frame.width)), .integer(Int64(frame.height)),
@@ -374,9 +521,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     fileprivate func recordFrameIntervalWindow(_ sample: FrameIntervalWindow) {
         enqueue {
             try self.execute(
-                "INSERT INTO frame_interval_windows(session_id, started_monotonic_ns, ended_monotonic_ns, frame_count, sequence_drop_count, mean_interval_ms, p95_interval_ms, maximum_interval_ms) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO frame_interval_windows(session_id, graphics_run_id, started_monotonic_ns, ended_monotonic_ns, frame_count, sequence_drop_count, mean_interval_ms, p95_interval_ms, maximum_interval_ms) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(),
                     .integer(Int64(bitPattern: sample.startedMonotonicNS)),
                     .integer(Int64(bitPattern: sample.endedMonotonicNS)),
                     .integer(Int64(sample.frameCount)),
@@ -392,9 +539,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     func recordPresentation(_ sample: PresentationSample) {
         enqueue {
             try self.execute(
-                "INSERT INTO presentation_samples(session_id, sampled_monotonic_ns, presented_frames, presentation_fps, source_fps, received_frames, mailbox_replacements, sequence_drops, last_sequence) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO presentation_samples(session_id, graphics_run_id, sampled_monotonic_ns, presented_frames, presentation_fps, source_fps, received_frames, mailbox_replacements, sequence_drops, last_sequence) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier), .integer(Int64(bitPattern: sample.sampledMonotonicNanoseconds)),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(),
+                    .integer(Int64(bitPattern: sample.sampledMonotonicNanoseconds)),
                     .integer(Int64(bitPattern: sample.presentedFrames)), .real(sample.presentationFPS), .real(sample.sourceFPS),
                     .integer(Int64(bitPattern: sample.mailbox.receivedFrames)),
                     .integer(Int64(bitPattern: sample.mailbox.replacedBeforePresentation)),
@@ -471,9 +619,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     fileprivate func recordSurfaceFlinger(_ sample: SurfaceFlingerSample, label: String) {
         enqueue {
             try self.execute(
-                "INSERT INTO surfaceflinger_samples(session_id, observed_utc, monotonic_ns, sample_label, render_rate_hz, total_missed_frames, hwc_missed_frames, gpu_missed_frames, tft_requested_rate_hz) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO surfaceflinger_samples(session_id, graphics_run_id, observed_utc, monotonic_ns, sample_label, render_rate_hz, total_missed_frames, hwc_missed_frames, gpu_missed_frames, tft_requested_rate_hz) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier), .text(Self.utcNow()),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(), .text(Self.utcNow()),
                     .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)), .text(label),
                     sample.renderRateHz.map(SQLiteValue.real) ?? .null,
                     sample.totalMissedFrames.map(SQLiteValue.integer) ?? .null,
@@ -524,9 +672,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     fileprivate func recordPipelineLogAggregate(_ sample: PipelineLogAggregate) {
         enqueue {
             try self.execute(
-                "INSERT INTO pipeline_log_aggregates(session_id, observed_utc, monotonic_ns, source_stream, byte_start, byte_end, skipped_bytes, line_count, gfxstream_warning_count, asg_stall_count, vulkan_error_count, moltenvk_warning_count, shader_error_count, fence_timeout_count) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO pipeline_log_aggregates(session_id, graphics_run_id, observed_utc, monotonic_ns, source_stream, byte_start, byte_end, skipped_bytes, line_count, gfxstream_warning_count, asg_stall_count, vulkan_error_count, moltenvk_warning_count, shader_error_count, fence_timeout_count) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier), .text(Self.utcNow()),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(), .text(Self.utcNow()),
                     .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
                     .text(sample.sourceStream),
                     .integer(Int64(bitPattern: sample.byteStart)),
@@ -546,30 +694,64 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
 
     fileprivate func recordGraphicsPipelineSnapshot(_ sample: GraphicsPipelineSnapshot) {
         enqueue {
+            let unknowns = sample.receipt.explicitUnknownKeys()
+            let completeness = sample.receipt.completeness(
+                requiredKeys: GraphicsPipelineSnapshot.requiredReceiptKeys
+            ).rawValue
             try self.execute(
-                "INSERT INTO graphics_pipeline_snapshots(session_id, observed_utc, monotonic_ns, sample_label, tft_surface_state, angle_state, gfxstream_state, moltenvk_state, host_vulkan_device, vulkan_composition, native_swapchain, guest_egl_implementation, guest_vulkan_implementation, global_angle_selection) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO graphics_pipeline_snapshots(
+                  session_id, graphics_run_id, observed_utc, monotonic_ns, sample_label,
+                  stack_sha256, stack_receipt_json, receipt_completeness, explicit_unknowns_json,
+                  game_pid, exact_layer_name, tft_surface_state, game_graphics_api,
+                  game_graphics_api_confidence, angle_state, gfxstream_state, moltenvk_state,
+                  emulator_version, emulator_build_id, emulator_gpu_selection,
+                  gfxstream_feature_receipt, gfxstream_tracing_state, moltenvk_version,
+                  moltenvk_configuration_json, host_vulkan_device, vulkan_composition,
+                  native_swapchain, guest_egl_implementation, guest_vulkan_implementation,
+                  global_angle_selection, package_angle_selection, metal_device_name,
+                  metal_registry_id
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 [
-                    .text(self.sessionIdentifier), .text(Self.utcNow()),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(), .text(Self.utcNow()),
                     .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
-                    .text(sample.label), .text(sample.tftSurfaceState), .text(sample.angleState),
+                    .text(sample.label), .text(sample.receipt.sha256),
+                    .text(sample.receipt.canonicalJSON), .text(completeness),
+                    .text(Self.jsonArray(unknowns)),
+                    sample.gamePID.map { .integer(Int64($0)) } ?? .null,
+                    sample.exactLayerName.map(SQLiteValue.text) ?? .null,
+                    .text(sample.tftSurfaceState), .text(sample.gameGraphicsAPI),
+                    .text(sample.gameGraphicsAPIConfidence), .text(sample.angleState),
                     .text(sample.gfxstreamState), .text(sample.moltenVKState),
+                    sample.emulatorVersion.map(SQLiteValue.text) ?? .null,
+                    sample.emulatorBuildID.map(SQLiteValue.text) ?? .null,
+                    sample.emulatorGPUSelection.map(SQLiteValue.text) ?? .null,
+                    sample.gfxstreamFeatureReceipt.map(SQLiteValue.text) ?? .null,
+                    .text(sample.gfxstreamTracingState),
+                    sample.moltenVKVersion.map(SQLiteValue.text) ?? .null,
+                    .text(sample.moltenVKConfiguration),
                     sample.hostVulkanDevice.map(SQLiteValue.text) ?? .null,
                     sample.vulkanComposition.map { .integer($0 ? 1 : 0) } ?? .null,
                     sample.nativeSwapchain.map { .integer($0 ? 1 : 0) } ?? .null,
                     sample.guestEGLImplementation.map(SQLiteValue.text) ?? .null,
                     sample.guestVulkanImplementation.map(SQLiteValue.text) ?? .null,
-                    sample.globalAngleSelection.map(SQLiteValue.text) ?? .null
+                    sample.globalAngleSelection.map(SQLiteValue.text) ?? .null,
+                    sample.packageAngleSelection.map(SQLiteValue.text) ?? .null,
+                    sample.metalDeviceName.map(SQLiteValue.text) ?? .null,
+                    sample.metalRegistryID.map(SQLiteValue.text) ?? .null
                 ]
             )
+            self.activeGraphicsStackSHA256 = sample.receipt.sha256
         }
     }
 
     func recordStreamFreshness(_ sample: StreamFreshnessWindow) {
         enqueue {
             try self.execute(
-                "INSERT INTO stream_freshness_windows(session_id, started_monotonic_ns, ended_monotonic_ns, received_frames, content_changes, identical_frames, longest_identical_run_frames, longest_identical_run_ms, sequence_drops, sampled_pixels_per_frame) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO stream_freshness_windows(session_id, graphics_run_id, started_monotonic_ns, ended_monotonic_ns, received_frames, content_changes, identical_frames, longest_identical_run_frames, longest_identical_run_ms, sequence_drops, sampled_pixels_per_frame) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(),
                     .integer(Int64(bitPattern: sample.startedMonotonicNS)),
                     .integer(Int64(bitPattern: sample.endedMonotonicNS)),
                     .integer(Int64(sample.receivedFrames)),
@@ -587,9 +769,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     func recordHostPresentation(_ sample: HostPresentationWindow) {
         enqueue {
             try self.execute(
-                "INSERT INTO host_presentation_windows(session_id, started_monotonic_ns, ended_monotonic_ns, submitted_frames, completed_frames, unique_source_uploads, repeated_source_presents, drawable_misses, command_errors, mean_completion_latency_ms, p95_completion_latency_ms, p99_completion_latency_ms, maximum_completion_latency_ms, mean_gpu_time_ms, p95_gpu_time_ms, maximum_gpu_time_ms) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO host_presentation_windows(session_id, graphics_run_id, started_monotonic_ns, ended_monotonic_ns, submitted_frames, completed_frames, unique_source_uploads, repeated_source_presents, drawable_misses, command_errors, mean_completion_latency_ms, p95_completion_latency_ms, p99_completion_latency_ms, maximum_completion_latency_ms, mean_gpu_time_ms, p95_gpu_time_ms, maximum_gpu_time_ms) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier),
+                    .text(self.sessionIdentifier), self.graphicsRunValue(),
                     .integer(Int64(bitPattern: sample.startedMonotonicNS)),
                     .integer(Int64(bitPattern: sample.endedMonotonicNS)),
                     .integer(Int64(sample.submittedFrames)),
@@ -618,11 +800,24 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         enqueue {
             try self.transaction {
                 let observedNS = DispatchTime.now().uptimeNanoseconds
+                let windowID = try update.window.map { try self.insertGameFrameWindow($0) }
+                if let windowID, let window = update.window {
+                    try self.execute(
+                        "UPDATE game_frame_intervals SET game_frame_window_id = ? WHERE session_id = ? AND graphics_run_id IS ? AND game_frame_window_id IS NULL AND observed_monotonic_ns >= ? AND observed_monotonic_ns <= ?",
+                        [
+                            .integer(windowID), .text(self.sessionIdentifier), self.graphicsRunValue(),
+                            .integer(Int64(bitPattern: window.startedMonotonicNS)),
+                            .integer(Int64(bitPattern: window.endedMonotonicNS))
+                        ]
+                    )
+                }
                 for interval in update.intervals {
                     try self.execute(
-                        "INSERT INTO game_frame_intervals(session_id, observed_monotonic_ns, layer_name, refresh_period_ns, actual_present_ns, interval_ns, interval_ms, missed_vsync_equivalents, is_janky, is_severe) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO game_frame_intervals(session_id, graphics_run_id, stack_sha256, game_frame_window_id, observed_monotonic_ns, layer_name, refresh_period_ns, actual_present_ns, interval_ns, interval_ms, missed_vsync_equivalents, is_janky, is_severe) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [
-                            .text(self.sessionIdentifier),
+                            .text(self.sessionIdentifier), self.graphicsRunValue(),
+                            self.graphicsStackValue(),
+                            windowID.map(SQLiteValue.integer) ?? .null,
                             .integer(Int64(bitPattern: observedNS)),
                             layerName.map(SQLiteValue.text) ?? .null,
                             refreshPeriodNS.map { .integer(Int64(bitPattern: $0)) } ?? .null,
@@ -635,9 +830,6 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                         ]
                     )
                 }
-                if let window = update.window {
-                    try self.insertGameFrameWindow(window)
-                }
             }
         }
     }
@@ -649,14 +841,53 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     fileprivate func recordDiagnosticArtifact(_ artifact: DiagnosticArtifact) {
         enqueue {
             try self.execute(
-                "INSERT INTO diagnostic_artifacts(session_id, created_utc, created_monotonic_ns, artifact_kind, trigger, relative_path, byte_count, sha256, analysis_state, normalized_relative_path, normalized_sha256, normalized_summary_csv, trace_processor_sha256) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO diagnostic_artifacts(session_id, graphics_run_id, stack_sha256, capture_scope, created_utc, created_monotonic_ns, artifact_kind, trigger, relative_path, byte_count, sha256, analysis_state, normalized_relative_path, normalized_sha256, normalized_summary_csv, trace_processor_sha256) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    .text(self.sessionIdentifier), .text(artifact.createdUTC),
+                    .text(self.sessionIdentifier), artifact.graphicsRunID.map(SQLiteValue.text) ?? .null,
+                    artifact.graphicsStackSHA256.map(SQLiteValue.text) ?? .null,
+                    .text(artifact.captureScope), .text(artifact.createdUTC),
                     .integer(Int64(bitPattern: artifact.createdMonotonicNS)),
                     .text(artifact.kind), .text(artifact.trigger), .text(artifact.relativePath),
                     .integer(artifact.byteCount), .text(artifact.sha256), .text(artifact.analysisState),
                     .text(artifact.normalizedRelativePath), .text(artifact.normalizedSHA256),
                     .text(artifact.normalizedSummaryCSV), .text(artifact.traceProcessorSHA256)
+                ]
+            )
+        }
+    }
+
+    fileprivate func recordGraphicsPipelineIncident(_ incident: GraphicsPipelineIncident) {
+        enqueue {
+            let window = incident.window
+            try self.execute(
+                """
+                INSERT INTO graphics_pipeline_incidents(
+                  incident_id, session_id, graphics_run_id, trigger, observed_monotonic_ns,
+                  stack_sha256,
+                  window_started_monotonic_ns, window_ended_monotonic_ns, layer_name,
+                  effective_fps, one_percent_low_fps, p95_interval_ms, p99_interval_ms,
+                  maximum_interval_ms, jank_count, severe_count, missed_vsync_equivalents,
+                  trace_sequence, first_observed_divergent_boundary, causal_owner,
+                  causal_confidence, explicit_unknowns_json
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    .text(incident.incidentID), .text(self.sessionIdentifier), self.graphicsRunValue(),
+                    .text(incident.trigger), .integer(Int64(bitPattern: incident.observedMonotonicNS)),
+                    self.graphicsStackValue(),
+                    .integer(Int64(bitPattern: window.startedMonotonicNS)),
+                    .integer(Int64(bitPattern: window.endedMonotonicNS)),
+                    window.layerName.map(SQLiteValue.text) ?? .null,
+                    .real(window.effectiveFPS),
+                    window.onePercentLowFPS.map(SQLiteValue.real) ?? .null,
+                    window.p95MS.map(SQLiteValue.real) ?? .null,
+                    window.p99MS.map(SQLiteValue.real) ?? .null,
+                    window.maximumMS.map(SQLiteValue.real) ?? .null,
+                    .integer(Int64(window.jankCount)), .integer(Int64(window.severeCount)),
+                    .integer(Int64(window.missedVsyncEquivalents)),
+                    incident.traceSequence.map { .integer(Int64($0)) } ?? .null,
+                    .text(incident.firstObservedDivergentBoundary), .text(incident.causalOwner),
+                    .text(incident.causalConfidence), .text(Self.jsonArray(incident.explicitUnknowns))
                 ]
             )
         }
@@ -808,6 +1039,17 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         queue.sync {
             let now = Self.utcNow()
             let monotonic = Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+            if let activeGraphicsRunID {
+                try? self.closeGraphicsRun(
+                    activeGraphicsRunID,
+                    endedUTC: now,
+                    endedMonotonicNS: UInt64(bitPattern: monotonic),
+                    reason: "SESSION_SEALED"
+                )
+                self.activeGraphicsRunID = nil
+                self.activeGraphicsRunPID = nil
+                self.activeGraphicsStackSHA256 = nil
+            }
             try? self.execute(
                 "UPDATE game_process_sessions SET ended_utc = ?, ended_monotonic_ns = ? WHERE session_id = ? AND ended_utc IS NULL",
                 [.text(now), .integer(monotonic), .text(self.sessionIdentifier)]
@@ -849,9 +1091,26 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           kind TEXT NOT NULL,
           payload_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS graphics_runs(
+          graphics_run_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          game_pid INTEGER,
+          started_utc TEXT NOT NULL,
+          started_monotonic_ns INTEGER NOT NULL,
+          last_observed_utc TEXT NOT NULL,
+          last_observed_monotonic_ns INTEGER NOT NULL,
+          ended_utc TEXT,
+          ended_monotonic_ns INTEGER,
+          start_reason TEXT NOT NULL,
+          end_reason TEXT,
+          configuration_sha256 TEXT NOT NULL,
+          target_fps INTEGER NOT NULL,
+          exact_layer_name TEXT
+        );
         CREATE TABLE IF NOT EXISTS frame_samples(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           sequence INTEGER NOT NULL,
           emulator_timestamp_us INTEGER NOT NULL,
           received_monotonic_ns INTEGER NOT NULL,
@@ -872,6 +1131,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS presentation_samples(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           sampled_monotonic_ns INTEGER NOT NULL,
           presented_frames INTEGER NOT NULL,
           presentation_fps REAL NOT NULL,
@@ -884,6 +1144,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS frame_interval_windows(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           started_monotonic_ns INTEGER NOT NULL,
           ended_monotonic_ns INTEGER NOT NULL,
           frame_count INTEGER NOT NULL,
@@ -895,6 +1156,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS game_frame_intervals(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
+          stack_sha256 TEXT,
+          game_frame_window_id INTEGER,
           observed_monotonic_ns INTEGER NOT NULL,
           layer_name TEXT,
           refresh_period_ns INTEGER,
@@ -908,6 +1172,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS game_frame_windows(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
+          stack_sha256 TEXT,
           started_monotonic_ns INTEGER NOT NULL,
           ended_monotonic_ns INTEGER NOT NULL,
           status TEXT NOT NULL,
@@ -929,6 +1195,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS stream_freshness_windows(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           started_monotonic_ns INTEGER NOT NULL,
           ended_monotonic_ns INTEGER NOT NULL,
           received_frames INTEGER NOT NULL,
@@ -942,6 +1209,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS host_presentation_windows(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           started_monotonic_ns INTEGER NOT NULL,
           ended_monotonic_ns INTEGER NOT NULL,
           submitted_frames INTEGER NOT NULL,
@@ -1005,6 +1273,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS surfaceflinger_samples(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           observed_utc TEXT NOT NULL,
           monotonic_ns INTEGER NOT NULL,
           sample_label TEXT NOT NULL,
@@ -1049,6 +1318,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS pipeline_log_aggregates(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           observed_utc TEXT NOT NULL,
           monotonic_ns INTEGER NOT NULL,
           source_stream TEXT NOT NULL,
@@ -1066,23 +1336,45 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE TABLE IF NOT EXISTS graphics_pipeline_snapshots(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
           observed_utc TEXT NOT NULL,
           monotonic_ns INTEGER NOT NULL,
           sample_label TEXT NOT NULL,
+          stack_sha256 TEXT NOT NULL,
+          stack_receipt_json TEXT NOT NULL,
+          receipt_completeness TEXT NOT NULL,
+          explicit_unknowns_json TEXT NOT NULL,
+          game_pid INTEGER,
+          exact_layer_name TEXT,
           tft_surface_state TEXT NOT NULL,
+          game_graphics_api TEXT NOT NULL,
+          game_graphics_api_confidence TEXT NOT NULL,
           angle_state TEXT NOT NULL,
           gfxstream_state TEXT NOT NULL,
           moltenvk_state TEXT NOT NULL,
+          emulator_version TEXT,
+          emulator_build_id TEXT,
+          emulator_gpu_selection TEXT,
+          gfxstream_feature_receipt TEXT,
+          gfxstream_tracing_state TEXT NOT NULL,
+          moltenvk_version TEXT,
+          moltenvk_configuration_json TEXT NOT NULL,
           host_vulkan_device TEXT,
           vulkan_composition INTEGER,
           native_swapchain INTEGER,
           guest_egl_implementation TEXT,
           guest_vulkan_implementation TEXT,
-          global_angle_selection TEXT
+          global_angle_selection TEXT,
+          package_angle_selection TEXT,
+          metal_device_name TEXT,
+          metal_registry_id TEXT
         );
         CREATE TABLE IF NOT EXISTS diagnostic_artifacts(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
+          stack_sha256 TEXT,
+          capture_scope TEXT NOT NULL,
           created_utc TEXT NOT NULL,
           created_monotonic_ns INTEGER NOT NULL,
           artifact_kind TEXT NOT NULL,
@@ -1095,6 +1387,30 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           normalized_sha256 TEXT NOT NULL,
           normalized_summary_csv TEXT NOT NULL,
           trace_processor_sha256 TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS graphics_pipeline_incidents(
+          incident_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
+          trigger TEXT NOT NULL,
+          observed_monotonic_ns INTEGER NOT NULL,
+          stack_sha256 TEXT,
+          window_started_monotonic_ns INTEGER NOT NULL,
+          window_ended_monotonic_ns INTEGER NOT NULL,
+          layer_name TEXT,
+          effective_fps REAL NOT NULL,
+          one_percent_low_fps REAL,
+          p95_interval_ms REAL,
+          p99_interval_ms REAL,
+          maximum_interval_ms REAL,
+          jank_count INTEGER NOT NULL,
+          severe_count INTEGER NOT NULL,
+          missed_vsync_equivalents INTEGER NOT NULL,
+          trace_sequence INTEGER,
+          first_observed_divergent_boundary TEXT NOT NULL,
+          causal_owner TEXT NOT NULL,
+          causal_confidence TEXT NOT NULL,
+          explicit_unknowns_json TEXT NOT NULL
         );
         \(CombatBenchmarkLabStore.schemaSQL)
         CREATE TABLE IF NOT EXISTS game_process_sessions(
@@ -1119,10 +1435,14 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           special_key TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_events_kind_time ON events(kind, monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_graphics_runs_session_time ON graphics_runs(session_id, started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_frames_time ON frame_samples(received_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_frames_graphics_run ON frame_samples(graphics_run_id, received_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_frame_windows_time ON frame_interval_windows(started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_game_frame_intervals_time ON game_frame_intervals(observed_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_game_frame_windows_time ON game_frame_windows(started_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_game_frame_windows_run ON game_frame_windows(graphics_run_id, started_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_game_frame_intervals_window ON game_frame_intervals(game_frame_window_id, actual_present_ns);
         CREATE INDEX IF NOT EXISTS idx_stream_freshness_time ON stream_freshness_windows(started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_host_presentation_time ON host_presentation_windows(started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_resources_time ON resource_samples(monotonic_ns);
@@ -1133,9 +1453,209 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS idx_logcat_time ON logcat_aggregates(monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_pipeline_log_time ON pipeline_log_aggregates(monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_graphics_pipeline_time ON graphics_pipeline_snapshots(monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_graphics_pipeline_run_hash ON graphics_pipeline_snapshots(graphics_run_id, monotonic_ns, stack_sha256);
         CREATE INDEX IF NOT EXISTS idx_diagnostic_artifacts_time ON diagnostic_artifacts(created_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_graphics_incidents_run_time ON graphics_pipeline_incidents(graphics_run_id, observed_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_combat_benchmarks_session ON combat_benchmarks(session_id, started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_inputs_time ON input_samples(monotonic_ns);
+        DROP VIEW IF EXISTS graphics_frame_facts;
+        DROP VIEW IF EXISTS graphics_pipeline_windows;
+        DROP VIEW IF EXISTS graphics_window_context;
+        CREATE VIEW graphics_window_context AS
+        SELECT
+          w.id AS game_frame_window_id,
+          w.graphics_run_id,
+          w.session_id,
+          w.started_monotonic_ns,
+          w.ended_monotonic_ns,
+          (SELECT p.id
+             FROM graphics_pipeline_snapshots p
+            WHERE p.graphics_run_id = w.graphics_run_id
+              AND p.stack_sha256 = w.stack_sha256
+              AND p.monotonic_ns <= w.ended_monotonic_ns
+            ORDER BY p.monotonic_ns DESC
+            LIMIT 1) AS pipeline_snapshot_id,
+          (SELECT s.id
+             FROM stream_freshness_windows s
+            WHERE s.graphics_run_id = w.graphics_run_id
+              AND s.started_monotonic_ns < w.ended_monotonic_ns
+              AND s.ended_monotonic_ns > w.started_monotonic_ns
+            ORDER BY s.started_monotonic_ns DESC
+            LIMIT 1) AS stream_window_id,
+          (SELECT h.id
+             FROM host_presentation_windows h
+            WHERE h.graphics_run_id = w.graphics_run_id
+              AND h.started_monotonic_ns < w.ended_monotonic_ns
+              AND h.ended_monotonic_ns > w.started_monotonic_ns
+            ORDER BY h.started_monotonic_ns DESC
+            LIMIT 1) AS host_presentation_window_id,
+          (SELECT l.id
+             FROM pipeline_log_aggregates l
+            WHERE l.graphics_run_id = w.graphics_run_id
+              AND l.monotonic_ns BETWEEN w.started_monotonic_ns - 5000000000
+                                     AND w.ended_monotonic_ns + 5000000000
+            ORDER BY l.monotonic_ns DESC
+            LIMIT 1) AS pipeline_log_aggregate_id
+        FROM game_frame_windows w;
+        CREATE VIEW graphics_pipeline_windows AS
+        SELECT
+          w.id AS game_frame_window_id,
+          w.session_id,
+          w.graphics_run_id,
+          w.started_monotonic_ns,
+          w.ended_monotonic_ns,
+          w.status AS surface_status,
+          w.unavailable_reason,
+          w.layer_name,
+          w.refresh_period_ns,
+          w.frame_count AS surface_frame_count,
+          w.effective_fps AS surface_effective_fps,
+          w.one_percent_low_fps,
+          w.p50_interval_ms,
+          w.p95_interval_ms,
+          w.p99_interval_ms,
+          w.maximum_interval_ms,
+          w.jank_count,
+          w.severe_count,
+          w.missed_vsync_equivalents,
+          p.stack_sha256,
+          p.stack_receipt_json,
+          p.receipt_completeness,
+          p.explicit_unknowns_json,
+          p.game_graphics_api,
+          p.game_graphics_api_confidence,
+          p.angle_state,
+          p.gfxstream_state,
+          p.moltenvk_state,
+          p.host_vulkan_device,
+          p.metal_device_name,
+          s.received_frames AS stream_received_frames,
+          CASE WHEN s.ended_monotonic_ns > s.started_monotonic_ns
+            THEN s.received_frames * 1000000000.0 / (s.ended_monotonic_ns - s.started_monotonic_ns)
+            ELSE NULL END AS stream_received_fps,
+          s.content_changes AS stream_content_changes,
+          s.identical_frames AS stream_identical_frames,
+          s.longest_identical_run_ms,
+          s.sequence_drops AS stream_sequence_drops,
+          h.submitted_frames AS presenter_submitted_frames,
+          h.completed_frames AS presenter_completed_frames,
+          CASE WHEN h.ended_monotonic_ns > h.started_monotonic_ns
+            THEN h.completed_frames * 1000000000.0 / (h.ended_monotonic_ns - h.started_monotonic_ns)
+            ELSE NULL END AS presenter_completed_fps,
+          h.repeated_source_presents,
+          h.drawable_misses,
+          h.command_errors,
+          h.p95_completion_latency_ms,
+          h.p95_gpu_time_ms,
+          l.gfxstream_warning_count,
+          l.asg_stall_count,
+          l.vulkan_error_count,
+          l.moltenvk_warning_count,
+          l.shader_error_count,
+          l.fence_timeout_count,
+          l.skipped_bytes AS pipeline_log_skipped_bytes,
+          CASE
+            WHEN l.id IS NULL THEN 'UNKNOWN_NO_CORRELATED_LOG_WINDOW'
+            WHEN l.skipped_bytes > 0 THEN 'UNKNOWN_TRUNCATED_LOG_WINDOW'
+            ELSE 'COMPLETE_CORRELATED_LOG_WINDOW'
+          END AS pipeline_log_coverage,
+          CASE
+            WHEN l.id IS NULL THEN 'NONE_OBSERVED'
+            WHEN l.skipped_bytes > 0 THEN 'UNKNOWN_TRUNCATED_LOG_WINDOW'
+            WHEN l.gfxstream_warning_count > 0 OR l.asg_stall_count > 0
+              OR l.vulkan_error_count > 0 OR l.moltenvk_warning_count > 0
+              OR l.shader_error_count > 0 OR l.fence_timeout_count > 0
+              THEN 'LOG_CORRELATED_UNATTRIBUTED'
+            ELSE 'NONE_OBSERVED'
+          END AS concurrent_pipeline_signal,
+          CASE
+            WHEN w.status <> 'AVAILABLE' THEN 'UNKNOWN_NO_EXACT_SURFACE_SAMPLE'
+            WHEN w.effective_fps < 59.0 OR w.jank_count > 0 OR w.severe_count > 0
+              OR w.missed_vsync_equivalents > 0 THEN 'TFT_SURFACE_ACTUAL_PRESENT'
+            WHEN s.id IS NOT NULL AND (
+              s.received_frames * 1000000000.0 / MAX(1, s.ended_monotonic_ns - s.started_monotonic_ns) < 59.0
+              OR s.sequence_drops > 0) THEN 'EMULATOR_IMAGE_STREAM'
+            WHEN h.id IS NOT NULL AND (
+              h.completed_frames * 1000000000.0 / MAX(1, h.ended_monotonic_ns - h.started_monotonic_ns) < 59.0
+              OR h.drawable_misses > 0 OR h.command_errors > 0
+              OR COALESCE(h.p95_completion_latency_ms, 0) > 16.667
+              OR COALESCE(h.p95_gpu_time_ms, 0) > 16.667) THEN 'TFTMAC_NATIVE_PRESENTER'
+            ELSE 'NO_OBSERVED_DIVERGENCE'
+          END AS first_observed_divergent_boundary,
+          CASE
+            WHEN w.status <> 'AVAILABLE' THEN 'UNKNOWN'
+            WHEN w.effective_fps < 59.0 OR w.jank_count > 0 OR w.severe_count > 0
+              OR w.missed_vsync_equivalents > 0 THEN 'UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE'
+            WHEN s.id IS NOT NULL AND (
+              s.received_frames * 1000000000.0 / MAX(1, s.ended_monotonic_ns - s.started_monotonic_ns) < 59.0
+              OR s.sequence_drops > 0) THEN 'EMULATOR_OUTPUT_OR_CONTROLLER'
+            WHEN h.id IS NOT NULL AND (
+              h.completed_frames * 1000000000.0 / MAX(1, h.ended_monotonic_ns - h.started_monotonic_ns) < 59.0
+              OR h.drawable_misses > 0 OR h.command_errors > 0
+              OR COALESCE(h.p95_completion_latency_ms, 0) > 16.667
+              OR COALESCE(h.p95_gpu_time_ms, 0) > 16.667) THEN 'TFTMAC_NATIVE_PRESENTER'
+            ELSE 'NONE_OBSERVED'
+          END AS causal_owner,
+          CASE
+            WHEN w.status <> 'AVAILABLE' THEN 'UNKNOWN'
+            WHEN w.effective_fps < 59.0 OR w.jank_count > 0 OR w.severe_count > 0
+              OR w.missed_vsync_equivalents > 0 THEN 'UNKNOWN'
+            WHEN s.id IS NOT NULL AND (
+              s.received_frames * 1000000000.0 / MAX(1, s.ended_monotonic_ns - s.started_monotonic_ns) < 59.0
+              OR s.sequence_drops > 0) THEN
+              CASE WHEN p.receipt_completeness = 'COMPLETE' THEN 'MEDIUM' ELSE 'LOW' END
+            WHEN h.id IS NOT NULL AND (
+              h.completed_frames * 1000000000.0 / MAX(1, h.ended_monotonic_ns - h.started_monotonic_ns) < 59.0
+              OR h.drawable_misses > 0 OR h.command_errors > 0
+              OR COALESCE(h.p95_completion_latency_ms, 0) > 16.667
+              OR COALESCE(h.p95_gpu_time_ms, 0) > 16.667) THEN
+              CASE WHEN p.receipt_completeness = 'COMPLETE' THEN 'MEDIUM' ELSE 'LOW' END
+            ELSE 'NOT_APPLICABLE'
+          END AS causal_confidence,
+          'Internal Unreal, ANGLE, ASG, gfxstream, Vulkan-submit, MoltenVK, and Metal ownership remains UNKNOWN without a shared cross-stack frame ID.' AS attribution_limit
+        FROM graphics_window_context c
+        JOIN game_frame_windows w ON w.id = c.game_frame_window_id
+        LEFT JOIN graphics_pipeline_snapshots p ON p.id = c.pipeline_snapshot_id
+        LEFT JOIN stream_freshness_windows s ON s.id = c.stream_window_id
+        LEFT JOIN host_presentation_windows h ON h.id = c.host_presentation_window_id
+        LEFT JOIN pipeline_log_aggregates l ON l.id = c.pipeline_log_aggregate_id;
+        CREATE VIEW graphics_frame_facts AS
+        SELECT
+          i.id AS game_frame_interval_id,
+          i.session_id,
+          i.graphics_run_id,
+          i.game_frame_window_id,
+          i.observed_monotonic_ns,
+          i.actual_present_ns,
+          i.interval_ns,
+          i.interval_ms,
+          i.missed_vsync_equivalents,
+          i.is_janky,
+          i.is_severe,
+          i.stack_sha256,
+          s.stack_receipt_json,
+          s.game_graphics_api,
+          s.angle_state,
+          s.gfxstream_state,
+          s.moltenvk_state,
+          s.host_vulkan_device,
+          s.metal_device_name,
+          p.first_observed_divergent_boundary,
+          p.causal_owner,
+          p.causal_confidence,
+          p.attribution_limit
+        FROM game_frame_intervals i
+        LEFT JOIN graphics_pipeline_windows p ON p.game_frame_window_id = i.game_frame_window_id
+        LEFT JOIN graphics_pipeline_snapshots s ON s.id = (
+          SELECT s2.id
+            FROM graphics_pipeline_snapshots s2
+           WHERE s2.graphics_run_id = i.graphics_run_id
+             AND s2.stack_sha256 = i.stack_sha256
+             AND s2.monotonic_ns <= i.observed_monotonic_ns
+           ORDER BY s2.monotonic_ns DESC
+           LIMIT 1
+        );
+        PRAGMA user_version=3;
         """
         guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
             throw TFTMACRuntimeError("The native SQL telemetry schema could not be created.")
@@ -1149,14 +1669,15 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         }
     }
 
-    private func insertGameFrameWindow(_ window: GameFrameTelemetryWindow) throws {
+    @discardableResult
+    private func insertGameFrameWindow(_ window: GameFrameTelemetryWindow) throws -> Int64 {
         let state = Self.gameFrameStatus(window.status)
         let available: Bool
         if case .available = window.status { available = true } else { available = false }
         try execute(
-            "INSERT INTO game_frame_windows(session_id, started_monotonic_ns, ended_monotonic_ns, status, unavailable_reason, layer_name, refresh_period_ns, frame_count, effective_fps, one_percent_low_fps, p50_interval_ms, p95_interval_ms, p99_interval_ms, maximum_interval_ms, jank_count, severe_count, missed_vsync_equivalents, history_truncated) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO game_frame_windows(session_id, graphics_run_id, stack_sha256, started_monotonic_ns, ended_monotonic_ns, status, unavailable_reason, layer_name, refresh_period_ns, frame_count, effective_fps, one_percent_low_fps, p50_interval_ms, p95_interval_ms, p99_interval_ms, maximum_interval_ms, jank_count, severe_count, missed_vsync_equivalents, history_truncated) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                .text(sessionIdentifier),
+                .text(sessionIdentifier), graphicsRunValue(), graphicsStackValue(),
                 .integer(Int64(bitPattern: window.startedMonotonicNS)),
                 .integer(Int64(bitPattern: window.endedMonotonicNS)),
                 .text(state.status), state.reason.map(SQLiteValue.text) ?? .null,
@@ -1171,6 +1692,32 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 .integer(Int64(window.jankCount)), .integer(Int64(window.severeCount)),
                 .integer(Int64(window.missedVsyncEquivalents)),
                 .integer(window.historyTruncated ? 1 : 0)
+            ]
+        )
+        guard let database else { throw TFTMACRuntimeError("The telemetry database is closed.") }
+        return sqlite3_last_insert_rowid(database)
+    }
+
+    private func graphicsRunValue() -> SQLiteValue {
+        activeGraphicsRunID.map(SQLiteValue.text) ?? .null
+    }
+
+    private func graphicsStackValue() -> SQLiteValue {
+        activeGraphicsStackSHA256.map(SQLiteValue.text) ?? .null
+    }
+
+    private func closeGraphicsRun(
+        _ graphicsRunID: String,
+        endedUTC: String,
+        endedMonotonicNS: UInt64,
+        reason: String
+    ) throws {
+        try execute(
+            "UPDATE graphics_runs SET ended_utc = ?, ended_monotonic_ns = ?, last_observed_utc = ?, last_observed_monotonic_ns = ?, end_reason = ? WHERE graphics_run_id = ? AND ended_utc IS NULL",
+            [
+                .text(endedUTC), .integer(Int64(bitPattern: endedMonotonicNS)),
+                .text(endedUTC), .integer(Int64(bitPattern: endedMonotonicNS)),
+                .text(reason), .text(graphicsRunID)
             ]
         )
     }
@@ -1239,6 +1786,14 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             return "{}"
         }
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    private static func jsonArray(_ values: [String]) -> String {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: values,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        ) else { return "[]" }
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 }
 
@@ -1490,13 +2045,19 @@ actor TFTMACRuntimeService {
     private var inputContinuation: AsyncStream<EmulatorInput>.Continuation?
     private var avdTransaction: AVDConfigurationTransaction?
     private var traceCaptureInProgress = false
+    private var traceCaptureTask: Task<Void, Never>?
     private var traceCaptureMeasurementStartNS: UInt64?
     private var traceCaptureMeasurementEndNS: UInt64?
     private var traceCaptureCount = 0
     private var automaticTraceCount = 0
     private var incidentTraceCount = 0
     private var lastAutomaticTraceNS: UInt64 = 0
-    private var consecutiveBadCombatWindows = 0
+    private var currentGamePID: Int32?
+    private var currentExactLayerName: String?
+    private var consecutiveBadGraphicsWindows = 0
+    private var graphicsAutomaticTraceCount = 0
+    private var graphicsIncidentTraceCount = 0
+    private var lastGraphicsAutomaticTraceNS: UInt64 = 0
     private var activeCombatBenchmark: ActiveCombatBenchmark?
     private var benchmarkDeadlineTask: Task<Void, Never>?
     private var latestGameFrameWindow: GameFrameTelemetryWindow?
@@ -1664,7 +2225,6 @@ actor TFTMACRuntimeService {
         automaticTraceCount = 0
         incidentTraceCount = 0
         lastAutomaticTraceNS = 0
-        consecutiveBadCombatWindows = 0
         recordClockSync(paths: paths, telemetry: telemetry)
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "combat_benchmark_start")
         recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "combat_benchmark_start")
@@ -1678,6 +2238,7 @@ actor TFTMACRuntimeService {
             "combat_only_trace_budget": 3
         ])
         requestDiagnosticTrace(
+            scope: .combatBenchmark,
             trigger: "COMBAT_BENCHMARK_START",
             automatic: false,
             durationSeconds: 20,
@@ -1693,21 +2254,30 @@ actor TFTMACRuntimeService {
     }
 
     func markVisibleStutter() {
-        guard let active = activeCombatBenchmark, let telemetry else {
-            telemetry?.recordEvent("VISIBLE_STUTTER_IGNORED", payload: ["reason": "NO_ACTIVE_COMBAT_BENCHMARK"])
+        guard let telemetry else { return }
+        guard currentGamePID != nil, currentExactLayerName != nil else {
+            telemetry.recordEvent("VISIBLE_STUTTER_IGNORED", payload: ["reason": "NO_ACTIVE_TFT_GRAPHICS_RUN"])
             return
         }
+        let active = activeCombatBenchmark
         telemetry.recordEvent("VISIBLE_STUTTER", payload: [
-            "benchmark_id": active.benchmarkID,
-            "preset_id": active.presetID.rawValue,
+            "benchmark_id": active?.benchmarkID ?? NSNull(),
+            "preset_id": active?.presetID.rawValue ?? profile.experimentPreset.rawValue,
+            "graphics_logger_automatic": true,
             "host_monotonic_timestamp": true
         ])
         let traceSequence = requestDiagnosticTrace(
+            scope: active == nil ? .automaticGraphics : .combatBenchmark,
             trigger: "VISIBLE_STUTTER",
             automatic: false,
             durationSeconds: 15,
             bufferMiB: 32,
             benchmarkStartTrace: false
+        )
+        recordGraphicsPipelineIncident(
+            trigger: "VISIBLE_STUTTER",
+            window: latestGameFrameWindow,
+            traceSequence: traceSequence
         )
         recordCombatIncident(
             trigger: "VISIBLE_STUTTER",
@@ -1736,7 +2306,6 @@ actor TFTMACRuntimeService {
             correctnessPassed: correctnessPassed
         )
         activeCombatBenchmark = nil
-        consecutiveBadCombatWindows = 0
         telemetry.recordCombatBenchmark(run)
         telemetry.recordEvent("COMBAT_BENCHMARK_ENDED", payload: [
             "benchmark_id": run.benchmarkID,
@@ -1819,8 +2388,8 @@ actor TFTMACRuntimeService {
 
     func stop() async {
         guard !stopping else { return }
-        if activeCombatBenchmark != nil { endCombatBenchmark(reason: "APPLICATION_STOP") }
         stopping = true
+        if activeCombatBenchmark != nil { endCombatBenchmark(reason: "APPLICATION_STOP") }
         await status("Sealing SQL telemetry and stopping Android…", false)
         inputContinuation?.finish()
         if let paths,
@@ -1853,7 +2422,13 @@ actor TFTMACRuntimeService {
             } ?? false
             if ownsRunningEmulator {
                 recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
+                if let telemetry {
+                    recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
+                }
             }
+            telemetry?.endGraphicsRun(reason: "APPLICATION_STOP")
+            currentGamePID = nil
+            currentExactLayerName = nil
             stopLogcatCapture()
             if let ownedPID, ownsRunningEmulator {
                 _ = try? Self.runCommand(
@@ -1896,6 +2471,10 @@ actor TFTMACRuntimeService {
             }
         }
         avdTransaction = nil
+        if let traceCaptureTask {
+            await traceCaptureTask.value
+            self.traceCaptureTask = nil
+        }
         let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed ? "STOPPED" : "FAILED"
         telemetry?.finish(status: sealedStatus)
         runtimeLease?.release()
@@ -2415,7 +2994,6 @@ actor TFTMACRuntimeService {
     }
 
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {
-        var previousGamePID: Int32?
         var sampleIndex = 0
         while !stopping {
             try Task.checkCancellation()
@@ -2427,9 +3005,22 @@ actor TFTMACRuntimeService {
             let pieces = ps?.split(whereSeparator: \.isWhitespace) ?? []
             let cpu = pieces.first.flatMap { Double($0) }
             let rss = pieces.dropFirst().first.flatMap { Int64($0) }
-            let pidText = try? Self.adb(paths: paths, ["shell", "pidof", "com.riotgames.league.teamfighttactics"], timeout: 10).output
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let gamePID = pidText?.split(separator: " ").first.flatMap { Int32($0) }
+            var gamePID = currentGamePID
+            do {
+                gamePID = try Self.readTFTProcessID(paths: paths)
+                observeGameProcess(
+                    gamePID,
+                    paths: paths,
+                    telemetry: telemetry,
+                    observer: "FIVE_SECOND_RUNTIME_SAMPLER"
+                )
+            } catch {
+                telemetry.recordEvent("TFT_PROCESS_OBSERVER_UNAVAILABLE", payload: [
+                    "observer": "FIVE_SECOND_RUNTIME_SAMPLER",
+                    "state_changed": false,
+                    "error": error.localizedDescription
+                ])
+            }
             let activity = try? Self.adb(paths: paths, ["shell", "dumpsys", "activity", "activities"], timeout: 15).output
                 .split(whereSeparator: \.isNewline)
                 .first(where: { $0.contains("mResumedActivity") || $0.contains("topResumedActivity") })
@@ -2508,16 +3099,6 @@ actor TFTMACRuntimeService {
                     ])
                 }
             }
-            if gamePID != previousGamePID {
-                let previousValue: Any = previousGamePID.map { NSNumber(value: $0) } ?? NSNull()
-                let currentValue: Any = gamePID.map { NSNumber(value: $0) } ?? NSNull()
-                telemetry.recordEvent(gamePID == nil ? "TFT_PROCESS_ENDED" : "TFT_PROCESS_STARTED", payload: [
-                    "previous_pid": previousValue,
-                    "current_pid": currentValue
-                ])
-                telemetry.recordGameProcessTransition(previousPID: previousGamePID, currentPID: gamePID)
-                previousGamePID = gamePID
-            }
             if sampleIndex.isMultiple(of: 6) {
                 recordClockSync(paths: paths, telemetry: telemetry)
                 recordThirtySecondRuntimeReceipt(paths: paths, telemetry: telemetry)
@@ -2531,6 +3112,73 @@ actor TFTMACRuntimeService {
         }
     }
 
+    private func observeGameProcess(
+        _ observedGamePID: Int32?,
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        observer: String
+    ) {
+        guard observedGamePID != currentGamePID else { return }
+        let previousGamePID = currentGamePID
+        let previousValue: Any = previousGamePID.map { NSNumber(value: $0) } ?? NSNull()
+        let currentValue: Any = observedGamePID.map { NSNumber(value: $0) } ?? NSNull()
+
+        if previousGamePID != nil {
+            recordGraphicsPipelineSnapshot(
+                paths: paths,
+                telemetry: telemetry,
+                label: observedGamePID == nil ? "tft_process_ended" : "tft_process_replaced"
+            )
+            telemetry.endGraphicsRun(
+                reason: observedGamePID == nil ? "TFT_PROCESS_ENDED" : "TFT_PROCESS_REPLACED"
+            )
+            telemetry.recordEvent("TFT_GRAPHICS_RUN_ENDED", payload: [
+                "game_pid": previousValue,
+                "observer": observer,
+                "reason": observedGamePID == nil ? "TFT_PROCESS_ENDED" : "TFT_PROCESS_REPLACED"
+            ])
+            currentGamePID = nil
+            currentExactLayerName = nil
+            consecutiveBadGraphicsWindows = 0
+        }
+
+        telemetry.recordEvent(
+            observedGamePID == nil ? "TFT_PROCESS_ENDED" :
+                (previousGamePID == nil ? "TFT_PROCESS_STARTED" : "TFT_PROCESS_REPLACED"),
+            payload: [
+                "previous_pid": previousValue,
+                "current_pid": currentValue,
+                "observer": observer,
+                "graphics_logger_automatic": true
+            ]
+        )
+        telemetry.recordGameProcessTransition(previousPID: previousGamePID, currentPID: observedGamePID)
+
+        if let observedGamePID {
+            currentGamePID = observedGamePID
+            graphicsAutomaticTraceCount = 0
+            graphicsIncidentTraceCount = 0
+            lastGraphicsAutomaticTraceNS = 0
+            telemetry.beginOrUpdateGraphicsRun(
+                gamePID: observedGamePID,
+                exactLayerName: currentExactLayerName,
+                reason: previousGamePID == nil ? "TFT_PROCESS_STARTED" : "TFT_PROCESS_REPLACED"
+            )
+            telemetry.recordEvent("TFT_GRAPHICS_RUN_STARTED", payload: [
+                "game_pid": observedGamePID,
+                "start_trigger": "PROCESS_OBSERVED",
+                "observer": observer,
+                "manual_start_required": false,
+                "target_fps": profile.refreshHz
+            ])
+            recordGraphicsPipelineSnapshot(
+                paths: paths,
+                telemetry: telemetry,
+                label: previousGamePID == nil ? "tft_process_started" : "tft_process_replaced_started"
+            )
+        }
+    }
+
     private func sampleGameFrames(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         var sampler = GameFrameTelemetrySampler()
         var lastBoundaryNS = DispatchTime.now().uptimeNanoseconds
@@ -2541,6 +3189,13 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             let observedNS = DispatchTime.now().uptimeNanoseconds
             do {
+                let observedGamePID = try Self.readTFTProcessID(paths: paths)
+                observeGameProcess(
+                    observedGamePID,
+                    paths: paths,
+                    telemetry: telemetry,
+                    observer: "ONE_SECOND_GRAPHICS_SAMPLER"
+                )
                 let layers = try Self.adb(
                     paths: paths,
                     ["shell", "dumpsys", "SurfaceFlinger", "--list"],
@@ -2548,7 +3203,15 @@ actor TFTMACRuntimeService {
                 ).output
                 let layerStatus = sampler.updateLayerList(layers)
                 guard case .available = layerStatus, let layer = sampler.selectedLayer else {
-                    consecutiveBadCombatWindows = 0
+                    consecutiveBadGraphicsWindows = 0
+                    if let lostLayer = currentExactLayerName {
+                        telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                            "previous_layer": lostLayer,
+                            "graphics_run_remains_open_until_process_exit": true
+                        ])
+                        currentExactLayerName = nil
+                        telemetry.updateGraphicsRunLayer(nil)
+                    }
                     let window = Self.unavailableGameFrameWindow(
                         status: layerStatus,
                         layerName: nil,
@@ -2569,6 +3232,28 @@ actor TFTMACRuntimeService {
                         "current_layer": layer,
                         "benchmark_active": activeCombatBenchmark != nil
                     ])
+                }
+                if currentExactLayerName != layer {
+                    let isFirstObservedLayer = currentExactLayerName == nil
+                    currentExactLayerName = layer
+                    telemetry.beginOrUpdateGraphicsRun(
+                        gamePID: currentGamePID,
+                        exactLayerName: layer,
+                        reason: currentGamePID == nil ? "TFT_LAYER_OBSERVED" : "TFT_PROCESS_LAYER_ACTIVE"
+                    )
+                    telemetry.recordEvent(
+                        isFirstObservedLayer ? "TFT_SURFACE_LAYER_ACTIVE" : "TFT_SURFACE_LAYER_REPLACED",
+                        payload: [
+                            "layer": layer,
+                            "game_pid": currentGamePID.map { NSNumber(value: $0) } ?? NSNull(),
+                            "manual_logger_start_required": false
+                        ]
+                    )
+                    recordGraphicsPipelineSnapshot(
+                        paths: paths,
+                        telemetry: telemetry,
+                        label: isFirstObservedLayer ? "tft_surface_active" : "tft_surface_replaced"
+                    )
                 }
                 previousExactLayerName = layer
 
@@ -2594,20 +3279,23 @@ actor TFTMACRuntimeService {
                     let lowFPSDegradation = window.frameCount >= 10
                         && (window.onePercentLowFPS ?? window.effectiveFPS) < 30
                     let severeDegradation = window.severeCount > 0 || (window.p99MS ?? 0) >= 50
-                    if activeCombatBenchmark != nil, (lowFPSDegradation || severeDegradation) {
-                        consecutiveBadCombatWindows += 1
+                    if currentGamePID != nil,
+                       currentExactLayerName == layer,
+                       (lowFPSDegradation || severeDegradation) {
+                        consecutiveBadGraphicsWindows += 1
                     } else {
-                        consecutiveBadCombatWindows = 0
+                        consecutiveBadGraphicsWindows = 0
                     }
-                    if consecutiveBadCombatWindows >= 2,
-                       let traceSequence = requestDiagnosticTrace(
+                    if consecutiveBadGraphicsWindows >= 2 {
+                        let traceSequence = requestDiagnosticTrace(
+                           scope: activeCombatBenchmark == nil ? .automaticGraphics : .combatBenchmark,
                            trigger: "AUTO_GAME_FRAME_DEGRADATION",
                            automatic: true,
                            durationSeconds: 15,
                            bufferMiB: 32,
                            benchmarkStartTrace: false
-                       ) {
-                        consecutiveBadCombatWindows = 0
+                        )
+                        consecutiveBadGraphicsWindows = 0
                         telemetry.recordEvent("GAME_FRAME_DEGRADATION", payload: [
                             "evidence_level": "SURFACEFLINGER_ACTUAL_PRESENT",
                             "effective_fps": window.effectiveFPS,
@@ -2617,8 +3305,15 @@ actor TFTMACRuntimeService {
                             "jank_count": window.jankCount,
                             "severe_count": window.severeCount,
                             "missed_vsync_equivalents": window.missedVsyncEquivalents,
-                            "cause": "UNATTRIBUTED_PENDING_TRACE_CORRELATION"
+                            "trace_sequence": traceSequence.map { NSNumber(value: $0) } ?? NSNull(),
+                            "first_observed_divergent_boundary": "TFT_SURFACE_ACTUAL_PRESENT",
+                            "cause": "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE"
                         ])
+                        recordGraphicsPipelineIncident(
+                            trigger: "AUTO_GAME_FRAME_DEGRADATION",
+                            window: window,
+                            traceSequence: traceSequence
+                        )
                         recordCombatIncident(
                             trigger: "AUTO_GAME_FRAME_DEGRADATION",
                             window: window,
@@ -2626,7 +3321,7 @@ actor TFTMACRuntimeService {
                         )
                     }
                 } else if case .unavailable = update.status {
-                    consecutiveBadCombatWindows = 0
+                    consecutiveBadGraphicsWindows = 0
                     let unavailable = Self.unavailableGameFrameWindow(
                         status: update.status,
                         layerName: update.layerName,
@@ -2642,7 +3337,7 @@ actor TFTMACRuntimeService {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                consecutiveBadCombatWindows = 0
+                consecutiveBadGraphicsWindows = 0
                 let failedAt = DispatchTime.now().uptimeNanoseconds
                 let unavailable = Self.unavailableGameFrameWindow(
                     status: .unavailable(.adbError),
@@ -2739,6 +3434,32 @@ actor TFTMACRuntimeService {
         catch { telemetry.recordEvent("COMBAT_INCIDENT_PERSISTENCE_FAILED", payload: ["error": error.localizedDescription]) }
     }
 
+    private func recordGraphicsPipelineIncident(
+        trigger: String,
+        window: GameFrameTelemetryWindow?,
+        traceSequence: Int?
+    ) {
+        guard let telemetry, let window else { return }
+        telemetry.recordGraphicsPipelineIncident(GraphicsPipelineIncident(
+            incidentID: UUID().uuidString.lowercased(),
+            trigger: trigger,
+            observedMonotonicNS: DispatchTime.now().uptimeNanoseconds,
+            window: window,
+            traceSequence: traceSequence,
+            firstObservedDivergentBoundary: "TFT_SURFACE_ACTUAL_PRESENT",
+            causalOwner: "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE",
+            causalConfidence: "LOW",
+            explicitUnknowns: [
+                "UNREAL_RENDER_THREAD_TIMING",
+                "ANGLE_SUBMIT_TIMING",
+                "ASG_QUEUE_DEPTH",
+                "GFXSTREAM_HOST_RECEIVE_AND_SUBMIT_TIMING",
+                "MOLTENVK_COMMAND_BUFFER_TIMING",
+                "SHARED_CROSS_STACK_FRAME_ID"
+            ]
+        ))
+    }
+
     private func recordCorrectnessRejection(reason: String) {
         guard let telemetry else { return }
         let nowNS = DispatchTime.now().uptimeNanoseconds
@@ -2789,40 +3510,78 @@ actor TFTMACRuntimeService {
 
     @discardableResult
     private func requestDiagnosticTrace(
+        scope: DiagnosticTraceScope,
         trigger: String,
         automatic: Bool,
         durationSeconds: Int,
         bufferMiB: Int,
         benchmarkStartTrace: Bool
     ) -> Int? {
-        guard !stopping, activeCombatBenchmark != nil, let paths, let telemetry else { return nil }
+        guard !stopping, let paths, let telemetry else { return nil }
         let now = DispatchTime.now().uptimeNanoseconds
+        switch scope {
+        case .combatBenchmark:
+            guard activeCombatBenchmark != nil else { return nil }
+        case .automaticGraphics:
+            guard currentGamePID != nil, currentExactLayerName != nil else {
+                telemetry.recordEvent("DIAGNOSTIC_TRACE_SKIPPED", payload: [
+                    "scope": scope.rawValue,
+                    "trigger": trigger,
+                    "reason": "NO_ACTIVE_TFT_GRAPHICS_RUN"
+                ])
+                return nil
+            }
+        }
         if traceCaptureInProgress {
             telemetry.recordEvent("DIAGNOSTIC_TRACE_SKIPPED", payload: [
+                "scope": scope.rawValue,
                 "trigger": trigger,
                 "reason": "TRACE_ALREADY_RUNNING"
             ])
             return nil
         }
-        if !benchmarkStartTrace, incidentTraceCount >= 2 {
-            telemetry.recordEvent("DIAGNOSTIC_TRACE_SKIPPED", payload: [
-                "trigger": trigger, "reason": "BENCHMARK_INCIDENT_TRACE_LIMIT", "limit": 2
-            ])
-            return nil
+        switch scope {
+        case .combatBenchmark:
+            if !benchmarkStartTrace, incidentTraceCount >= 2 {
+                telemetry.recordEvent("DIAGNOSTIC_TRACE_SKIPPED", payload: [
+                    "scope": scope.rawValue,
+                    "trigger": trigger, "reason": "BENCHMARK_INCIDENT_TRACE_LIMIT", "limit": 2
+                ])
+                return nil
+            }
+            if automatic {
+                guard automaticTraceCount < 2 else { return nil }
+                guard lastAutomaticTraceNS == 0 || now &- lastAutomaticTraceNS >= 120_000_000_000 else { return nil }
+                automaticTraceCount += 1
+                lastAutomaticTraceNS = now
+            }
+            if !benchmarkStartTrace { incidentTraceCount += 1 }
+        case .automaticGraphics:
+            guard !benchmarkStartTrace else { return nil }
+            if graphicsIncidentTraceCount >= 2 {
+                telemetry.recordEvent("DIAGNOSTIC_TRACE_SKIPPED", payload: [
+                    "scope": scope.rawValue,
+                    "trigger": trigger, "reason": "GRAPHICS_RUN_INCIDENT_TRACE_LIMIT", "limit": 2
+                ])
+                return nil
+            }
+            if automatic {
+                guard graphicsAutomaticTraceCount < 2 else { return nil }
+                guard lastGraphicsAutomaticTraceNS == 0
+                    || now &- lastGraphicsAutomaticTraceNS >= 120_000_000_000 else { return nil }
+                graphicsAutomaticTraceCount += 1
+                lastGraphicsAutomaticTraceNS = now
+            }
+            graphicsIncidentTraceCount += 1
         }
-        if automatic {
-            guard automaticTraceCount < 2 else { return nil }
-            guard lastAutomaticTraceNS == 0 || now &- lastAutomaticTraceNS >= 120_000_000_000 else { return nil }
-            automaticTraceCount += 1
-            lastAutomaticTraceNS = now
-        }
-        if !benchmarkStartTrace { incidentTraceCount += 1 }
         traceCaptureInProgress = true
         traceCaptureMeasurementStartNS = now
         traceCaptureMeasurementEndNS = now &+ UInt64(durationSeconds) * 1_000_000_000
         traceCaptureCount += 1
         let sequence = traceCaptureCount
+        let graphicsContext = telemetry.currentGraphicsContext()
         telemetry.recordEvent("DIAGNOSTIC_TRACE_STARTED", payload: [
+            "scope": scope.rawValue,
             "trigger": trigger,
             "duration_seconds": durationSeconds,
             "capture_started_monotonic_ns": now,
@@ -2832,29 +3591,49 @@ actor TFTMACRuntimeService {
             "analysis_state": "RAW_CAPTURE_PENDING"
         ])
 
-        Task.detached(priority: .utility) { [paths, telemetry] in
+        traceCaptureTask = Task.detached(priority: .utility) { [paths, telemetry] in
             do {
                 let artifact = try Self.capturePerfettoTrace(
                     paths: paths,
                     telemetry: telemetry,
+                    graphicsRunID: graphicsContext.runID,
+                    graphicsStackSHA256: graphicsContext.stackSHA256,
+                    captureScope: scope.rawValue,
                     trigger: trigger,
                     sequence: sequence,
                     durationSeconds: durationSeconds,
                     bufferMiB: bufferMiB
                 )
-                await self.finishDiagnosticTrace(artifact: artifact, errorDescription: nil)
+                await self.finishDiagnosticTrace(
+                    artifact: artifact,
+                    errorDescription: nil,
+                    scope: scope.rawValue,
+                    trigger: trigger
+                )
             } catch {
-                await self.finishDiagnosticTrace(artifact: nil, errorDescription: error.localizedDescription)
+                await self.finishDiagnosticTrace(
+                    artifact: nil,
+                    errorDescription: error.localizedDescription,
+                    scope: scope.rawValue,
+                    trigger: trigger
+                )
             }
         }
         return sequence
     }
 
-    private func finishDiagnosticTrace(artifact: DiagnosticArtifact?, errorDescription: String?) {
+    private func finishDiagnosticTrace(
+        artifact: DiagnosticArtifact?,
+        errorDescription: String?,
+        scope: String,
+        trigger: String
+    ) {
         traceCaptureInProgress = false
+        traceCaptureTask = nil
         if let artifact {
             telemetry?.recordDiagnosticArtifact(artifact)
             telemetry?.recordEvent("DIAGNOSTIC_TRACE_COMPLETED", payload: [
+                "scope": artifact.captureScope,
                 "trigger": artifact.trigger,
                 "relative_path": artifact.relativePath,
                 "byte_count": artifact.byteCount,
@@ -2867,6 +3646,8 @@ actor TFTMACRuntimeService {
         } else {
             traceCaptureMeasurementEndNS = DispatchTime.now().uptimeNanoseconds
             telemetry?.recordEvent("DIAGNOSTIC_TRACE_FAILED", payload: [
+                "scope": scope,
+                "trigger": trigger,
                 "error": errorDescription ?? "unknown",
                 "raw_capture_available": false
             ])
@@ -2876,6 +3657,9 @@ actor TFTMACRuntimeService {
     nonisolated private static func capturePerfettoTrace(
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry,
+        graphicsRunID: String?,
+        graphicsStackSHA256: String?,
+        captureScope: String,
         trigger: String,
         sequence: Int,
         durationSeconds: Int,
@@ -2945,6 +3729,9 @@ actor TFTMACRuntimeService {
         let metadata: [String: Any] = [
             "schema": 1,
             "created_utc": createdUTC,
+            "capture_scope": captureScope,
+            "graphics_run_id": graphicsRunID ?? NSNull(),
+            "graphics_stack_sha256": graphicsStackSHA256 ?? NSNull(),
             "trigger": trigger,
             "duration_seconds": durationSeconds,
             "buffer_mib": bufferMiB,
@@ -2972,6 +3759,9 @@ actor TFTMACRuntimeService {
         )
         try metadataData.write(to: metadataURL, options: .atomic)
         return DiagnosticArtifact(
+            graphicsRunID: graphicsRunID,
+            graphicsStackSHA256: graphicsStackSHA256,
+            captureScope: captureScope,
             createdUTC: createdUTC,
             createdMonotonicNS: DispatchTime.now().uptimeNanoseconds,
             kind: "PERFETTO_FRAME_PIPELINE_TRACE",
@@ -3103,19 +3893,60 @@ actor TFTMACRuntimeService {
             timeout: 10
         ).output
         let surfaceState: String
+        let exactLayerName: String?
         if let layerOutput {
             switch GameFrameTelemetry.selectTFTSurfaceViewLayer(from: layerOutput) {
-            case .selected: surfaceState = "EXACT_LAYER_ACTIVE"
-            case .unavailable(.multipleTFTSurfaceViews): surfaceState = "AMBIGUOUS_MULTIPLE_LAYERS"
-            case .unavailable: surfaceState = "NOT_OBSERVED"
+            case .selected(let layer):
+                surfaceState = "EXACT_LAYER_ACTIVE"
+                exactLayerName = layer
+            case .unavailable(.multipleTFTSurfaceViews):
+                surfaceState = "AMBIGUOUS_MULTIPLE_LAYERS"
+                exactLayerName = nil
+            case .unavailable:
+                surfaceState = "NOT_OBSERVED"
+                exactLayerName = nil
             }
         } else {
             surfaceState = "ADB_UNAVAILABLE"
+            exactLayerName = nil
         }
-        let angleActive = Self.firstRegexText(
-            "(?i)(Created VkInstance:[^\\n]*teamfighttactics[^\\n]*ANGLE)",
+        let packageAngleInstance = Self.firstRegexText(
+            "(?i)(Created VkInstance:[^\\n]*application:'com\\.riotgames\\.league\\.teamfighttactics'[^\\n]*engine:'ANGLE')",
             in: emulatorText
         ) != nil
+        let unrealEngine = Self.firstRegexText(
+            "(?i)Created VkInstance:[^\\n]*application:'TFT'[^\\n]*engine:'(UnrealEngine[^']*)'",
+            in: emulatorText
+        )
+        let gameGraphicsAPI = unrealEngine == nil ? "UNKNOWN" : "UNREAL_ENGINE_VULKAN"
+        let gameGraphicsAPIConfidence = unrealEngine == nil ? "UNKNOWN" : "DIRECT_VKINSTANCE_RUNTIME_LOG"
+        let emulatorVersion = Self.firstRegexText(
+            "(?i)Android emulator version\\s+([^\\s]+)",
+            in: emulatorText
+        )
+        let emulatorBuildID = Self.firstRegexText(
+            "(?i)\\(build_id\\s+([^\\)]+)\\)",
+            in: emulatorText
+        )
+        let emulatorGPUSelection = Self.firstRegexText(
+            "(?i)emuglConfig_init:\\s*([^\\r\\n]+)",
+            in: emulatorText
+        )
+        let rawGfxstreamFeatures = Self.firstRegexText(
+            "(?is)Gfxstream features:\\s*(.*?)Gfxstream initialized successfully",
+            in: emulatorText
+        )
+        let gfxstreamFeatureReceipt = rawGfxstreamFeatures.map { raw in
+            String(raw.split(whereSeparator: \.isNewline).map {
+                String($0)
+                    .replacingOccurrences(of: "INFO         |", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }.filter { !$0.isEmpty }.joined(separator: ";").prefix(8_192))
+        }
+        let moltenVKVersion = Self.firstRegexText(
+            "(?i)(Graphics API Version[^\\r\\n]*VK_DRIVER_ID_MOLTENVK[^\\r\\n]*)",
+            in: emulatorText
+        )
         let hostDevice = Self.firstRegexText("(?i)Selecting Vulkan device:\\s*([^\\r\\n]+)", in: emulatorText)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let vulkanComposition = Self.firstRegexText("(?i)useVulkanComposition:\\s*(true|false)", in: emulatorText)
@@ -3129,18 +3960,156 @@ actor TFTMACRuntimeService {
             ["shell", "settings", "get", "global", "angle_gl_driver_all_angle"],
             timeout: 10
         ).output
+        let packageAnglePackages = try? Self.adb(
+            paths: paths,
+            ["shell", "settings", "get", "global", "angle_gl_driver_selection_pkgs"],
+            timeout: 10
+        ).output
+        let packageAngleValues = try? Self.adb(
+            paths: paths,
+            ["shell", "settings", "get", "global", "angle_gl_driver_selection_values"],
+            timeout: 10
+        ).output
+        let packageAngleSelection = [
+            Self.nonemptyDiagnosticValue(packageAnglePackages).map { "packages=\($0)" },
+            Self.nonemptyDiagnosticValue(packageAngleValues).map { "values=\($0)" }
+        ].compactMap { $0 }.joined(separator: ";")
+        let metalDevice = MTLCreateSystemDefaultDevice()
+        let metalDeviceName = metalDevice?.name
+        let metalRegistryID = metalDevice.map { String(format: "0x%016llx", $0.registryID) }
+        let gfxstreamActive = lower.contains("gfxstream initialized successfully")
+        let moltenVKActive = lower.contains("moltenvk_icd.json")
+            || lower.contains("vk_driver_id_moltenvk")
+            || lower.contains("graphics adapter vendor moltenvk")
+        let angleState = packageAngleInstance
+            ? "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED"
+            : "NOT_OBSERVED"
+        let moltenVKConfiguration = "{\"MVK_CONFIG_FAST_MATH_ENABLED\":\"1\",\"MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE\":\"64\",\"MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS\":\"0\",\"confidence\":\"REQUESTED_LAUNCH_ENVIRONMENT\"}"
+        let completeDirectPath = unrealEngine != nil
+            && exactLayerName != nil
+            && gfxstreamActive
+            && moltenVKActive
+            && hostDevice != nil
+            && vulkanComposition == true
+            && nativeSwapchain == true
+            && metalDevice != nil
+        let pipelinePath = completeDirectPath
+            ? "RUN_OBSERVED_COMPONENT_CHAIN:UNREAL_VULKAN->GFXSTREAM->HOST_VULKAN_MOLTENVK->METAL;OUTPUT:EMULATOR_IMAGE_STREAM->TFTMAC_METAL_PRESENTER;NOT_FRAME_CORRELATED"
+            : "UNKNOWN_INCOMPLETE_RUNTIME_RECEIPT"
+        let receipt = GraphicsStackReceipt(fields: [
+            "tft_package_version": GraphicsStackReceiptField(
+                value: tftPackageVersion,
+                source: "adb dumpsys package com.riotgames.league.teamfighttactics",
+                confidence: tftPackageVersion == "unknown" ? "UNKNOWN" : "DIRECT"
+            ),
+            "tft_surface": GraphicsStackReceiptField(
+                value: exactLayerName ?? surfaceState,
+                source: "SurfaceFlinger --list exact GameActivity SurfaceView selection",
+                confidence: exactLayerName == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "unreal_engine": GraphicsStackReceiptField(
+                value: unrealEngine ?? "UNKNOWN",
+                source: "emulator VkInstance runtime log for application TFT",
+                confidence: unrealEngine == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "game_graphics_api": GraphicsStackReceiptField(
+                value: gameGraphicsAPI,
+                source: "emulator VkInstance runtime log for application TFT",
+                confidence: gameGraphicsAPIConfidence
+            ),
+            "angle": GraphicsStackReceiptField(
+                value: angleState,
+                source: "emulator VkInstance runtime log for official TFT package process",
+                confidence: packageAngleInstance ? "DIRECT" : "UNKNOWN"
+            ),
+            "gfxstream": GraphicsStackReceiptField(
+                value: gfxstreamActive ? "ACTIVE" : "UNKNOWN",
+                source: "emulator gfxstream initialization log",
+                confidence: gfxstreamActive ? "DIRECT" : "UNKNOWN"
+            ),
+            "gfxstream_features": GraphicsStackReceiptField(
+                value: gfxstreamFeatureReceipt ?? "UNKNOWN",
+                source: "emulator Gfxstream features receipt",
+                confidence: gfxstreamFeatureReceipt == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "gfxstream_internal_tracing": GraphicsStackReceiptField(
+                value: "NOT_PROVEN_IN_PACKAGED_RUNTIME",
+                source: "packaged runtime has no direct GFXSTREAM_BUILD_WITH_TRACING receipt",
+                confidence: "UNKNOWN"
+            ),
+            "moltenvk": GraphicsStackReceiptField(
+                value: moltenVKActive ? "ACTIVE" : "UNKNOWN",
+                source: "MoltenVK ICD/driver runtime log",
+                confidence: moltenVKActive ? "DIRECT" : "UNKNOWN"
+            ),
+            "moltenvk_version": GraphicsStackReceiptField(
+                value: moltenVKVersion ?? "UNKNOWN",
+                source: "host Vulkan driver runtime log",
+                confidence: moltenVKVersion == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "moltenvk_configuration": GraphicsStackReceiptField(
+                value: moltenVKConfiguration,
+                source: "TFTMAC app-host launch environment",
+                confidence: "REQUESTED"
+            ),
+            "host_vulkan_device": GraphicsStackReceiptField(
+                value: hostDevice ?? "UNKNOWN",
+                source: "emulator Vulkan device-selection log",
+                confidence: hostDevice == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "metal_device": GraphicsStackReceiptField(
+                value: [metalDeviceName, metalRegistryID].compactMap { $0 }.joined(separator: ";"),
+                source: "MTLCreateSystemDefaultDevice",
+                confidence: metalDevice == nil ? "UNKNOWN" : "DIRECT"
+            ),
+            "native_presenter": GraphicsStackReceiptField(
+                value: "TFTMAC_MTKVIEW_METAL_PRESENTER",
+                source: "TFTMAC native presenter implementation",
+                confidence: "DIRECT_SOURCE"
+            ),
+            "configuration_sha256": GraphicsStackReceiptField(
+                value: profile.experimentConfigurationReceipt.sha256,
+                source: "canonical effective runtime configuration",
+                confidence: "DIRECT"
+            ),
+            "pipeline_path": GraphicsStackReceiptField(
+                value: pipelinePath,
+                source: "composition of run-local component receipts; continuous edges require frame-ID correlation",
+                confidence: completeDirectPath ? "CORRELATED_NOT_CAUSAL" : "UNKNOWN"
+            ),
+            "cross_stack_frame_id": GraphicsStackReceiptField(
+                value: "NOT_IMPLEMENTED",
+                source: "current packaged runtime",
+                confidence: "UNKNOWN"
+            )
+        ])
         telemetry.recordGraphicsPipelineSnapshot(GraphicsPipelineSnapshot(
             label: label,
+            gamePID: currentGamePID,
+            exactLayerName: exactLayerName ?? currentExactLayerName,
             tftSurfaceState: surfaceState,
-            angleState: angleActive ? "PROVEN_ACTIVE" : "NOT_OBSERVED",
-            gfxstreamState: lower.contains("gfxstream initialized successfully") ? "PROVEN_ACTIVE" : "NOT_OBSERVED",
-            moltenVKState: lower.contains("moltenvk") || lower.contains("[mvk]") ? "PROVEN_ACTIVE" : "NOT_OBSERVED",
+            gameGraphicsAPI: gameGraphicsAPI,
+            gameGraphicsAPIConfidence: gameGraphicsAPIConfidence,
+            angleState: angleState,
+            gfxstreamState: gfxstreamActive ? "PROVEN_ACTIVE" : "NOT_OBSERVED",
+            moltenVKState: moltenVKActive ? "PROVEN_ACTIVE" : "NOT_OBSERVED",
+            emulatorVersion: Self.nonemptyDiagnosticValue(emulatorVersion),
+            emulatorBuildID: Self.nonemptyDiagnosticValue(emulatorBuildID),
+            emulatorGPUSelection: Self.nonemptyDiagnosticValue(emulatorGPUSelection),
+            gfxstreamFeatureReceipt: Self.nonemptyDiagnosticValue(gfxstreamFeatureReceipt),
+            gfxstreamTracingState: "UNKNOWN_NOT_PROVEN_IN_PACKAGED_RUNTIME",
+            moltenVKVersion: Self.nonemptyDiagnosticValue(moltenVKVersion),
+            moltenVKConfiguration: moltenVKConfiguration,
             hostVulkanDevice: Self.nonemptyDiagnosticValue(hostDevice),
             vulkanComposition: vulkanComposition,
             nativeSwapchain: nativeSwapchain,
             guestEGLImplementation: Self.nonemptyDiagnosticValue(guestEGL),
             guestVulkanImplementation: Self.nonemptyDiagnosticValue(guestVulkan),
-            globalAngleSelection: Self.nonemptyDiagnosticValue(angleSelection)
+            globalAngleSelection: Self.nonemptyDiagnosticValue(angleSelection),
+            packageAngleSelection: Self.nonemptyDiagnosticValue(packageAngleSelection),
+            metalDeviceName: Self.nonemptyDiagnosticValue(metalDeviceName),
+            metalRegistryID: Self.nonemptyDiagnosticValue(metalRegistryID),
+            receipt: receipt
         ))
     }
 
@@ -3610,6 +4579,24 @@ actor TFTMACRuntimeService {
             throw TFTMACRuntimeError("ADB command failed: \(result.output.suffix(1200))")
         }
         return result
+    }
+
+    nonisolated private static func readTFTProcessID(paths: TFTMACRuntimePaths) throws -> Int32? {
+        let result = try runCommand(
+            paths.adb,
+            [
+                "-P", "5038", "-s", "emulator-5582", "shell", "pidof",
+                "com.riotgames.league.teamfighttactics"
+            ],
+            environment: adbEnvironment(paths: paths),
+            timeout: 10
+        )
+        let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.status != 0 {
+            if output.isEmpty { return nil }
+            throw TFTMACRuntimeError("ADB TFT process query failed: \(output.suffix(1200))")
+        }
+        return output.split(whereSeparator: \.isWhitespace).first.flatMap { Int32($0) }
     }
 
     nonisolated private static func runCommand(

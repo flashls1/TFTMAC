@@ -1,6 +1,6 @@
 # TFTMAC Unreal graphics observability and patch map
 
-Authority date: 2026-08-30
+Authority date: 2026-08-31
 
 ## Fixed premise and engineering objective
 
@@ -65,21 +65,23 @@ substitute another clock.
 
 ## Implemented data contract
 
-Every native app start creates a private SQLite session. The 2.2 telemetry
+Every native app start creates a private SQLite session. The 2.3 telemetry
 extension adds:
 
 | Table | Evidence |
 | --- | --- |
-| `game_frame_intervals` | Every newly observed actual-present interval, jank flag, severe flag and missed-vsync equivalent |
-| `game_frame_windows` | One-second TFT FPS, 1% low, p50/p95/p99/max, jank, severe stalls, missed vsyncs, layer identity, refresh period and explicit availability reason |
+| `game_frame_intervals` | Every newly observed actual-present interval, direct active stack SHA, frame-window link, jank flag, severe flag and missed-vsync equivalent |
+| `game_frame_windows` | One-second TFT FPS, direct active stack SHA, 1% low, p50/p95/p99/max, jank, severe stalls, missed vsyncs, layer identity, refresh period and explicit availability reason |
 | `stream_freshness_windows` | Changed/identical sampled content, longest identical run and sequence loss |
 | `host_presentation_windows` | Final Metal submissions/completions, unique/repeated sources, drawable/command errors, completion and GPU timing |
 | `pipeline_log_aggregates` | Counts of real warning/error/stall lines at gfxstream, ASG, Vulkan, MoltenVK, shader and fence boundaries; normal configuration lines do not become failures |
-| `graphics_pipeline_snapshots` | Per-run evidence for the active TFT surface, ANGLE, gfxstream, MoltenVK, host device and effective guest EGL/Vulkan settings |
+| `graphics_runs` | Automatic TFT process/layer lifetime, start/end reason, configuration SHA, target FPS and exact-layer receipt |
+| `graphics_pipeline_snapshots` | Per-snapshot stack receipt, canonical receipt JSON/SHA-256, completeness/unknown fields, and observed active-path identity |
+| `graphics_pipeline_incidents` | Automatic exact-layer degradation window, admitted trace link, first observed boundary, and explicit causal unknowns |
 | `diagnostic_artifacts` | SHA-256, byte count, trigger and analysis state for bounded Perfetto captures |
 | `host_resource_samples` | Host available/compressed/swap/pageouts, thermal state and power source at five seconds |
 | `combat_benchmarks` | Named preset, configuration SHA, 300/480-second boundaries, coverage, validity and summary metrics |
-| `combat_incidents` | Adjacent bad-window/visible-stutter triggers, trace sequence, evidence confidence and explicit unknowns |
+| `combat_incidents` | Optional controlled-A/B visible-stutter/benchmark evidence; not the authority for base graphics logging |
 | `combat_comparisons` | Control/candidate deltas and deterministic HOME_RUN/PROMISING/REJECT/INCONCLUSIVE result |
 
 SurfaceFlinger history polls overlap. The collector establishes a first-poll
@@ -88,15 +90,25 @@ and records bounded-history loss explicitly rather than inventing one giant
 frame interval. Interval inserts are committed once per poll so the logger does
 not create dozens of disk transactions per second.
 
-The fixed Combat Benchmark captures one 20-second/32-MiB start trace and up to
-two 15-second/32-MiB incident traces. Automatic capture is combat-only, requires
-two adjacent bad one-second windows and retains the 120-second cooldown. Traces
+The logger begins automatically with the observed TFT process/layer lifecycle
+and remains active until process/app close. It does not require a user marker,
+battle classifier, or Combat Benchmark. The fixed Combat Benchmark remains an
+optional controlled A/B path with one 20-second/32-MiB start trace and up to two
+15-second/32-MiB incident traces. Automatic graphics incidents require an
+observed TFT process, exact active layer, two adjacent bad one-second windows,
+and, outside a controlled A/B, a separate graphics-run budget/cooldown. During
+an active A/B the start trace and automatic/manual incidents share that
+benchmark's fixed three-trace ceiling. Traces
 include SurfaceFlinger, FrameTimeline, layers, Android GPU memory, scheduler
 switch/wakeup/waking events, process/system stats, TFT process identity and
 guest CPU-frequency events when exposed. Every retained trace is hash-sealed
 and normalized immediately with pinned Perfetto `trace_processor_shell` v58.2;
 normalization output and hashes are written to SQL. Failure deletes the
 unprocessed raw trace and records a trace failure.
+
+`graphics_runs`, stack-receipt SHA-256s, and frame-window joins are implemented
+in the current source worktree but require a new capture to become runtime
+verified. They establish lifecycle and observation integrity, not a causal owner.
 
 ## Attribution gates
 
@@ -111,14 +123,20 @@ unprocessed raw trace and records a trace failure.
 | MoltenVK behavior | A snapshot proves MoltenVK is active and its own queue/pipeline-cache instrumentation or a controlled build isolates the change |
 | TFTMAC final presenter | Guest `TFT` stays healthy while `MAC` completion, GPU time, drawable misses or repeated presentations regress |
 
+The conservative weakest-boundary view may report only the first observed
+unhealthy/missing receipt among `TFT`, `PIPE`, and `MAC`; it must never turn a
+time-adjacent warning, CPU/RAM/audio health sample, or incomplete stack receipt
+into a graphics causal claim. CPU/RAM/audio remain correctness and health
+context, outside the graphics-only optimization equation.
+
 ## Safe code and configuration intervention points
 
 1. Native logger/controller: markers, clock alignment, capture health, loss
    counters, SurfaceFlinger timing and Perfetto lifecycle. This is implemented.
-2. Source-built gfxstream/AEMU: emit one monotonic frame ID and timestamps at
+2. **Planned, gated next layer:** source-built gfxstream/AEMU may emit one monotonic frame ID and timestamps at
    guest submit, host receive, host queue, host GPU scheduled/completed and
-   output present. This is the highest-value next code patch after a real combat
-   trace identifies an unresolved guest/host queue gap.
+   output present. It is eligible only after the automatic graphics runs and
+   conservative joins leave a real guest/host queue gap unresolved.
 3. ANGLE source/build, only if active: log renderer/feature selection, shader
    translation/cache time, queue waits and relevant extension negotiation.
 4. MoltenVK source/build, only if active: log pipeline creation/cache hits,

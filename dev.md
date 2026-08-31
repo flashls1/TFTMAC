@@ -1,6 +1,6 @@
 # TFTMAC Developer Record
 
-**Development baseline:** TFTMAC 2.2.0 build 7  
+**Development baseline:** signed TFTMAC 2.3.0 build 8 installed and live-verified with automatic PID/layer logging and complete stack receipts
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
 **Active candidate:** `combat_latency_a`  
 **Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
@@ -34,6 +34,12 @@ Rules:
 8. Do not modify Riot's signed package, shaders, credentials, or process.
 9. Retain negative results so they are not recycled as “new” ideas.
 10. A launch receipt proves setup, not performance.
+
+**Build 8 process-observer invariant:** invoke Android `pidof` as direct ADB
+arguments (`adb ... shell pidof com.riotgames.league.teamfighttactics`). Do not
+route this through an unquoted `sh -c` argument: live acceptance proved that
+form can discard the package argument, leave `game_pid` null, and suppress the
+periodic stack-receipt refresh even while layer-based frame logging continues.
 
 “Write a driver” in this project means implementing an owned, measured adapter
 or scheduling/transport/cache change in TFTMAC, gfxstream/AEMU, ANGLE, or
@@ -172,7 +178,7 @@ Persistent comparison authority:
 | 1 second | source freshness/repetition/loss; native presenter submit/complete/reuse/errors/latency/GPU time |
 | 5 seconds | QEMU CPU/RSS, TFT PID/activity, guest memory/swap, host memory/compression/swap/pageouts, thermal/power |
 | 30 seconds | host/guest clock sync, renderer/feature receipts, SurfaceFlinger, display geometry/refresh, audio |
-| event | benchmark, stutter, trace, process/layer, package, ANR/OOM/crash, correctness and rollback events |
+| event | automatic graphics-run/process/layer/stack-receipt/incident events; optional benchmark/stutter/trace and package/ANR/OOM/crash/correctness events |
 | boundary | complete app/runtime/emulator/system-image/TFT/profile/input/audio identity |
 
 ### Privacy contract
@@ -441,9 +447,13 @@ output-present timestamp
 queue depth at each owned handoff
 ```
 
-**Gate:** activate only after configuration testing fails to deliver/explain a
-gain. Clock mapping and overwrite counts are mandatory. Do not log shaders,
-frame contents, or credentials.
+**Status:** **PLANNED, GATED NEXT LAYER.** The current automatic graphics logger
+adds `graphics_runs`, stack-receipt SHA, per-window joins, and conservative
+`TFT`/`PIPE`/`MAC` weakest-boundary views. Those do not create a shared frame ID.
+
+**Gate:** activate only after a fresh automatic graphics run leaves a real
+guest/host queue gap unresolved. Clock mapping and overwrite counts are
+mandatory. Do not log shaders, frame contents, or credentials.
 
 **Outcome:** identify the first valid divergent boundary. If lateness begins
 before host receipt, investigate ANGLE/guest/ASG. If after receipt but before
@@ -575,20 +585,27 @@ or weaken AVD rollback merely to report a smaller startup number.
 
 ## 11. Fastest next development sequence
 
-1. Preserve Build 7 and the marked Combat Latency A full-run baseline.
-2. Run a compatible marked Control full run; optionally use a valid short
-   Control/Candidate Combat A/B for a faster one-factor screen.
-3. Compare complete timelines, whole-run distributions, 60 FPS deficit, and all
-   resource/pipeline correlations using `benchmark.md`; cold-confirm only a
-   winner.
-4. If it fails or remains causally unknown, implement H2's fixed frame-ID ring.
-5. Use the first divergent boundary to choose exactly one of H3, H4, H5, or H6.
-6. Run a five-to-eight-minute bounded gameplay A/B when screening is faster.
-7. Promote only after repeated gain, one marked full run, and no correctness/
+1. Preserve Build 8 capture
+   `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31`,
+   which proves automatic PID/layer admission, `COMPLETE` stack receipts, and
+   fully resolved frame facts. Preserve the prior clean-shutdown capture too.
+2. Use the live stack receipt SHA, per-window joins, and conservative
+   `TFT`/`PIPE`/`MAC` views; continue treating explicitly incomplete internal
+   frame-ID edges as `UNKNOWN`.
+3. Run a compatible marked Control full run; optionally use a valid short
+   Control/Candidate Combat A/B for a faster one-factor screen. The A/B never
+   gates base logging.
+4. Compare graphics cadence, tails, receipt completeness, and boundary views
+   using `benchmark.md`. CPU/RAM/audio remain health/correctness context only.
+5. If the automatic evidence remains causally unknown at a guest/host queue
+   boundary, implement H2's fixed frame-ID ring.
+6. Use the first divergent boundary to choose exactly one of H3, H4, H5, or H6.
+7. Run a five-to-eight-minute bounded gameplay A/B when screening is faster.
+8. Promote only after repeated gain, one marked full run, and no correctness/
    user-experience failure.
 
 This sequence does not mean “test forever.” The first two runs decide whether
-the code already developed in Build 7 is useful. If not, the frame-ID ring is
+the Build 8 automatic receipt and boundary joins are sufficient. If not, the frame-ID ring is
 the shortest path to writing the correct deeper code instead of another blind
 emulator flag.
 

@@ -25,8 +25,9 @@
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
 | Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
-| Release build/install integrity | VERIFIED | All 40 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 7), embeds the official ImageGen penguin-samurai Mac icon and pinned Perfetto processor, and its executable SHA-256 matches the release authority |
+| Release build/install integrity | VERIFIED | All 43 native tests pass. Installed `/Applications/TFTMAC.app` is deep-code-sign-valid 2.3.0 build 8 and matches the Build 8 executable, host, and icon receipts. |
 | Build 7 live launch | VERIFIED | Capture `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494` reached authorized ADB, 1920x1080 first frame, powered/stay-awake guest, healthy SQL logger, official TFT and `TFT_READY_FOR_USER` under Combat Latency A |
+| Build 8 automatic graphics logger | LIVE VERIFIED | Capture `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31` proves automatic PID/layer admission, `COMPLETE` stack receipts, and direct run/hash/window/receipt linkage for every observed frame fact. |
 | Combat Latency A performance | NOT YET VERIFIED | Host pre-exec QoS receipt is direct, but no valid matched Control/Candidate combat benchmark exists and QEMU worker inheritance is not claimed |
 | External-runtime permission retention | VERIFIED | Stable designated requirement installed; a clean second launch immediately reopened `/Volumes/MAC MINI M4/TFTMAC/Runtime` and started QEMU without another drive-access dialog |
 | Secure-unlock display | VERIFIED | Secure unlock stays manual and logged, while non-error runtime instructions are suppressed from the Android display; live signed launch showed no TFTMAC center overlay |
@@ -41,8 +42,11 @@ Primary live acceptance capture:
 Final release receipts:
 
 ```text
-Verified executable SHA-256:
-  9d0341e424f3464d042383dc6b4db1fd03d1da2cba5df6462fa4c1fa8d72b039
+Verified Build 8 executable SHA-256:
+  d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2
+
+Build 8 automatic-logger live acceptance:
+  2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31
 
 Build 7 live-ready launch:
   2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494
@@ -187,7 +191,9 @@ The directory is mode `0700`. Queryable authority is `TFTMAC_NATIVE_RUNTIME.sqli
 | `audio_samples` | CoreAudio receipt plus active output/rate/stereo/tracks/underruns | Start/end and 30 seconds during gameplay |
 | `logcat_aggregates` | Counts only: ANR, input timeout, fatal, LMK/OOM, skipped frames, ANGLE/Vulkan warnings, PCM errors | Five seconds |
 | `pipeline_log_aggregates` | Counts only real gfxstream/ASG/Vulkan/MoltenVK/shader/fence warnings, errors, stalls and timeouts | Five seconds |
-| `graphics_pipeline_snapshots` | Effective TFT SurfaceView, ANGLE, gfxstream, MoltenVK, host device and guest EGL/Vulkan identity | Thirty seconds during gameplay |
+| `graphics_runs` | Automatic TFT PID/layer lifecycle, configuration SHA, target FPS and close reason | Process/layer transition |
+| `graphics_pipeline_snapshots` | Canonical stack receipt/SHA plus TFT SurfaceView, Unreal graphics API, ANGLE, gfxstream, MoltenVK, host Vulkan and Metal identity | Start/change/end and thirty seconds during gameplay |
+| `graphics_pipeline_incidents` | Exact-layer degradation, admitted trace link, first observed boundary, conservative causal owner/confidence, and explicit unknowns | Automatic event |
 | `diagnostic_artifacts` | Raw and normalized trace paths/hashes, pinned processor hash, normalized SQL summary and analysis state | Event-driven |
 | `combat_benchmarks` | Named preset, complete configuration hash, coverage, validity, exact layer and combat metrics | Benchmark boundary |
 | `combat_incidents` | Bad-window or visible-stutter trigger, frame state, trace sequence and explicit unknown boundary | Event-driven during benchmark |
@@ -197,13 +203,16 @@ The directory is mode `0700`. Queryable authority is `TFTMAC_NATIVE_RUNTIME.sqli
 
 Raw logcat is local sensitive data. It is excluded from SQL and must never be uploaded or pasted without deliberate sanitization. It begins at a guest timestamp taken after ADB authorization so stale ring-buffer events do not contaminate the run.
 
-### Rapid Combat A/B workflow (2.2.0 build 7)
+### Automatic graphics logging and optional A/B (2.3.0 build 8 installed)
 
-The Telemetry menu now owns `Start Combat Benchmark`, `Mark Visible Stutter`
-and `End Combat Benchmark`. A run is valid after 300 seconds and closes
-automatically at 480 seconds. Automatic incident traces are armed only inside
-that window, require two adjacent bad one-second windows, have a 120-second
-cooldown, and are capped at two in addition to the 20-second start trace.
+The base logger requires no menu action. It starts when the TFT process or exact
+GameActivity layer is observed, records the complete graphics lifecycle, and
+closes with the process/app. `Mark Visible Stutter` is optional context. The
+renamed controlled A/B window remains valid after 300 seconds and closes at 480
+seconds. Automatic incident traces require two adjacent bad one-second windows,
+use a 120-second cooldown, and are capped at two per graphics run. During an
+active A/B those incidents share the benchmark's two-incident budget in addition
+to its one 20-second start trace.
 
 `Control` is the exact 1920x1080/320-dpi/60-Hz, 6-vCPU, 5120-MiB proven
 configuration with TFT High / 60 FPS / Performance Mode OFF. `Combat Latency A`

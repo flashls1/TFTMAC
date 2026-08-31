@@ -32,7 +32,7 @@ The abandoned source-built emulator laboratory is not part of the normal product
 ## Current handoff authority
 
 - [`facts.md`](facts.md) — locked facts, current observations, verified results, and explicit unknowns.
-- [`project.md`](project.md) — complete project history, architecture pivots, current Build 7 state, and continuity for a new chat.
+- [`project.md`](project.md) — complete project history, architecture pivots, current Build 8 logger state, and continuity for a new chat.
 - [`dev.md`](dev.md) — code ownership, experiment ledger, SQL contracts, hypotheses, and the next development gates.
 
 Historical plans and benchmark records remain useful evidence, but they do not override these current boundaries or the machine-readable files under `ssot/`.

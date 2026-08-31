@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
 **Authority date:** 2026-08-30 America/Chicago  
-**Observed runtime evidence through:** 2026-08-31T03:51:00Z
+**Observed runtime evidence through:** 2026-08-31T21:41:12Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -19,7 +19,7 @@ current marked-match findings live in `benchmark.md`.
 | --- | --- |
 | **LOCKED** | Product or safety contract. Change only through an explicit, evidence-backed project decision. |
 | **VERIFIED CURRENT** | Directly observed on the current Mac, installed app, source tree, or live runtime. Mutable software/version facts must retain an observation date. |
-| **VERIFIED HISTORICAL** | Direct result from an earlier capture or campaign. Useful evidence, but not automatically transferable to the current M4/native Build 7 runtime. |
+| **VERIFIED HISTORICAL** | Direct result from an earlier capture or campaign. Useful evidence, but not automatically transferable to the current M4/native runtime. |
 | **USER ACCEPTED/REJECTED** | Direct usability evidence supplied by the person playing TFT. It is decisive for playability but does not by itself identify a software boundary. |
 | **INFERRED** | Evidence-supported explanation that has not been observed at the claimed internal boundary. |
 | **UNKNOWN** | Not measured or not validly attributable. Never silently promote this to fact. |
@@ -57,7 +57,11 @@ must never be presented as measurements of this M4 Mac mini.
 - **LOCKED:** no scrcpy or encoded-video path is the production display path.
 - **VERIFIED CURRENT:** bundle identifier `com.flashls1.tftmac`.
 - **VERIFIED CURRENT:** installed release `/Applications/TFTMAC.app`, version
-  2.2.0, build 7, arm64.
+  2.3.0, build 8, arm64. Capture
+  `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31`
+  directly proves authorized ADB, official TFT PID observation, exact
+  `GameActivity` SurfaceView selection, automatic graphics-run admission,
+  `COMPLETE` stack receipts, and frame-to-run/hash/window/receipt linkage.
 - **VERIFIED CURRENT:** `/Users/flash/Desktop/TFTMAC.app` is a symlink to the
   installed `/Applications/TFTMAC.app`, so the Desktop launcher opens the same
   release rather than a second copy.
@@ -302,12 +306,26 @@ credential-bearing or full raw data.
 | `logcat_aggregates` | ANR/fatal/LMK/renderer/audio counts | 5 seconds |
 | `pipeline_log_aggregates` | gfxstream/ASG/Vulkan/MoltenVK/shader/fence counts | 5 seconds |
 | `graphics_pipeline_snapshots` | effective layer and graphics identities | 30 seconds |
+| `graphics_runs` | automatic TFT process/layer lifetime, configuration SHA, target FPS, start/end reason | process/layer lifecycle |
+| `graphics_pipeline_incidents` | automatic exact-layer degradation and conservative causal unknowns | bounded incident |
 | `diagnostic_artifacts` | trace path/hash/processor/normalization status | event-driven |
 | `combat_benchmarks` | complete benchmark configuration, coverage, validity, metrics | benchmark end |
 | `combat_incidents` | trigger metrics, trace link, first divergent boundary/unknowns | incident |
 | `combat_comparisons` | control/candidate deltas and decision | comparison |
 | `game_process_sessions` | TFT PID lifetime | process transition |
 | `input_samples` | touch metadata and keyboard counts only | each input event |
+
+- **IMPLEMENTED IN CURRENT SOURCE; RUNTIME NOT YET VERIFIED:** base graphics
+  logging is automatic from the observed TFT process/layer start through TFT
+  process or app close. It is independent of the optional Combat Benchmark and
+  does not use a battle classifier.
+- **IMPLEMENTED IN CURRENT SOURCE; RUNTIME NOT YET VERIFIED:** graphics
+  snapshots carry canonical stack-receipt JSON, SHA-256, completeness, and
+  explicit unknowns; graphics rows are scoped by `graphics_run_id`, and exact
+  intervals may join their containing frame window.
+- **LOCKED:** those joins support conservative `TFT`/`PIPE`/`MAC` weakest-
+  boundary views only. They do not create a trusted per-frame guest-to-host ID
+  or permit causal ownership beyond the evidence.
 
 Privacy facts:
 
@@ -323,7 +341,11 @@ Privacy facts:
   logged frame and every resource/pipeline sample inside the range participates;
   no phase selection or classification is required.
 - **LOCKED:** the current UI/source-named Combat Benchmark remains a faster
-  5–8 minute bounded A/B screen; it does not replace a full-run promotion check.
+  5–8 minute bounded A/B screen; it does not gate base graphics logging or
+  replace a full-run promotion check.
+- **LOCKED:** graphics optimization decisions use graphics cadence and boundary
+  evidence. CPU/RAM/audio observations remain health/correctness context only;
+  this effort does not optimize them.
 - **LOCKED:** the product target is useful-frame cadence of at least 60 FPS
   throughout the complete run, not a flattering average or selected scene.
 - **LOCKED:** `benchmark.md` is the formula and reporting authority. Historical
@@ -420,7 +442,7 @@ Decision rules:
 ### Earlier fixed-stage graphics campaign
 
 These are **VERIFIED HISTORICAL** results from a different M1 Max/userdebug
-campaign, useful for candidate selection but not current M4 Build 7 performance:
+campaign, useful for candidate selection but not current M4 runtime performance:
 
 - ASG versus pipe at exact stage 1-1: 40.1 FPS / 34.85 ms p95 versus
   29.6 FPS / 49.75 ms p95. ASG selected.
@@ -490,7 +512,8 @@ campaign, useful for candidate selection but not current M4 Build 7 performance:
    scheduling after exec.
 3. The first divergent boundary in the run's worst sustained under-60 periods.
 4. Exact ASG-versus-gfxstream-versus-MoltenVK ownership without a frame-ID
-   correlation ring and valid synchronized trace.
+   correlation ring and valid synchronized trace. Direct per-frame stack SHA
+   and per-window joins improve scope integrity but do not close this gap.
 5. Whether persistent MoltenVK pipeline caching removes meaningful frame stalls
    in this exact shipping path.
 6. Whether MMAP can reduce host copy/frame age without tearing or ownership

@@ -2,7 +2,7 @@
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
 **Current development line:** `codex/native-tftmac-2.0.0`  
-**Current installed release:** TFTMAC 2.2.0 build 7  
+**Current installed release:** TFTMAC 2.3.0 build 8, signed, installed, live-launched, and automatically logging
 **Project record through:** 2026-08-31 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
@@ -137,6 +137,7 @@ Mac application:
 | 2026-08-30/31 | Rapid Combat A/B logger | Exact TFT SurfaceFlinger windows, incidents, bounded Perfetto, SQL comparison/decisions implemented |
 | 2026-08-31 UTC | Home Run A rejected | Riot Performance Mode Beta experience rejected and made non-selectable |
 | 2026-08-31 UTC | Build 7 Combat Latency A | One-factor pre-exec host QoS candidate built, tested, installed, and live-launched; combat gain still unproven |
+| 2026-08-31 UTC | Build 8 automatic graphics logger | Signed 2.3.0/8 installed and live-launched; PID 2704 and the exact TFT SurfaceView opened the logger automatically, periodic receipts reached `COMPLETE`, and every observed frame fact resolved through its run, stack hash, window, and receipt |
 
 Relevant Git milestones:
 
@@ -452,24 +453,35 @@ and historical Medium-profile records must not override the current SSOT.
 - Never record or automate credentials.
 - Never call SRC/OUT presentation rates Unreal FPS.
 - Never assign a graphics bottleneck without the first valid divergent boundary.
+- Keep base graphics logging automatic from TFT process/layer start through
+  process/app close; a controlled Combat Benchmark is optional and never gates
+  that logging.
+- Keep the current optimization equation graphics-only. CPU/RAM/audio remain
+  health and correctness context, not candidate optimization work.
 
 ## 12. Next decisive work
 
-1. Finish/persist this Build 7 repository handoff.
-2. Preserve the marked Combat Latency A full-run baseline and run a compatible
-   Control full run; a short bounded Control/Candidate A/B may be used for a
-   faster controlled screen once clock quality passes.
-3. Compare complete timelines, whole-run distributions, every sustained
-   under-60 episode, and all resource/pipeline correlations using
-   `benchmark.md`; reject or cold-confirm from evidence, never launch receipts.
-4. If configuration cannot produce or explain a gain, implement the allocation-
-   free gfxstream frame-ID/queue-depth correlation ring described in `dev.md`.
-5. Use that evidence to choose the actual code owner: adaptive ASG, gfxstream
+1. Preserve the installed signed Build 8 automatic-graphics logger, its release
+   hashes, and live acceptance capture
+   `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31`.
+2. Treat automatic `graphics_runs`, stack-receipt SHA, direct per-frame stack
+   identity, per-window joins, and conservative `TFT`/`PIPE`/`MAC` views as
+   live-verified Build 8 behavior, not pending source claims.
+3. Preserve the marked Combat Latency A baseline and run a compatible Control;
+   a short bounded Control/Candidate A/B remains optional screening, not base
+   logging admission.
+4. Compare complete graphics timelines, every sustained under-60 episode,
+   receipt completeness, and conservative boundary views using `benchmark.md`.
+   CPU/RAM/audio remain correctness context only.
+5. If the automatic evidence still leaves a real guest/host queue gap, implement
+   the allocation-free gfxstream frame-ID/queue-depth correlation ring described
+   in `dev.md` as the gated next layer.
+6. Use that evidence to choose the actual code owner: adaptive ASG, gfxstream
    scheduling, MoltenVK pipeline cache/submit pacing, or ANGLE capability/shader
    path.
-6. Preserve the recurrent Riot WebView ANR as a separate login reliability issue,
+7. Preserve the recurrent Riot WebView ANR as a separate login reliability issue,
    not as a graphics benchmark result.
-7. Measure startup phases if the user's observed slow startup remains after login
+8. Measure startup phases if the user's observed slow startup remains after login
    reliability is stable; do not trade away logger-before-runtime, ADB, power,
    package, or controller correctness to make a cosmetic startup number smaller.
 
