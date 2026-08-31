@@ -3,12 +3,13 @@
 **Project:** native macOS TFT client experience using the official Android TFT package  
 **Current development line:** `codex/native-tftmac-2.0.0`  
 **Current installed release:** TFTMAC 2.2.0 build 7  
-**Project record through:** 2026-08-30 America/Chicago
+**Project record through:** 2026-08-31 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
 what TFTMAC is, why the architecture changed, what has been built, what the
 evidence says, and what remains unfinished. Immutable/current facts live in
-`facts.md`; engineering hypotheses and next code work live in `dev.md`.
+`facts.md`; exact benchmark formulas and current run findings live in
+`benchmark.md`; engineering hypotheses and next code work live in `dev.md`.
 
 ## 1. Goal
 
@@ -284,6 +285,20 @@ equivalents.
 - The result is `HOME_RUN`, `PROMISING`, `REJECT`, or `INCONCLUSIVE`.
 - A winning candidate needs a cold confirmation before promotion.
 
+### Full-match analysis
+
+Marked full matches are now the preferred product-performance record because
+they contain multiple battles and expose sustained/late-game pressure. The
+short Combat Benchmark remains the faster one-factor A/B screen. Root
+`benchmark.md` is the shared human/AI contract for pairing match markers,
+calculating exact raw-interval metrics, ranking high-load periods, correlating
+legal clock domains, and emitting claim/evidence/unknown records.
+
+Current native markers identify match entry/end but not semantic battle/round
+boundaries. Until a validated privacy-preserving phase classifier or combat
+markers exist, automatically selected bad periods are reported as
+`TELEMETRY_HIGH_LOAD`, not claimed to be proven battles.
+
 ## 8. Performance development history
 
 ### What was learned from the earlier fixed-stage campaign
@@ -367,14 +382,27 @@ Direct evidence from that capture:
 - `TFT_READY_FOR_USER` with Unreal Engine and CoreAudio;
 - one-second and resource/clock/pipeline tables continued advancing;
 - Riot WebView ANR was recorded and recovered without restarting the emulator.
+- the user later marked one full match from `2026-08-31T03:19:25Z` through
+  `03:51:00Z` (31m35.054s);
+- that match recorded 49.449 weighted FPS, 16.300 FPS 1% low, 33.822 ms p95,
+  48.746 ms p99, 1,254.162 ms maximum, 19.110% jank, and 0.610% severe
+  intervals from 93,724 exact TFT actual-present intervals;
+- all overlapping exact-layer windows were available, the TFT layer was stable,
+  and no frame history was truncated;
+- final Metal output remained near 60 Hz with zero drawable/command errors while
+  reusing 23,231 source frames, showing why OUT cadence cannot stand in for
+  useful gameplay cadence;
+- clock p95 RTT was 86.757 ms, so this match cannot assign the first upstream
+  cause or serve as a formal matched candidate-vs-Control decision.
 
 The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the installed
 `/Applications/TFTMAC.app`. At handoff verification both the native app and its
 owned QEMU process were still running; they were not restarted for documentation
 or Git work.
 
-What it does **not** prove: a Combat Latency A FPS win. A valid matched combat
-pair is still required.
+What it does **not** prove: a Combat Latency A FPS win. It is one valid full-
+match candidate baseline, not a compatible A/B pair. A matched Control and
+candidate comparison is still required.
 
 ## 10. Current repository state and authority map
 
@@ -398,6 +426,7 @@ Current authority roles:
 | --- | --- |
 | `facts.md` | facts, hard boundaries, current observations, explicit unknowns |
 | `project.md` | project history, architecture pivots, current state, handoff |
+| `benchmark.md` | current full-match/short-A/B formulas, validity, AI report contract, and findings |
 | `dev.md` | developer map, experiments, hypotheses, next code contracts |
 | `ssot/runtime-authority.json` | machine-readable current runtime/release evidence |
 | `ssot/STACK.lock.yaml` | frozen stack/profile/toolchain selections |
@@ -427,10 +456,12 @@ and historical Medium-profile records must not override the current SSOT.
 ## 12. Next decisive work
 
 1. Finish/persist this Build 7 repository handoff.
-2. Run one valid heavy-combat Control benchmark and one comparable Combat
-   Latency A benchmark.
-3. Reject or cold-confirm the candidate from SQL; do not promote from launch
-   receipts.
+2. Preserve the marked Combat Latency A full-match baseline and run a compatible
+   Control full match; a short Control/Candidate Combat A/B may be used for a
+   faster controlled screen once clock quality passes.
+3. Compare whole-match and matched high-load/battle distributions using
+   `benchmark.md`; reject or cold-confirm the candidate from evidence, never
+   from launch receipts.
 4. If configuration cannot produce or explain a gain, implement the allocation-
    free gfxstream frame-ID/queue-depth correlation ring described in `dev.md`.
 5. Use that evidence to choose the actual code owner: adaptive ASG, gfxstream

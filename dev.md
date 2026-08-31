@@ -8,7 +8,8 @@
 This is the engineering working file. It contains code ownership, measurement
 contracts, confirmed and rejected experiments, active hypotheses, and the next
 implementation gates. Facts that must not drift live in `facts.md`; project
-history and handoff live in `project.md`.
+history and handoff live in `project.md`; exact full-match/A/B formulas and
+current findings live in `benchmark.md`.
 
 ## 1. Developer charter
 
@@ -102,7 +103,8 @@ QEMU child-thread inheritance=NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE
 
 The candidate configuration SHA-256 is
 `05039d1fd0987f46fc7da8de5f483d8c7ffaf8f39bd1eaecdd1aee11603bbb07`.
-It has passed launch/readiness evidence but has no valid matched combat result.
+It has passed launch/readiness and one marked full-match baseline, but it has no
+valid matched Control comparison.
 
 ## 4. Graphics pipeline and observability
 
@@ -142,6 +144,11 @@ makes final presentation a poor first target for those incidents; it does not by
 itself distinguish Unreal, ANGLE, ASG, gfxstream, or MoltenVK.
 
 ## 5. SQL and capture contract
+
+`benchmark.md` is authoritative for legal time-domain joins, raw-interval
+formulas, full-match/high-load segmentation, exact SQL, AI output shape, and
+promotion rules. The queries below are an operational index, not an alternate
+formula specification.
 
 Session authority:
 
@@ -224,7 +231,20 @@ SELECT * FROM combat_incidents ORDER BY observed_monotonic_ns;
 SELECT * FROM combat_comparisons ORDER BY rowid;
 ```
 
-## 6. Combat A/B validity and decisions
+## 6. Full-match and Combat A/B validity and decisions
+
+### Full match
+
+- `MATCH_ENTRY` through `MATCH_END` is the preferred real-product record.
+- Full runs capture multiple battles, planning periods, late-game pressure, and
+  resource drift; they are required before normal-play promotion.
+- Current native data does not identify semantic combat/round boundaries.
+  Deterministic 30-second bad periods are `TELEMETRY_HIGH_LOAD` until explicit
+  markers or a validated privacy-preserving phase classifier exists.
+- A bad clock gate leaves direct guest-frame results valid but makes cross-host
+  ownership `UNKNOWN`.
+- A full candidate run without a compatible Control is a baseline, not an A/B
+  decision.
 
 ### Valid run
 
@@ -257,9 +277,9 @@ role—not the ephemeral token prefix/suffix.
 
 | Decision | Rule |
 | --- | --- |
-| HOME_RUN | 1% low +20%, jank/severe -30%, and either FPS +10% or p95 +15% |
-| PROMISING | FPS +5%, 1% low +10%, no correctness or tail regression |
-| REJECT | gain below 5%, p95/p99 +10% worse, or any correctness/usability regression |
+| HOME_RUN | after the weighted-FPS +5% guard: 1% low +20%, jank and severe each -30% relative, and either weighted FPS +10% or p95 interval -15% |
+| PROMISING | weighted FPS +5%, 1% low +10%, and p95/p99 intervals no worse |
+| REJECT | weighted FPS gain below 5%, p95/p99 interval +10% worse, or candidate correctness/usability failure |
 | INCONCLUSIVE | invalid/mismatched workload, coverage, clock, observer, or threshold gap |
 
 Any HOME_RUN/PROMISING result needs a five-minute cold confirmation. Rollback is
@@ -298,6 +318,28 @@ The configuration combined Riot Performance Mode Beta with
 `NativeTextureDecompression` and `NoDelayCloseColorBuffer`; formal evidence
 cannot allocate blame among those factors. Operationally, the complete preset is
 barred and should not be decomposed unless new evidence gives a specific reason.
+
+### Build 7 Combat Latency A marked full match
+
+| Metric | Value |
+| --- | ---: |
+| Duration | 1,895.054 s / 31m35.054s |
+| Exact actual-present intervals | 93,724 |
+| Weighted FPS | 49.449 |
+| 1% low | 16.300 FPS |
+| p50 / p95 / p99 | 16.965 / 33.822 / 48.746 ms |
+| Maximum | 1,254.162 ms |
+| Jank / severe rate | 19.110% / 0.610% |
+| Exact-layer coverage/history | 100% measured overlap / no truncation |
+| Final Metal output | 59.968 FPS mean; zero drawable/command errors; 3.267 ms max GPU time |
+| Repeated-source presentations | 23,231 |
+| Clock | 97.494% in-range bracket; 86.757 ms p95 RTT |
+| Decision | full-match candidate baseline; no matched Control; cross-host cause `UNKNOWN` |
+
+This is direct proof that the current full-run tail remains poor and that final
+OUT cadence masks repeated upstream frames. It does not prove whether Combat
+Latency A improved or regressed against Control. Complete formulas, high-load
+periods, resources, and claim limits are retained in `benchmark.md`.
 
 ## 8. Negative-result ledger
 
@@ -362,8 +404,11 @@ QoS class, reducing scheduling delay in critical host work.
 **Implemented:** `RuntimeHost/main.c`, profile/receipt/rollback in native Swift,
 Game Mode eligibility, unit tests.
 
-**Evidence needed:** matched Control/Candidate actual-present windows, host CPU,
-thermal/power, source freshness, final presenter, valid clock sync.
+**Evidence now held:** one marked candidate full match with exact actual-present,
+source, final-presenter, CPU/memory, thermal/power, and audio data.
+
+**Evidence still needed:** a compatible Control, semantic or consistently
+inferred workload matching, and valid clock sync for cross-boundary ordering.
 
 **Accept:** HOME_RUN/PROMISING plus cold confirmation.  
 **Reject:** no gain, worse tails, or any correctness/login/audio/cleanup issue.  
@@ -523,14 +568,16 @@ or weaken AVD rollback merely to report a smaller startup number.
 
 ## 11. Fastest next development sequence
 
-1. Preserve Build 7 and run a valid Control combat benchmark.
-2. Run a comparable Combat Latency A benchmark.
-3. Let SQL classify it; cold-confirm only a winner.
+1. Preserve Build 7 and the marked Combat Latency A full-match baseline.
+2. Run a compatible marked Control full match; optionally use a valid short
+   Control/Candidate Combat A/B for a faster one-factor screen.
+3. Compare whole-match plus matched battle/high-load distributions using
+   `benchmark.md`; cold-confirm only a winner.
 4. If it fails or remains causally unknown, implement H2's fixed frame-ID ring.
 5. Use the first divergent boundary to choose exactly one of H3, H4, H5, or H6.
-6. Run a five-to-eight-minute heavy-combat A/B; do not require full matches for
-   screening.
-7. Promote only after repeated gain and no correctness/user-experience failure.
+6. Run a five-to-eight-minute heavy-combat A/B when screening is faster.
+7. Promote only after repeated gain, one marked full match, and no correctness/
+   user-experience failure.
 
 This sequence does not mean “test forever.” The first two runs decide whether
 the code already developed in Build 7 is useful. If not, the frame-ID ring is
@@ -596,12 +643,13 @@ session can seal and restore its AVD transaction.
 
 ## 14. Current gaps to close
 
-- valid matched Control/Combat Latency A comparison;
+- compatible marked Control versus Combat Latency A comparison;
 - actual worker-thread QoS/inheritance evidence;
 - first-boundary frame correlation under a true heavy fight;
+- native semantic battle/round markers or a validated privacy-preserving phase
+  classifier;
 - recurrent Riot WebView/IME reliability;
 - audible-sound user acceptance;
-- fully marked Build 7 start-to-result match;
 - public signing/notarization if distribution beyond this Mac becomes a goal;
 - source-level gfxstream/MoltenVK code only after the relevant boundary is named.
 - measured startup-phase budget if the user's slow-launch observation persists.

@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
 **Authority date:** 2026-08-30 America/Chicago  
-**Observed runtime evidence through:** 2026-08-31T02:56:28Z  
+**Observed runtime evidence through:** 2026-08-31T03:51:00Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -9,6 +9,9 @@ results. A statement becomes a project fact only when it has direct machine,
 runtime, source, SQL, or user-acceptance evidence. Requested settings are not
 effective settings; presentation cadence is not Unreal FPS; a hypothesis is not a
 result.
+
+Exact benchmark formulas, full-match analysis, AI-readable output shape, and the
+current marked-match findings live in `benchmark.md`.
 
 ## Evidence vocabulary
 
@@ -314,7 +317,17 @@ Privacy facts:
   PIN, CAPTCHA, MFA value, or typed content belongs in SQL or project history.
 - No remote telemetry service is required.
 
-## 10. Combat benchmark contract
+## 10. Benchmark contract
+
+- **LOCKED:** marked full matches are preferred product-performance evidence
+  because they contain multiple battles and sustained early/late-game pressure.
+- **LOCKED:** the 5–8 minute Combat Benchmark remains the faster controlled A/B
+  screen; it does not replace a full-match promotion check.
+- **LOCKED:** current native code records `MATCH_ENTRY`/`MATCH_END`, but it does
+  not yet record semantic combat/round boundaries. Fixed high-load intervals
+  must be labeled `TELEMETRY_HIGH_LOAD`, not asserted to be proven battles.
+- **LOCKED:** `benchmark.md` is the formula and reporting authority. Historical
+  `docs/benchmarks.md` results retain their original M1 Max/userdebug scope.
 
 - Start manually when representative heavy combat begins.
 - Minimum valid combat duration: 300 seconds.
@@ -336,9 +349,10 @@ Privacy facts:
 
 Decision rules:
 
-- **HOME_RUN:** 1% low +20% or more, jank/severe rate -30% or more, and either
-  effective FPS +10% or p95 improvement +15%.
-- **PROMISING:** effective FPS +5% or more and 1% low +10% or more, with no
+- **HOME_RUN:** after the weighted-FPS +5% guard, 1% low +20% or more, jank and
+  severe rates each -30% or more relative, and either weighted FPS +10% or p95
+  interval -15%.
+- **PROMISING:** weighted FPS +5% or more and 1% low +10% or more, with no
   correctness or tail regression.
 - **REJECT:** gain below 5%, p95/p99 worsens at least 10%, or any boot, render,
   input, audio, login, memory, cleanup, or usability regression.
@@ -365,6 +379,22 @@ Decision rules:
 - **VERIFIED CURRENT:** the same live session recorded Riot WebView/input ANR
   aggregates and a narrow Riot-only recovery. Do not misclassify that as a
   graphics improvement or as a whole-emulator crash.
+- **VERIFIED CURRENT:** the user marked one complete Build 7 match in that same
+  session from event 1442 at `2026-08-31T03:19:25Z` through event 3065 at
+  `2026-08-31T03:51:00Z`, a 1,895.054-second / 31m35.054s range.
+- **VERIFIED CURRENT:** the marked match contains 93,724 exact TFT
+  actual-present intervals: weighted FPS 49.449, 1% low 16.300 FPS, p95
+  33.822 ms, p99 48.746 ms, maximum 1,254.162 ms, 19.110% jank, and 0.610%
+  severe intervals. Exact-layer measured coverage was 100%, with one stable
+  layer and no history truncation.
+- **VERIFIED CURRENT:** final TFTMAC Metal output averaged 59.968 FPS with zero
+  drawable/command errors and maximum recorded final-presenter GPU time
+  3.267 ms, while 23,231 presentations reused a source frame. This makes the
+  final pass a poor explanation for the missing useful frames in this match; it
+  does not identify which upstream component was first late.
+- **UNKNOWN:** this full match is not a candidate-vs-Control decision. It has no
+  matched Control/formal benchmark row, and p95 clock RTT was 86.757 ms, so
+  cross-host ownership is invalid. `benchmark.md` preserves the complete result.
 
 ### Rejected Home Run A / Riot Performance Mode Beta
 
@@ -440,8 +470,9 @@ campaign, useful for candidate selection but not current M4 Build 7 performance:
   and stable semantic TFT-layer comparison have native tests.
 - **VERIFIED LAUNCH:** Build 7 established the requested QoS at the host
   pre-exec boundary and reached TFT ready with logging active.
-- **UNKNOWN:** combat benefit. No matched valid Control/Combat Latency A pair has
-  been completed. Never call it faster until that SQL comparison exists.
+- **UNKNOWN:** comparative combat benefit. One full candidate match is now
+  measured, but no matched valid Control/Combat Latency A pair exists. Never
+  call it faster until a compatible comparison exists.
 
 ## 13. Explicit unknowns and open acceptance
 
@@ -460,7 +491,9 @@ campaign, useful for candidate selection but not current M4 Build 7 performance:
 8. Whether Riot WebView input ANR recurs after future TFT/WebView updates.
 9. Public distribution acceptance: the current app is locally signed but not
    notarized.
-10. A fully marked start-to-result match under Build 7.
+10. Semantic battle/round boundaries inside full matches; current native data
+    can identify deterministic high-load periods but cannot name them as proven
+    battles.
 
 ## 14. Authority and update rule
 
@@ -469,9 +502,10 @@ Use this precedence for current truth:
 1. direct current machine/runtime/SQL evidence;
 2. `ssot/runtime-authority.json` and `ssot/STACK.lock.yaml` after reconciliation;
 3. current native source and tests;
-4. `docs/TFTMAC_NATIVE_RUNTIME_KNOWLEDGE_BASE.md` and `dev.md`;
-5. historical campaign docs and SQL, explicitly labeled historical;
-6. plans, simulations, and research as hypotheses only.
+4. `benchmark.md` for formulas, validity, analysis output, and current findings;
+5. `docs/TFTMAC_NATIVE_RUNTIME_KNOWLEDGE_BASE.md` and `dev.md`;
+6. historical campaign docs and SQL, explicitly labeled historical;
+7. plans, simulations, and research as hypotheses only.
 
 `TFTMAC.md`, old launchers, old Node helpers, old source-build plans, and old
 Medium-profile records are not current runtime authority. When a mutable fact
