@@ -1,5 +1,12 @@
 import Foundation
 
+enum CombatLayerIdentity {
+    static func comparable(_ identity: String) -> String? {
+        let stable = "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity]"
+        return identity.contains(stable) ? stable : nil
+    }
+}
+
 enum CombatBenchmarkDecision: String, Equatable, Sendable {
     case homeRun = "HOME_RUN"
     case promising = "PROMISING"

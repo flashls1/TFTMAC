@@ -26,7 +26,7 @@ Use the official Google Play path. Confirm the package is `com.riotgames.league.
 
 ## Performance is poor
 
-Use the existing raw-first capture tooling. Compare one variable at a time against the accepted baseline and cold-confirm any improvement before keeping it. Medium / 60 / Performance OFF is the current known playable configuration; Ultra High is a known rejected configuration on the target M4 host.
+Use the existing raw-first capture tooling. Compare one variable at a time against the accepted baseline and cold-confirm any improvement before keeping it. High / 60 / Performance OFF is the user-confirmed current playable configuration. Riot Performance Mode Beta and Ultra High are rejected for current usability on the target M4 host.
 
 ## Safe diagnostics
 

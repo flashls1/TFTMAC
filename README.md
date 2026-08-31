@@ -29,6 +29,14 @@ The current stock emulator authority is Android Emulator 37.1.11. The exact inst
 
 The abandoned source-built emulator laboratory is not part of the normal product path.
 
+## Current handoff authority
+
+- [`facts.md`](facts.md) — locked facts, current observations, verified results, and explicit unknowns.
+- [`project.md`](project.md) — complete project history, architecture pivots, current Build 7 state, and continuity for a new chat.
+- [`dev.md`](dev.md) — code ownership, experiment ledger, SQL contracts, hypotheses, and the next development gates.
+
+Historical plans and benchmark records remain useful evidence, but they do not override these current boundaries or the machine-readable files under `ssot/`.
+
 ## Native build
 
 Requirements:
@@ -81,7 +89,7 @@ If Google Play or Riot requires authentication, MFA, consent, or CAPTCHA, TFTMAC
 
 Performance work is evidence-driven. Raw telemetry is append-only during capture, then normalized for analysis. A/B changes are small, reversible, and accepted only when repeatable evidence supports them.
 
-The current target is 1920x1080 at 60 Hz. Medium graphics is the accepted playable baseline; Ultra High was rejected on the target M4 host because of severe lag.
+The current target is 1920x1080 at 60 Hz. High graphics at a 60 FPS cap with Riot Performance Mode OFF is the accepted playable baseline. Ultra High and Riot Performance Mode Beta were rejected on the target M4 host because of severe lag and unacceptable combat tails.
 
 ## Project boundaries
 

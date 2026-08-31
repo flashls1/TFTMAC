@@ -146,7 +146,7 @@ The signing certificate digest has not yet been promoted as verified project aut
 Guest RAM 5.0 GB: KEEP as current development baseline
 Guest RAM 4.0 GB: not the default; do not force a further RAM cut
 CPU: 6 cores baseline
-TFT graphics: Medium baseline
+TFT graphics: High baseline
 TFT FPS cap: 60 baseline
 TFT Performance Mode (Beta): OFF baseline
 Ultra High graphics: REJECTED on current stack for usability; user observed unplayable lag
@@ -154,7 +154,7 @@ ASG draw flush 800: baseline
 ASG draw flush 400: experimental until controlled evidence promotes it
 ```
 
-Do not silently default the app to Ultra High. Medium/60/OFF is the current playable in-game reference until better measured evidence exists.
+Do not silently default the app to Ultra High or Riot Performance Mode Beta. High/60/OFF is the current user-confirmed playable in-game reference until better measured evidence exists.
 
 ---
 
@@ -876,10 +876,10 @@ UNSUPPORTED
 
 ## 16.2 CPU cores
 
-Expose:
+Expose exactly the values implemented by the current native profile:
 
 ```text
-2, 3, 4, 5, 6, 7, 8
+4, 6, 8
 ```
 
 Default: `6`  
@@ -889,24 +889,19 @@ Pre-release validation tests the CPU dimension one value at a time against the b
 
 ## 16.3 Guest RAM
 
-Expose exactly:
+Expose exactly the values implemented by the current native profile:
 
 ```text
 4.0
-4.5
 5.0
-5.5
 6.0
-6.5
-7.0
-7.5
-8.0 GB
+GB
 ```
 
 Default: `5.0 GB / 5120 MB`  
 Apply: `RESTART_ANDROID`
 
-The UI is simple: dropdown/stepper in 0.5-GB increments.
+The UI is a validated dropdown; unsupported intermediate values are not silently accepted.
 
 Pre-release validation smoke-tests each value independently against the baseline CPU/graphics configuration. This proves launch compatibility without requiring nine full TFT matches.
 
@@ -979,7 +974,7 @@ Performance Mode (Beta): On / Off
 Current baseline:
 
 ```text
-Medium / 60 / OFF
+High / 60 / OFF
 ```
 
 Current Ultra High verdict:
@@ -1572,7 +1567,7 @@ Do not test all combinations.
 RAM dimension:
 
 ```text
-4.0 / 4.5 / 5.0 / 5.5 / 6.0 / 6.5 / 7.0 / 7.5 / 8.0 GB
+4.0 / 5.0 / 6.0 GB
 ```
 
 For each, hold CPU=6 and all other baseline values. Verify Android boots and TFT reaches a stable ready/lobby state without OOM/ANR.
@@ -1580,7 +1575,7 @@ For each, hold CPU=6 and all other baseline values. Verify Android boots and TFT
 CPU dimension:
 
 ```text
-2 / 3 / 4 / 5 / 6 / 7 / 8
+4 / 6 / 8
 ```
 
 For each, hold RAM=5.0 GB and all other baseline values. Verify boot/readiness.
@@ -1591,7 +1586,7 @@ ASG dimension:
 800 / 400
 ```
 
-Hold CPU=6, RAM=5.0 GB, Medium/60/OFF.
+Hold CPU=6, RAM=5.0 GB, High/60/OFF.
 
 Full-match performance validation is required only for the baseline and any candidate being promoted, not every valid dropdown choice.
 
@@ -1773,8 +1768,8 @@ Exit: clean machine/runtime state can get from app launch to official TFT ready 
 ```text
 Baseline/Custom profiles
 config hashes
-CPU 2-8
-RAM 4.0-8.0 by 0.5
+CPU 4/6/8
+RAM 4.0/5.0/6.0 GB
 ASG 800/400
 Apply & Restart
 last-known-good rollback
@@ -1893,12 +1888,12 @@ Core native release is not complete until every item below is proven:
 [ ] signer digest captured and retained as package evidence
 [ ] official Play install/update flow works
 [ ] Riot login/patch flow works
-[ ] CPU 2-8 UI works
-[ ] RAM 4.0-8.0 by 0.5-GB UI works
+[ ] CPU 4/6/8 UI works
+[ ] RAM 4.0/5.0/6.0-GB UI works
 [ ] ASG 800/400 UI works
 [ ] profile persistence/hash works
 [ ] Apply & Restart seals old capture and starts new logger first
-[ ] Medium/60/OFF baseline represented correctly
+[ ] High/60/OFF baseline represented correctly
 [ ] Ultra High remains rejected until new evidence promotes it
 [ ] live FPS visible
 [ ] fps.jsonl advances once/sec

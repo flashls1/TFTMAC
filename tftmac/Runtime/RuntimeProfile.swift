@@ -6,7 +6,8 @@ import Foundation
 /// and recorded by the launch transaction.
 enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     case control
-    case homeRunA = "home_run_a"
+    case combatLatencyA = "combat_latency_a"
+    case retiredHomeRunA = "home_run_a"
 
     private static let preferenceKey = "runtime.experimentPreset"
     static let baselineEmulatorFeatures = [
@@ -18,31 +19,43 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
         "AsyncComposeSupport",
         "VirtioGpuFenceContexts"
     ]
+    static let selectableCases: [Self] = [.control, .combatLatencyA]
 
     var displayName: String {
         switch self {
         case .control: "Control (Proven Baseline)"
-        case .homeRunA: "Home Run A Performance Mode"
+        case .combatLatencyA: "Combat Latency A"
+        case .retiredHomeRunA: "Retired — Performance Mode Beta"
         }
     }
 
     var detail: String {
         switch self {
         case .control:
-            "Uses the proven baseline settings."
-        case .homeRunA:
-            "Requires official TFT Performance Mode Beta to be enabled manually; requests two reversible emulator features on the next launch."
+            "Uses High / 60 FPS / Performance Mode OFF and the proven emulator settings."
+        case .combatLatencyA:
+            "Keeps the complete Control graphics stack and requests user-interactive macOS scheduling for the emulator launch."
+        case .retiredHomeRunA:
+            "Historical receipt only. Riot Performance Mode Beta is rejected and cannot be selected for a new launch."
         }
     }
 
     var requiresManualPerformanceModeBetaConfirmation: Bool {
-        self == .homeRunA
+        self == .retiredHomeRunA
+    }
+
+    var isActiveCandidate: Bool {
+        self == .combatLatencyA
+    }
+
+    var requestsHostLatencyQoS: Bool {
+        self == .combatLatencyA
     }
 
     var emulatorFeatureAdditions: [String] {
         switch self {
-        case .control: []
-        case .homeRunA: ["NativeTextureDecompression", "NoDelayCloseColorBuffer"]
+        case .control, .combatLatencyA: []
+        case .retiredHomeRunA: ["NativeTextureDecompression", "NoDelayCloseColorBuffer"]
         }
     }
 
@@ -57,9 +70,10 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     ) -> RuntimeExperimentConfigurationReceipt {
         let configuration: [String: Any] = [
             "emulator_features": effectiveEmulatorFeatures(baseline: baselineFeatures),
+            "host_qos_requested": requestsHostLatencyQoS ? "user_interactive" : "default",
             "preset": rawValue,
             "requires_manual_performance_mode_beta_confirmation": requiresManualPerformanceModeBetaConfirmation,
-            "schema": 1
+            "schema": 2
         ]
         let data = (try? JSONSerialization.data(withJSONObject: configuration, options: [.sortedKeys])) ?? Data()
         return RuntimeExperimentConfigurationReceipt(
@@ -70,7 +84,8 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
 
     static func load(from defaults: UserDefaults = .standard) -> Self {
         guard let rawValue = defaults.string(forKey: preferenceKey),
-              let preset = Self(rawValue: rawValue) else {
+              let preset = Self(rawValue: rawValue),
+              Self.selectableCases.contains(preset) else {
             return .control
         }
         return preset
@@ -155,9 +170,11 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
             "controller_port": controllerPort,
             "density_dpi": densityDPI,
             "emulator_features": effectiveEmulatorFeatures,
+            "game_mode_eligible": true,
             "gpu_mode": gpuMode,
             "graphics_transport": graphicsTransport,
             "height": height,
+            "host_qos_requested": experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default",
             "moltenvk_fast_math": true,
             "moltenvk_max_active_command_buffers": 64,
             "moltenvk_synchronous_queue_submits": false,
@@ -165,10 +182,10 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
             "ram_mib": ramMiB,
             "refresh_hz": refreshHz,
             "requires_manual_performance_mode_beta_confirmation": experimentPreset.requiresManualPerformanceModeBetaConfirmation,
-            "schema": 1,
+            "schema": 2,
             "tft_frame_rate_cap": 60,
-            "tft_graphics_quality": "medium",
-            "tft_performance_mode_beta_expected": experimentPreset == .homeRunA,
+            "tft_graphics_quality": "high",
+            "tft_performance_mode_beta_expected": false,
             "vcpu": vCPU,
             "width": width
         ]
@@ -230,9 +247,10 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
     }
 
     func with(experimentPreset: RuntimeExperimentPreset) -> Self {
+        let baseIdentifier = identifier.components(separatedBy: "_preset_").first ?? identifier
         let identifier = experimentPreset == .control
-            ? self.identifier.replacingOccurrences(of: "_preset_home_run_a", with: "")
-            : self.identifier.replacingOccurrences(of: "_preset_home_run_a", with: "") + "_preset_home_run_a"
+            ? baseIdentifier
+            : "\(baseIdentifier)_preset_\(experimentPreset.rawValue)"
         return Self(
             identifier: identifier,
             width: width,
@@ -257,5 +275,76 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
 
     private static func supportedValue(_ candidate: Int, in allowed: [Int]) -> Int? {
         allowed.contains(candidate) ? candidate : nil
+    }
+}
+
+struct GuestPowerState: Equatable, Sendable {
+    let isPowered: Bool
+    let stayOn: Bool
+    let wakefulness: String
+
+    var isGameplayReady: Bool {
+        isPowered && stayOn && wakefulness.caseInsensitiveCompare("Awake") == .orderedSame
+    }
+
+    static func parse(_ dumpsysPower: String) -> Self? {
+        guard let powered = boolean(named: "mIsPowered", in: dumpsysPower),
+              let stayOn = boolean(named: "mStayOn", in: dumpsysPower),
+              let wakefulness = value(named: "mWakefulness", in: dumpsysPower) else {
+            return nil
+        }
+        return Self(isPowered: powered, stayOn: stayOn, wakefulness: wakefulness)
+    }
+
+    private static func boolean(named key: String, in text: String) -> Bool? {
+        guard let raw = value(named: key, in: text) else { return nil }
+        switch raw.lowercased() {
+        case "true": return true
+        case "false": return false
+        default: return nil
+        }
+    }
+
+    private static func value(named key: String, in text: String) -> String? {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.hasPrefix("\(key)=") }?
+            .dropFirst(key.count + 1)
+            .split(whereSeparator: \.isWhitespace)
+            .first
+            .map(String.init)
+    }
+}
+
+struct HostSchedulingReceipt: Equatable, Sendable {
+    let requested: String
+    let setResult: Int
+    let effective: String
+    let relativePriority: Int
+
+    var userInteractiveVerified: Bool {
+        requested == "user_interactive" && setResult == 0 && effective == "user_interactive"
+    }
+
+    static func parse(_ hostOutput: String) -> Self? {
+        let fields = Dictionary(uniqueKeysWithValues: hostOutput.split(whereSeparator: \.isNewline).compactMap { line -> (String, String)? in
+            let pair = line.split(separator: "=", maxSplits: 1).map(String.init)
+            guard pair.count == 2, pair[0].hasPrefix("TFTMAC_HOST_QOS_") else { return nil }
+            return (pair[0], pair[1])
+        })
+        guard let requested = fields["TFTMAC_HOST_QOS_REQUESTED"],
+              let setResultText = fields["TFTMAC_HOST_QOS_SET_RESULT"],
+              let setResult = Int(setResultText),
+              let effective = fields["TFTMAC_HOST_QOS_EFFECTIVE"],
+              let priorityText = fields["TFTMAC_HOST_QOS_RELATIVE_PRIORITY"],
+              let relativePriority = Int(priorityText) else {
+            return nil
+        }
+        return Self(
+            requested: requested,
+            setResult: setResult,
+            effective: effective,
+            relativePriority: relativePriority
+        )
     }
 }

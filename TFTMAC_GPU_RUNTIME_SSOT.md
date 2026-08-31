@@ -20,7 +20,7 @@ Package: com.riotgames.league.teamfighttactics
 Installer/update authority: com.android.vending
 ```
 
-The current native playable profile is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, Medium graphics, 60 FPS, Performance OFF. Ultra High is a measured rejected configuration on the target M4 host because of severe lag.
+The current native playable profile is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, High graphics, 60 FPS, Performance OFF. Ultra High and Riot Performance Mode Beta are rejected configurations on the target M4 host because of severe lag and unacceptable combat tails. Build 7's `combat_latency_a` is a one-factor host-scheduling candidate layered over this exact control; it is launch-verified but not performance-promoted.
 
 The launcher boundary is frozen: TFTMAC starts its packaged `TFTMAC Emulator Host.app` through `/usr/bin/open -n -W --env ... --args ...` in the logged-in user session. It does not directly spawn QEMU from a Node/service context and does not inject `ADB_VENDOR_KEYS`. The previous `5040/5592` direct-service identity is retained only in historical evidence as the ADB-authorization regression.
 
@@ -29,7 +29,7 @@ The launcher boundary is frozen: TFTMAC starts its packaged `TFTMAC Emulator Hos
 The native application uses the exact controller protocol shipped with the installed stock emulator.
 
 ```text
-Installed: /Volumes/MAC MINI M4/TFTMAC/Runtime/sdk/emulator/lib/emulator_controller.proto
+Installed: /Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/lib/emulator_controller.proto
 Vendored: Vendor/AndroidEmulator/emulator_controller.proto
 SHA-256: 1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f
 ```

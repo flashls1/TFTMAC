@@ -53,7 +53,7 @@ final class RuntimeSettingsWindowController: NSWindowController {
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 3
 
-        experimentButton.addItems(withTitles: RuntimeExperimentPreset.allCases.map(\.displayName))
+        experimentButton.addItems(withTitles: RuntimeExperimentPreset.selectableCases.map(\.displayName))
         vCPUButton.addItems(withTitles: TFTMACRuntimeProfile.supportedVCPU.map(String.init))
         ramButton.addItems(withTitles: TFTMACRuntimeProfile.supportedRAMMiB.map { "\($0) MiB" })
         refreshButton.addItems(withTitles: TFTMACRuntimeProfile.supportedRefreshHz.map { "\($0) Hz" })
@@ -147,7 +147,6 @@ final class RuntimeSettingsWindowController: NSWindowController {
 
     @objc private func saveSettings(_ sender: Any?) {
         guard let preset = selectedExperimentPreset() else { return }
-        if preset.requiresManualPerformanceModeBetaConfirmation, !confirmHomeRunA() { return }
         let next = TFTMACRuntimeProfile.playable.with(experimentPreset: preset)
         next.save()
         onSave?(originalProfile, next)
@@ -160,16 +159,6 @@ final class RuntimeSettingsWindowController: NSWindowController {
     }
 
     private func selectedExperimentPreset() -> RuntimeExperimentPreset? {
-        RuntimeExperimentPreset.allCases.first { $0.displayName == experimentButton.titleOfSelectedItem }
-    }
-
-    private func confirmHomeRunA() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Enable Home Run A Performance Mode?"
-        alert.informativeText = "Before continuing, manually enable official TFT Performance Mode Beta in the game and confirm it is on. The next launch will request only NativeTextureDecompression and NoDelayCloseColorBuffer in addition to the proven emulator feature baseline. Restore Proven Baseline returns to the control preset."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Performance Mode Beta Is On")
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        RuntimeExperimentPreset.selectableCases.first { $0.displayName == experimentButton.titleOfSelectedItem }
     }
 }

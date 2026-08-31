@@ -137,15 +137,15 @@ and one-factor RHI experiments.
 
 ## Combat experiment protocol
 
-1. Run the locked `control` preset for a representative 5-8 minute heavy-combat window.
-2. Restart with `home_run_a`, manually confirm official TFT Performance Mode Beta is ON, and repeat a comparable window.
+1. Run the locked `control` preset at High / 60 FPS / Performance Mode OFF for a representative 5-8 minute heavy-combat window.
+2. Restart with `combat_latency_a`, keep the same TFT settings, and repeat a comparable window.
 3. Mark every visible stutter; the run ends manually after five minutes or automatically at eight minutes.
 4. Compare the 5 seconds before and after each marker: TFT actual-present p95,
    p99, max, 1% low, consecutive misses, stream freshness, Mac presenter, CPU,
    memory, thermal/frequency evidence available in the trace, and pipeline
    errors.
 5. Classify the first divergent boundary; leave later boundaries as effects.
-6. If the composite wins, run the five-minute cold confirmation before separating its two components.
+6. If Combat Latency A wins, run the five-minute cold confirmation before promotion.
 7. Repeat a comparable fight and a cold-start confirmation. Reject correctness,
    boot, ADB, audio, memory, login, or usability regressions.
 8. Use the automatic trace-active/trace-inactive comparison; over 5% change marks causal trace conclusions `OBSERVER_OVERHEAD_INVALID` while retaining performance data.

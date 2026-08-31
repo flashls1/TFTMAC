@@ -63,27 +63,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
 
     @objc func markMatchEntry(_ sender: Any?) { recordMarker("MATCH_ENTRY") }
     @objc func startCombatBenchmark(_ sender: Any?) {
-        let confirmed: Bool
-        if activeProfile.experimentPreset.requiresManualPerformanceModeBetaConfirmation {
-            let alert = NSAlert()
-            alert.messageText = "Confirm TFT Performance Mode Beta"
-            alert.informativeText = "Start only after official TFT Performance Mode Beta is ON. TFTMAC records this confirmation but does not change Riot settings or credentials."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Performance Mode Beta Is On — Start")
-            alert.addButton(withTitle: "Cancel")
-            confirmed = alert.runModal() == .alertFirstButtonReturn
-            guard confirmed else { return }
-        } else {
-            confirmed = false
-        }
-        runtimeController?.startCombatBenchmark(performanceModeConfirmed: confirmed)
+        runtimeController?.startCombatBenchmark(performanceModeConfirmed: false)
     }
     @objc func markVisibleStutter(_ sender: Any?) { runtimeController?.markVisibleStutter() }
     @objc func endCombatBenchmark(_ sender: Any?) {
         var correctnessPassed = true
-        if activeProfile.experimentPreset == .homeRunA {
+        if activeProfile.experimentPreset.isActiveCandidate {
             let alert = NSAlert()
-            alert.messageText = "Did Home Run A preserve correctness?"
+            alert.messageText = "Did Combat Latency A preserve correctness?"
             alert.informativeText = "Reject the run if boot, graphics, input, audio, login, or gameplay correctness regressed. TFTMAC will restore Control for the next launch."
             alert.alertStyle = .informational
             alert.addButton(withTitle: "All Correct — End")

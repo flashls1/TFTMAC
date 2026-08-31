@@ -246,7 +246,7 @@ final class CombatBenchmarkLabStore: @unchecked Sendable {
     }
 
     func comparisonForCandidate(_ candidate: CombatBenchmarkRun) throws -> CombatComparisonRecord? {
-        guard candidate.presetID == .homeRunA,
+        guard candidate.presetID.isActiveCandidate,
               candidate.isValid,
               candidate.exactLayerIdentity != nil,
               let control = try latestValidControl(matching: candidate) else { return nil }
@@ -301,8 +301,8 @@ final class CombatBenchmarkLabStore: @unchecked Sendable {
         FROM combat_benchmarks
         WHERE preset_id = 'control' AND valid = 1 AND correctness_passed = 1
           AND comparison_identity_sha256 = ? AND tft_package_version = ?
-          AND exact_layer_identity = ? AND ended_utc <= ?
-        ORDER BY ended_utc DESC LIMIT 1
+          AND exact_layer_identity IS NOT NULL AND ended_utc <= ?
+        ORDER BY ended_utc DESC LIMIT 20
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
@@ -310,14 +310,15 @@ final class CombatBenchmarkLabStore: @unchecked Sendable {
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, candidate.comparisonIdentitySHA256, -1, transientDestructor)
         sqlite3_bind_text(statement, 2, candidate.tftPackageVersion, -1, transientDestructor)
-        sqlite3_bind_text(statement, 3, candidate.exactLayerIdentity!, -1, transientDestructor)
-        sqlite3_bind_text(statement, 4, candidate.endedUTC, -1, transientDestructor)
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        sqlite3_bind_text(statement, 3, candidate.endedUTC, -1, transientDestructor)
         func text(_ index: Int32) -> String {
             guard let value = sqlite3_column_text(statement, index) else { return "" }
             return String(cString: value)
         }
-        let metrics = CombatBenchmarkMetrics(
+        guard let candidateLayer = CombatLayerIdentity.comparable(candidate.exactLayerIdentity!) else { return nil }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard CombatLayerIdentity.comparable(text(11)) == candidateLayer else { continue }
+            let metrics = CombatBenchmarkMetrics(
             combatDurationSeconds: sqlite3_column_double(statement, 12),
             surfaceAvailability: sqlite3_column_double(statement, 13),
             clockCoverage: sqlite3_column_double(statement, 14),
@@ -333,18 +334,20 @@ final class CombatBenchmarkLabStore: @unchecked Sendable {
             severeRate: sqlite3_column_double(statement, 25),
             missedVsyncRate: sqlite3_column_double(statement, 26)
         )
-        return CombatBenchmarkRun(
-            benchmarkID: text(0), sessionID: text(1), presetID: .control,
-            configurationSHA256: text(2), comparisonIdentitySHA256: text(3), configurationJSON: text(4),
-            tftPackageVersion: text(5), performanceModeConfirmed: sqlite3_column_int(statement, 6) != 0,
-            startedUTC: text(7), endedUTC: text(8),
-            startedMonotonicNS: UInt64(bitPattern: sqlite3_column_int64(statement, 9)),
-            endedMonotonicNS: UInt64(bitPattern: sqlite3_column_int64(statement, 10)),
-            exactLayerIdentity: sqlite3_column_type(statement, 11) == SQLITE_NULL ? nil : text(11),
-            metrics: metrics, p50IntervalMilliseconds: sqlite3_column_double(statement, 20),
-            maximumIntervalMilliseconds: sqlite3_column_double(statement, 23),
-            observerOverheadInvalid: sqlite3_column_int(statement, 27) != 0
-        )
+            return CombatBenchmarkRun(
+                benchmarkID: text(0), sessionID: text(1), presetID: .control,
+                configurationSHA256: text(2), comparisonIdentitySHA256: text(3), configurationJSON: text(4),
+                tftPackageVersion: text(5), performanceModeConfirmed: sqlite3_column_int(statement, 6) != 0,
+                startedUTC: text(7), endedUTC: text(8),
+                startedMonotonicNS: UInt64(bitPattern: sqlite3_column_int64(statement, 9)),
+                endedMonotonicNS: UInt64(bitPattern: sqlite3_column_int64(statement, 10)),
+                exactLayerIdentity: text(11), metrics: metrics,
+                p50IntervalMilliseconds: sqlite3_column_double(statement, 20),
+                maximumIntervalMilliseconds: sqlite3_column_double(statement, 23),
+                observerOverheadInvalid: sqlite3_column_int(statement, 27) != 0
+            )
+        }
+        return nil
     }
 
     private func createSchema() throws {

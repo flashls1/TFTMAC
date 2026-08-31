@@ -79,7 +79,7 @@ jq -e '
   .runtimeProfile.ramMiB == 5120 and
   .runtimeProfile.display == "1920x1080" and
   .finalInstalledRelease.version == "2.2.0" and
-  .finalInstalledRelease.build == "6" and
+  .finalInstalledRelease.build == "7" and
   .finalInstalledRelease.officialIconSourceSHA256 == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" and
   .finalInstalledRelease.officialIcon1024SHA256 == "ed5fd83efa6e04599e82ca00f897b09813cdeac007850f6993efd601a730345f" and
   .finalInstalledRelease.embeddedIconICNSSHA256 == "010729a19f165b68edeb1fb44e8c31e450f79b3a988c95b8de090373378f6f06" and
@@ -87,7 +87,9 @@ jq -e '
   .finalInstalledRelease.adHocSigned == false and
   .finalInstalledRelease.removableVolumePermissionRetainedAcrossRelaunch == true and
   .finalInstalledRelease.nonErrorUnlockOverlayVisible == false and
-  .finalInstalledRelease.unitTestsPassed == 36 and
+  .finalInstalledRelease.unitTestsPassed == 40 and
+  .finalInstalledRelease.gameModeEligible == true and
+  .finalInstalledRelease.guestGameplayPowerGate == true and
   .finalInstalledRelease.primaryInputTransport == "EmulatorController.sendTouch" and
   .androidWebView.currentVersion == "151.0.7922.199"
 ' ssot/runtime-authority.json >/dev/null || fail "native runtime authority drifted"
@@ -101,7 +103,7 @@ for locked in \
   'ram_mb: 5120' \
   'selected: A' \
   'version: "2.2.0"' \
-  'build: "6"' \
+  'build: "7"' \
   'official_icon_source_sha256: "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016"' \
   'official_icon_1024_sha256: "ed5fd83efa6e04599e82ca00f897b09813cdeac007850f6993efd601a730345f"' \
   'embedded_icon_icns_sha256: "010729a19f165b68edeb1fb44e8c31e450f79b3a988c95b8de090373378f6f06"' \
@@ -109,13 +111,15 @@ for locked in \
   'mac_icon_embedded: true' \
   'removable_volume_permission_relaunch: PASS' \
   'non_error_unlock_overlay: ABSENT' \
-  'unit_tests_passed: 36' \
+  'unit_tests_passed: 40' \
   'webview_version: "151.0.7922.199"'; do
   rg -q -F -- "$locked" ssot/STACK.lock.yaml || fail "active stack lock drifted: $locked"
 done
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "36" ]] || fail "native test inventory drifted: expected 36, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "40" ]] || fail "native test inventory drifted: expected 40, found $TEST_FUNCTION_COUNT"
+[[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
+  || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
   || fail "official TFTMAC icon source hash drifted"
 

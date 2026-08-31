@@ -1,5 +1,5 @@
 schema: 3
-frozen_at: "2026-08-30T23:54:55Z"
+frozen_at: "2026-08-31T02:56:28Z"
 phase0_status: PASS
 
 authority:
@@ -7,10 +7,10 @@ authority:
   runtime_authority: "ssot/runtime-authority.json"
   ssot_version: "3.0"
   implementation_plan_version: "2.0"
-  ssot_sha256: "4c905ad35a676aa8f4ad0a22416e73d640120851ce9f41e742349ac61ceab1ea"
+  ssot_sha256: "cf0d95707f062d0999424a86bec744927b8a0703c577a94949413a150b91726f"
   implementation_plan_sha256: "81bd386c1d9d47f26659c93af914ec9a92568ee689e7bed47eb0f2afd6dd5f1a"
   zengate_version: "2.3"
-  zengate_score: 93
+  zengate_score: 91
   zengate_result: "PASS"
   source_build_inputs_status: "historical_reference_only"
   production_guest: "official Android 16 Google Play ARM64"
@@ -27,9 +27,10 @@ host:
 
 release:
   version: "2.2.0"
-  build: "6"
+  build: "7"
   installed_path: "/Applications/TFTMAC.app"
-  executable_sha256: "a860a1d4d888f6fc33af978285439e5ce7e47bf17d024a8ffe33efec54d21869"
+  executable_sha256: "9d0341e424f3464d042383dc6b4db1fd03d1da2cba5df6462fa4c1fa8d72b039"
+  emulator_host_executable_sha256: "127038dce1f8689d972f3084086149892a21025ebb9bae487e52e8b9741605e4"
   signing: "stable_local_identity_valid"
   signing_identity: "TFTMAC Local Code Signing"
   notarized_for_public_distribution: false
@@ -40,9 +41,16 @@ release:
   removable_volume_permission_relaunch: PASS
   non_error_unlock_overlay: ABSENT
   native_verifier: PASS
-  unit_tests_passed: 36
-  rapid_combat_ab: "STATIC_VERIFIED_RUNTIME_BENCHMARK_PENDING"
-  current_release_launch_acceptance: "PENDING_USER_COMBAT_BENCHMARK"
+  unit_tests_passed: 40
+  rapid_combat_ab: "COMBAT_LATENCY_A_STATIC_VERIFIED_RUNTIME_BENCHMARK_PENDING"
+  current_release_launch_acceptance: "LIVE_READY_COMBAT_BENCHMARK_PENDING"
+  build7_launch_capture: "2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494"
+  host_qos_pre_exec: "USER_INTERACTIVE_SET_RESULT_0"
+  qemu_worker_qos_inheritance: "NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE"
+  game_mode_eligible: true
+  guest_gameplay_power_gate: true
+  active_experiment: "combat_latency_a"
+  tft_graphics: "High / 60 FPS / Performance Mode OFF"
   perfetto_trace_processor_version: "58.2"
   perfetto_trace_processor_sha256: "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
 

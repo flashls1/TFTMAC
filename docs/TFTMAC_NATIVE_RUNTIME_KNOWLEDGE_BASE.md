@@ -25,7 +25,9 @@
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
 | Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
-| Release build/install integrity | VERIFIED | All 36 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 6), embeds the official ImageGen penguin-samurai Mac icon and pinned Perfetto processor, and its executable SHA-256 matches `dist` |
+| Release build/install integrity | VERIFIED | All 40 native tests passed; `/Applications/TFTMAC.app` is deep-code-sign valid under the stable local identity, version 2.2.0 (build 7), embeds the official ImageGen penguin-samurai Mac icon and pinned Perfetto processor, and its executable SHA-256 matches the release authority |
+| Build 7 live launch | VERIFIED | Capture `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494` reached authorized ADB, 1920x1080 first frame, powered/stay-awake guest, healthy SQL logger, official TFT and `TFT_READY_FOR_USER` under Combat Latency A |
+| Combat Latency A performance | NOT YET VERIFIED | Host pre-exec QoS receipt is direct, but no valid matched Control/Candidate combat benchmark exists and QEMU worker inheritance is not claimed |
 | External-runtime permission retention | VERIFIED | Stable designated requirement installed; a clean second launch immediately reopened `/Volumes/MAC MINI M4/TFTMAC/Runtime` and started QEMU without another drive-access dialog |
 | Secure-unlock display | VERIFIED | Secure unlock stays manual and logged, while non-error runtime instructions are suppressed from the Android display; live signed launch showed no TFTMAC center overlay |
 
@@ -40,7 +42,10 @@ Final release receipts:
 
 ```text
 Verified executable SHA-256:
-  a860a1d4d888f6fc33af978285439e5ce7e47bf17d024a8ffe33efec54d21869
+  9d0341e424f3464d042383dc6b4db1fd03d1da2cba5df6462fa4c1fa8d72b039
+
+Build 7 live-ready launch:
+  2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494
 
 Live match/lobby plus clean shutdown:
   2026-08-30T09-25-17.519Z-1a9d0227-3cf8-4a19-b353-c0f135ccf31c
@@ -59,7 +64,7 @@ Official launcher artwork is the full-bleed 1254×1254 PNG at
 `tftmac/Assets/TFTMAC-Official-Icon.png`, generated with the built-in ImageGen
 tool from the requested penguin-samurai, single-sword and exact stacked
 `TFT`/`MAC` brief. The master has no baked-in rounded rectangle or outer gutter;
-macOS owns the final corner mask. Build 6 derives and signs every `.icns`
+macOS owns the final corner mask. Build 7 derives and signs every `.icns`
 representation from this hash-sealed source.
 
 The first receipt reached Unreal `GameActivity`, rendered a live match and the
@@ -68,8 +73,11 @@ zero sequence drops, active 48-kHz stereo output with zero underruns, and zero
 confirmed memory kills. Its normal Quit sealed SQL as `STOPPED`, confirmed the
 owned emulator exit, restored the exact AVD hash, and removed both transaction
 and lease markers. The second receipt covers the last runtime-identical signed
-build. Build 6 changes only release metadata and the signed launcher artwork and
-was not auto-launched. That earlier live native window was re-verified at origin
+build. The subsequent icon release changed release metadata and signed launcher
+artwork. Build 7 then added the Combat Latency A scheduling receipt, permanent
+guest gameplay-power gate and cross-session combat-layer fix. Its live-ready
+capture is recorded above; it is not yet a performance result. The earlier live
+native window was re-verified at origin
 `0,0`, size `1920x1080`,
 `AXFullScreen=true`; SQL later observed source/output maxima of 60.99/60.33,
 active 48-kHz stereo output with one active track and zero underruns, and zero
@@ -189,7 +197,7 @@ The directory is mode `0700`. Queryable authority is `TFTMAC_NATIVE_RUNTIME.sqli
 
 Raw logcat is local sensitive data. It is excluded from SQL and must never be uploaded or pasted without deliberate sanitization. It begins at a guest timestamp taken after ADB authorization so stale ring-buffer events do not contaminate the run.
 
-### Rapid Combat A/B workflow (2.2.0)
+### Rapid Combat A/B workflow (2.2.0 build 7)
 
 The Telemetry menu now owns `Start Combat Benchmark`, `Mark Visible Stutter`
 and `End Combat Benchmark`. A run is valid after 300 seconds and closes
@@ -198,10 +206,19 @@ that window, require two adjacent bad one-second windows, have a 120-second
 cooldown, and are capped at two in addition to the 20-second start trace.
 
 `Control` is the exact 1920x1080/320-dpi/60-Hz, 6-vCPU, 5120-MiB proven
-configuration. `Home Run A` changes only the official in-game Performance Mode
-Beta confirmation and the emulator features `NativeTextureDecompression` and
-`NoDelayCloseColorBuffer`. All other values are locked. Every run stores the
-canonical configuration JSON and SHA-256 plus the official TFT package version.
+configuration with TFT High / 60 FPS / Performance Mode OFF. `Combat Latency A`
+changes only the packaged emulator host's requested macOS QoS class to
+`user_interactive`. The host records the requested value, return code and
+pre-exec effective class before replacing itself with Android Emulator. It does
+not claim that every QEMU worker inherited the class without combat evidence.
+All graphics, ASG, MoltenVK, CPU, RAM, resolution and audio values remain locked.
+
+`Home Run A` and Riot Performance Mode Beta are retired. The completed
+480.65-second run recorded 56.665 weighted FPS but only 17.698 FPS 1% low,
+517.488 ms maximum frame interval and two automatic degradation incidents. The
+user rejected the experience as unacceptable. Cross-boundary causal attribution
+remains unknown because clock RTT and trace observer-overhead gates failed; that
+does not override the direct usability rejection.
 
 Every valid Perfetto artifact is processed locally by the packaged
 `trace_processor_shell` v58.2 ARM64 binary. Its pinned SHA-256 is
@@ -214,9 +231,9 @@ raw-only state. The persistent comparison authority is:
 ~/Library/Application Support/TFTMAC/TFTMAC_LAB.sqlite
 ```
 
-The 2.2.0 build/install, SQL schema, preset invariants and decision engine are
-verified. A real Control/Home Run A combat pair remains runtime acceptance and
-must not be claimed until the user runs it.
+The build, SQL schema, preset invariants and decision engine are statically
+verified. A matched Control/Combat Latency A combat pair remains runtime
+acceptance and must not be claimed until the user runs it.
 
 ### Riot login input contract
 
@@ -346,9 +363,10 @@ Current product decisions:
 
 - KEEP 5120 MiB. Sustained donor runs showed lower pressure direction than 6144 MiB while retaining guest headroom.
 - DEFER 4096 MiB. It lacks sufficient heavy-game safety margin.
-- KEEP Medium / 60 / Performance OFF as the currently usable in-game control.
+- KEEP High / 60 / Performance OFF as the user-confirmed current in-game control.
 - REJECT Ultra High for current usability; direct user observation found severe lag, without fabricating a numeric FPS.
-- TEST 800 -> 400 ASG flush only as a controlled candidate, never bundled with another change.
+- RETAIN 800 µs ASG flush in Control; do not recycle the historical 400 µs screen as a new result.
+- TEST Combat Latency A as a one-factor macOS scheduling candidate; promote only from matched combat evidence.
 - KEEP raw gRPC as the working native presentation transport now.
 - DEFER MMAP until producer readiness, tear-free integrity, frame-age and performance are empirically proven.
 

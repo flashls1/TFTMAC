@@ -1548,6 +1548,7 @@ actor TFTMACRuntimeService {
                 "record": discovery.recordPath,
                 "token_persisted": false
             ])
+            try recordHostSchedulingReceipt(telemetry: telemetry)
 
             let (inputStream, continuation) = AsyncStream.makeStream(of: EmulatorInput.self, bufferingPolicy: .bufferingNewest(256))
             inputContinuation = continuation
@@ -1586,7 +1587,7 @@ actor TFTMACRuntimeService {
                 "diagnostic": String(describing: error),
                 "type": String(reflecting: type(of: error))
             ])
-            if profile.experimentPreset == .homeRunA {
+            if profile.experimentPreset.isActiveCandidate {
                 recordCorrectnessRejection(reason: error.localizedDescription)
                 TFTMACRuntimeProfile.playable.with(experimentPreset: .control).save()
                 telemetry.recordEvent("EXPERIMENT_AUTO_ROLLBACK", payload: [
@@ -1774,7 +1775,7 @@ actor TFTMACRuntimeService {
         } catch {
             telemetry.recordEvent("COMBAT_LAB_PERSISTENCE_FAILED", payload: ["error": error.localizedDescription])
         }
-        if run.presetID == .homeRunA,
+        if run.presetID.isActiveCandidate,
            comparisonDecision != .homeRun,
            comparisonDecision != .promising {
             TFTMACRuntimeProfile.playable.with(experimentPreset: .control).save()
@@ -2016,6 +2017,8 @@ actor TFTMACRuntimeService {
             ("runtime_configuration_sha256", experimentReceipt.sha256, "canonical effective configuration", "DIRECT"),
             ("runtime_configuration_json", experimentReceipt.canonicalJSON, "canonical effective configuration", "DIRECT"),
             ("launcher_method", "/usr/bin/open -n -W --env ... --args ...", "Mactician donor architecture", "DIRECT"),
+            ("macos_game_mode_eligible", "true", "LSSupportsGameMode bundle contract", "DIRECT"),
+            ("host_qos_requested", profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default", "named launch experiment", "REQUESTED"),
             ("adb_server_port", "5038", "known-good donor", "DIRECT"),
             ("emulator_console_port", "5582", "known-good donor", "DIRECT"),
             ("adb_serial", "emulator-5582", "known-good donor", "DIRECT"),
@@ -2089,6 +2092,7 @@ actor TFTMACRuntimeService {
             "--env", "MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0",
             "--env", "MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=64",
             "--env", "MVK_CONFIG_FAST_MATH_ENABLED=1",
+            "--env", "TFT_HOST_LATENCY_QOS=\(profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default")",
             "--env", "TFT_HOST_STDOUT=\(stdout.path)",
             "--env", "TFT_HOST_STDERR=\(stderr.path)",
             paths.hostApplication.path,
@@ -2125,9 +2129,43 @@ actor TFTMACRuntimeService {
             "host_application": paths.hostApplication.path,
             "open_pid": process.processIdentifier,
             "adb_vendor_keys_present": false,
+            "game_mode_eligible": true,
+            "host_qos_requested": profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default",
             "controller_discovery_roots": Self.controllerDiscoveryRoots(paths: paths).map(\.path),
             "emulator_arguments": Array(arguments.suffix(from: arguments.firstIndex(of: "--args") ?? arguments.startIndex).dropFirst())
         ])
+    }
+
+    private func recordHostSchedulingReceipt(telemetry: TFTMACNativeTelemetry) throws {
+        let outputURL = telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log")
+        guard let output = try? String(contentsOf: outputURL, encoding: .utf8),
+              let receipt = HostSchedulingReceipt.parse(output) else {
+            throw TFTMACRuntimeError("The emulator host did not publish its macOS scheduling receipt.")
+        }
+        telemetry.recordReceipt(
+            key: "host_qos_pre_exec_effective",
+            value: receipt.effective,
+            source: "pthread_get_qos_class_np before emulator exec",
+            confidence: "DIRECT"
+        )
+        telemetry.recordReceipt(
+            key: "host_qos_set_result",
+            value: "\(receipt.setResult)",
+            source: "pthread_set_qos_class_self_np",
+            confidence: "DIRECT"
+        )
+        telemetry.recordEvent("HOST_SCHEDULING_RECEIPT", payload: [
+            "requested": receipt.requested,
+            "set_result": receipt.setResult,
+            "pre_exec_effective": receipt.effective,
+            "relative_priority": receipt.relativePriority,
+            "qemu_child_thread_inheritance": "NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE"
+        ])
+        if profile.experimentPreset.requestsHostLatencyQoS, !receipt.userInteractiveVerified {
+            throw TFTMACRuntimeError(
+                "Combat Latency A could not establish user-interactive scheduling at the emulator launch boundary."
+            )
+        }
     }
 
     private func waitForDiscovery(paths: TFTMACRuntimePaths, captureDirectory: URL, after launchStarted: Date) async throws -> EmulatorControllerDiscovery {
@@ -2240,8 +2278,7 @@ actor TFTMACRuntimeService {
         guard bootCompleted else {
             throw TFTMACRuntimeError("Android did not finish booting before the five-minute deadline.")
         }
-        _ = try? Self.adb(paths: paths, ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], timeout: 10)
-        _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "global", "stay_on_while_plugged_in", "7"], timeout: 10)
+        try await establishGuestGameplayPower(paths: paths, telemetry: telemetry)
         var manualUnlockRequired = false
         while !stopping {
             try Task.checkCancellation()
@@ -2331,6 +2368,50 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             try await Task.sleep(for: .seconds(1))
         }
+    }
+
+    private func establishGuestGameplayPower(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async throws {
+        _ = try Self.adb(paths: paths, ["shell", "dumpsys", "battery", "set", "ac", "1"], timeout: 10)
+        _ = try Self.adb(
+            paths: paths,
+            ["shell", "settings", "put", "global", "stay_on_while_plugged_in", "7"],
+            timeout: 10
+        )
+        _ = try Self.adb(paths: paths, ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], timeout: 10)
+
+        var lastState: GuestPowerState?
+        for _ in 0..<12 {
+            try Task.checkCancellation()
+            let output = try Self.adb(paths: paths, ["shell", "dumpsys", "power"], timeout: 15).output
+            lastState = GuestPowerState.parse(output)
+            if let state = lastState, state.isGameplayReady {
+                telemetry.recordReceipt(
+                    key: "guest_gameplay_power_state",
+                    value: "powered=true,stay_on=true,wakefulness=Awake",
+                    source: "dumpsys battery/settings/power",
+                    confidence: "DIRECT"
+                )
+                telemetry.recordEvent("GUEST_GAMEPLAY_POWER_READY", payload: [
+                    "virtual_ac_powered": state.isPowered,
+                    "stay_on": state.stayOn,
+                    "wakefulness": state.wakefulness,
+                    "prevents_secure_unlock_timeout": true
+                ])
+                return
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        telemetry.recordEvent("GUEST_GAMEPLAY_POWER_FAILED", payload: [
+            "virtual_ac_powered": lastState?.isPowered ?? false,
+            "stay_on": lastState?.stayOn ?? false,
+            "wakefulness": lastState?.wakefulness ?? "UNKNOWN"
+        ])
+        throw TFTMACRuntimeError(
+            "Android did not confirm powered, stay-awake gameplay state before secure unlock."
+        )
     }
 
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {

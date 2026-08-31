@@ -125,21 +125,64 @@ final class TFTMACGate1Tests: XCTestCase {
     }
 
     func testRapidCombatExperimentHasExactlyTwoNamedPresets() {
-        XCTAssertEqual(RuntimeExperimentPreset.allCases.map(\.rawValue), ["control", "home_run_a"])
+        XCTAssertEqual(RuntimeExperimentPreset.selectableCases.map(\.rawValue), ["control", "combat_latency_a"])
     }
 
-    func testHomeRunAChangesOnlyTheTwoApprovedEmulatorFeatures() {
+    func testCombatLatencyAChangesOnlyTheHostSchedulingRequest() {
         let control = TFTMACRuntimeProfile.playable.with(experimentPreset: .control)
-        let candidate = TFTMACRuntimeProfile.playable.with(experimentPreset: .homeRunA)
+        let candidate = TFTMACRuntimeProfile.playable.with(experimentPreset: .combatLatencyA)
         XCTAssertEqual(control.effectiveEmulatorFeatures, RuntimeExperimentPreset.baselineEmulatorFeatures)
-        XCTAssertEqual(
-            candidate.effectiveEmulatorFeatures,
-            RuntimeExperimentPreset.baselineEmulatorFeatures + ["NativeTextureDecompression", "NoDelayCloseColorBuffer"]
-        )
+        XCTAssertEqual(candidate.effectiveEmulatorFeatures, RuntimeExperimentPreset.baselineEmulatorFeatures)
         XCTAssertEqual(control.vCPU, candidate.vCPU)
         XCTAssertEqual(control.ramMiB, candidate.ramMiB)
         XCTAssertEqual(control.asgDrawFlushInterval, candidate.asgDrawFlushInterval)
+        XCTAssertFalse(control.experimentPreset.requestsHostLatencyQoS)
+        XCTAssertTrue(candidate.experimentPreset.requestsHostLatencyQoS)
+        XCTAssertEqual(control.comparisonConfigurationSHA256, candidate.comparisonConfigurationSHA256)
         XCTAssertNotEqual(control.experimentConfigurationReceipt.sha256, candidate.experimentConfigurationReceipt.sha256)
+    }
+
+    func testRetiredPerformanceModePresetMigratesToControl() throws {
+        let suiteName = "tftmac-tests-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        suite.set("home_run_a", forKey: "runtime.experimentPreset")
+        XCTAssertEqual(RuntimeExperimentPreset.load(from: suite), .control)
+    }
+
+    func testGuestPowerReceiptRequiresPoweredStayOnAndAwake() throws {
+        let ready = try XCTUnwrap(GuestPowerState.parse("""
+            mIsPowered=true
+            mStayOn=true
+            mWakefulness=Awake
+            """))
+        XCTAssertTrue(ready.isGameplayReady)
+        let sleeping = try XCTUnwrap(GuestPowerState.parse("""
+            mIsPowered=false
+            mStayOn=false
+            mWakefulness=Asleep
+            """))
+        XCTAssertFalse(sleeping.isGameplayReady)
+    }
+
+    func testHostSchedulingReceiptVerifiesUserInteractiveRequest() throws {
+        let receipt = try XCTUnwrap(HostSchedulingReceipt.parse("""
+            TFTMAC_HOST_QOS_REQUESTED=user_interactive
+            TFTMAC_HOST_QOS_SET_RESULT=0
+            TFTMAC_HOST_QOS_EFFECTIVE=user_interactive
+            TFTMAC_HOST_QOS_RELATIVE_PRIORITY=0
+            """))
+        XCTAssertTrue(receipt.userInteractiveVerified)
+    }
+
+    func testCombatComparisonNormalizesDynamicSurfaceLayerTokens() throws {
+        let first = "fe46e7c SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)#136"
+        let second = "991abcd SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)#42"
+        XCTAssertEqual(
+            CombatLayerIdentity.comparable(first),
+            CombatLayerIdentity.comparable(second)
+        )
+        XCTAssertNil(CombatLayerIdentity.comparable("NexusLauncher#1"))
     }
 
     func testRuntimeLeaseRejectsASecondLiveOwner() throws {
