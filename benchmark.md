@@ -1,7 +1,7 @@
 # TFTMAC Benchmark and Analysis Contract
 
 **Authority date:** 2026-08-30 America/Chicago
-**Formula version:** `tftmac-benchmark-v1`
+**Formula version:** `tftmac-benchmark-v2`
 **Current runtime:** TFTMAC 2.2.0 build 7 on the M4 Mac mini
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
@@ -22,17 +22,18 @@ TFTMAC recognizes four evidence modes:
 
 | Mode | Meaning | Authority |
 | --- | --- | --- |
-| `FULL_MATCH` | A user-marked match from `MATCH_ENTRY` through `MATCH_END` | Preferred evidence for real playability, repeated battles, late-game degradation, memory/thermal drift, and promotion to normal play |
-| `COMBAT_AB` | A 300–480 second representative-combat window under one named preset | Fast controlled screening of one candidate against a compatible Control |
-| `DIAGNOSTIC_ONLY` | Launch, login, lobby, unmarked gameplay, partial capture, or isolated incident | Useful for diagnosis; cannot prove match performance or promote a candidate |
+| `FULL_RUN` | A user-marked run from `MATCH_ENTRY` through `MATCH_END` | Primary evidence for continuous FPS, the complete workload, sustained resource pressure, correctness, and promotion to normal play |
+| `BOUNDED_AB` | A 300–480 second continuous-gameplay window under one named preset | Fast controlled screening of one candidate against a compatible Control; currently implemented by the UI/source named Combat Benchmark |
+| `DIAGNOSTIC_ONLY` | Launch, login, lobby, unmarked gameplay, partial capture, or isolated incident | Useful for diagnosis; cannot prove full-run performance or promote a candidate |
 | `INVALID` | Missing/corrupt boundaries, inadequate coverage, changed identity, correctness failure, or other declared invalidator | Retain as negative/operational evidence; do not use for a positive performance claim |
 
-Full matches are preferred because one run contains multiple battles, planning
-periods, early/late stages, transitions, and sustained resource pressure. Short
-combat A/B runs remain useful because they produce a faster controlled answer.
-A short winner is not promoted for normal play until it also survives a full
-marked match. A full match can immediately veto a candidate for correctness or
-player experience.
+Full runs are preferred because they include the complete performance envelope,
+not a hand-selected scene. Every logged frame and every resource/pipeline sample
+inside the marked range participates in analysis. A bounded A/B remains useful
+because it produces a faster controlled answer. It does not require any
+semantic phase label. A short winner is not promoted until it also survives a
+full marked run. A full run can immediately veto a candidate
+for correctness or player experience.
 
 A lobby, a reported `SRC 60`, an `OUT 60`, a successful launch, or an emulator
 process is never a gameplay benchmark.
@@ -75,8 +76,8 @@ Mandatory rules:
    MoltenVK, Metal, or TFTMAC as its cause.
 6. Cross-host ordering requires valid clock evidence. A trace does not repair a
    bad clock relationship.
-7. Never use an average to erase 1% low, p95/p99, severe stalls, worst battle,
-   or direct player rejection.
+7. Never use an average to erase 1% low, p95/p99, severe stalls, any sustained
+   under-60 period, or direct player rejection.
 8. Never inspect or report credentials, typed text, tokens, cookies, PINs,
    CAPTCHA/MFA values, login screenshots, or raw frame payloads.
 
@@ -114,8 +115,8 @@ Before calculation, create an analysis manifest:
 ```json
 {
   "analysis_schema": "tftmac.benchmark-report.v1",
-  "formula_version": "tftmac-benchmark-v1",
-  "evidence_mode": "FULL_MATCH|COMBAT_AB|DIAGNOSTIC_ONLY|INVALID",
+  "formula_version": "tftmac-benchmark-v2",
+  "evidence_mode": "FULL_RUN|BOUNDED_AB|DIAGNOSTIC_ONLY|INVALID",
   "session_id": "<session UUID>",
   "session_database": "<absolute local path>",
   "profile_id": "<effective profile>",
@@ -140,7 +141,7 @@ different session.
 | --- | --- | --- |
 | `sessions` | app-run identity, profile, lifecycle | top-level session authority |
 | `runtime_receipts` | requested/effective runtime facts | configuration and version proof |
-| `events` | explicit lifecycle/user/app boundaries | full-match, benchmark, stutter, process, and failure segmentation |
+| `events` | explicit lifecycle/user/app boundaries | full-run, benchmark, stutter, process, and failure segmentation |
 | `game_frame_intervals` | exact TFT actual-present deltas | authoritative FPS/tail calculations |
 | `game_frame_windows` | one-second gameplay summaries and availability | incident/worst-window discovery and coverage |
 | `stream_freshness_windows` | received, changed, identical, and lost controller frames | distinguish upstream freshness from final output |
@@ -156,7 +157,7 @@ different session.
 | `pipeline_log_aggregates` | gfxstream/ASG/Vulkan/MoltenVK/shader/fence signals | named warning/failure evidence, not proof of absence |
 | `graphics_pipeline_snapshots` | effective layer/API/renderer state | comparable-path gate |
 | `diagnostic_artifacts` | trace path/hash/processor/normalization | bounded causal evidence |
-| `combat_benchmarks` | finalized short-benchmark identity/validity/metrics | controlled `COMBAT_AB` result |
+| `combat_benchmarks` | finalized bounded-window identity/validity/metrics | controlled `BOUNDED_AB` result; table name is retained from the implementation |
 | `combat_incidents` | bad-window trigger, trace, boundary/unknowns | incident analysis |
 | `combat_comparisons` | Control/candidate deltas and code decision | controlled A/B output |
 | `game_process_sessions` | TFT PID lifetime | restart and process-stability evidence |
@@ -170,7 +171,7 @@ were the same number.
 
 `events.monotonic_ns`, `game_frame_windows.started_monotonic_ns`, resource
 samples, stream/presenter windows, and most SQL sampling boundaries use the host
-monotonic clock. Use this clock for marked full-match boundaries and ordinary
+monotonic clock. Use this clock for marked full-run boundaries and ordinary
 same-host overlap joins.
 
 ### Guest SurfaceFlinger clock
@@ -181,7 +182,7 @@ epoch. Do not compare it directly to a host marker.
 
 `game_frame_intervals.observed_monotonic_ns` is the host time at which TFTMAC
 observed the interval. It is the legal field for assigning intervals to a
-host-marked match, with up to approximately one polling window of boundary
+host-marked range, with up to approximately one polling window of boundary
 uncertainty. Precise event-to-frame attribution requires valid clock mapping or
 a common frame ID.
 
@@ -246,7 +247,34 @@ effective_fps = interval_count * 1,000,000,000 /
 ```
 
 Always name which FPS formula is being reported. Do not average per-window FPS
-to create a whole-match FPS when raw intervals are available.
+to create a whole-run FPS when raw intervals are available.
+
+### Continuous 60 FPS target
+
+The product target is not “good average FPS.” It is a useful-frame cadence of
+at least 60 FPS throughout the marked run:
+
+```text
+target_fps = 60
+target_frame_budget_ns = 1,000,000,000 / target_fps
+target_frame_budget_ms = 16.6666667
+
+budget_miss[i] = interval_ns[i] > target_frame_budget_ns
+budget_overrun_ms[i] = max(0, interval_ms[i] - target_frame_budget_ms)
+
+budget_miss_rate = count(budget_miss) / max(1, n)
+total_budget_overrun_ms = sum(budget_overrun_ms)
+fps_deficit = max(0, target_fps - measured_fps)
+```
+
+The analyzer must also calculate the longest consecutive budget-miss run and a
+five-second rolling weighted FPS at one-second steps. A continuous-60 claim
+requires the complete marked run—not just its mean—to meet the target, with no
+missed-vsync equivalents or severe stalls. Until then, report the exact deficit
+and improvement; do not redefine success downward.
+
+Every interval remains in the calculation. Worst intervals are ranked to choose
+where to debug first, never to exclude the rest of the run.
 
 ### Availability and clock formulas
 
@@ -289,29 +317,29 @@ For a relative rate reduction used by the Home Run rule:
 relative_reduction = (control_rate - candidate_rate) / control_rate
 ```
 
-## 7. Full-match collection and analysis
+## 7. Full-run collection and continuous analysis
 
 ### Collection
 
 1. Launch one clean named profile and let startup logging begin before the
    emulator/TFT path.
-2. Do not change a restart-bound setting during the match.
+2. Do not change a restart-bound setting during the run.
 3. Select `Mark Match Entry` when the actual match/game board begins.
-4. Play normally. A full run is preferred; it supplies several battles and
-   exposes sustained/late-game behavior.
+4. Play normally. The entire run is the dataset; do not wait for or label a
+   particular game phase.
 5. Use `Visible Stutter` whenever practical. Absence of a marker never means
    absence of stutter.
 6. Select `Mark Match End` at the result/end boundary.
 7. Analyze the marked range immediately; seal the complete session after normal
    app shutdown and AVD rollback.
 
-The current native menu writes `MATCH_ENTRY` and `MATCH_END`. It does not yet
-write semantic `COMBAT_START`/`COMBAT_END`, round/stage, placement, or battle
-identity. Do not pretend those fields exist.
+The current native menu writes `MATCH_ENTRY` and `MATCH_END`. Those two markers
+are sufficient for continuous full-run analysis. No additional phase metadata
+is required.
 
-### Full-match validity
+### Full-run validity
 
-A marked full match is valid product evidence when:
+A marked full run is valid product evidence when:
 
 - one ordered `MATCH_ENTRY`/`MATCH_END` pair exists in the same session;
 - end is later than start;
@@ -322,28 +350,31 @@ A marked full match is valid product evidence when:
 - no render/input/audio/login/crash correctness failure invalidates play.
 
 Bad clock quality does not erase direct same-boundary guest-frame performance.
-It makes cross-host causal attribution invalid. A full match can therefore be
+It makes cross-host causal attribution invalid. A full run can therefore be
 valid product evidence while its cause remains `UNKNOWN`.
 
-### Battle and high-load segmentation
+### Continuous timeline and under-target periods
 
-Full-match analysis must report the whole match and the worst repeated heavy
-periods. There are three allowed segment labels:
+Analyze every raw frame interval and join every available source, presenter,
+resource, memory, thermal, audio, clock, and structured-error sample across the
+entire marked range. There is no phase-selection gate.
 
-| Label | Required evidence |
-| --- | --- |
-| `BATTLE_DIRECT` | explicit user/app `COMBAT_START` and `COMBAT_END`, or a validated in-memory phase classifier receipt |
-| `BATTLE_INFERRED` | a versioned classifier using semantic game-state evidence, with confidence and error rate recorded |
-| `TELEMETRY_HIGH_LOAD` | deterministic performance/resource clustering only; never call it a proven battle |
+Before interpreting performance, build a completeness matrix for every table in
+the SQL data dictionary: row count inside the range, first/last timestamp,
+maximum sampling gap, expected cadence where applicable, null/unavailable count,
+and boundary coverage. A missing signal becomes an explicit `UNKNOWN`; an agent
+may not silently omit it because another signal appears easier to explain.
 
-Until semantic combat markers/classification are implemented, use fixed
-30-second bins from `MATCH_ENTRY` and label the result
-`TELEMETRY_HIGH_LOAD`. This finds the periods worth inspecting without falsely
-claiming that low FPS itself proves combat.
+Produce one-second metrics for the complete timeline, five-second rolling
+weighted FPS at one-second steps, and fixed 30-second summaries for readable
+trend comparison. Group adjacent windows below the 60 FPS target into
+`UNDER_TARGET` episodes. Mark any episode containing a severe frame as
+`SEVERE_STALL`. These labels describe measured performance only.
 
-For each 30-second bin calculate weighted FPS, p95/p99/max, 1% low, jank rate,
-severe rate, missed-vsync rate, source freshness, host-presenter behavior, CPU,
-and memory. Rank bins lexicographically by:
+For each 30-second interval calculate weighted FPS, FPS deficit from 60,
+budget-miss rate, total budget overrun, p95/p99/max, 1% low, jank rate, severe
+rate, missed-vsync rate, source freshness, host-presenter behavior, CPU, memory,
+thermal, audio, and structured failure counts. Rank intervals for debugging by:
 
 1. lowest weighted FPS;
 2. highest severe rate;
@@ -351,28 +382,29 @@ and memory. Rank bins lexicographically by:
 4. highest missed-vsync rate;
 5. largest maximum interval.
 
-Report at least the worst six bins plus every bin overlapping `VISIBLE_STUTTER`.
-Do not use the label `BATTLE_DIRECT` just because a bin is graphically intense.
+Report the full-run distribution, every `UNDER_TARGET`/`SEVERE_STALL` episode,
+the worst six 30-second intervals, and every interval overlapping
+`VISIBLE_STUTTER`. Ranking only controls investigation order; it never removes
+the remaining data from the result.
 
-The desired automatic improvement is a privacy-preserving in-memory phase
-classifier that stores only `{phase, round, confidence, monotonic_ns,
-classifier_version}` and discards sampled pixels. Until it exists and is
-validated against manual markers, battle identity remains inferred/unknown.
-
-### Full-match report order
+### Full-run report order
 
 1. Manifest and marker boundaries.
 2. Configuration/package/layer identity and correctness.
 3. Coverage, clock quality, and invalidators.
-4. Whole-match exact frame distribution.
-5. High-load/battle segments and worst one-second windows.
-6. Visible-stutter neighborhoods.
-7. Source freshness and final-presenter behavior.
-8. CPU/memory/thermal/power/audio and structured failures.
+4. Whole-run exact frame distribution and continuous-60 target deficit.
+5. Complete one-second/rolling timeline and all under-target episodes.
+6. Worst 30-second intervals and visible-stutter neighborhoods.
+7. Source freshness and final-presenter behavior across the same full timeline.
+8. CPU/memory/thermal/power/audio and structured failures across the same full timeline.
 9. Valid cross-boundary correlations; otherwise explicit unknowns.
 10. Claim ledger and next one-factor candidate.
 
-## 8. Short Combat A/B protocol
+## 8. Bounded A/B protocol
+
+The current app/source calls this feature Combat Benchmark for compatibility.
+Its analysis does not require semantic combat detection. It is simply a bounded
+continuous-gameplay A/B used when a full run is not needed for the first screen.
 
 The existing code's short-benchmark validity gate is exactly:
 
@@ -401,9 +433,9 @@ Control matching in current code requires:
   `SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity]`;
 - Control ended before candidate.
 
-It does not prove equivalent battle/round workload, power/thermal state, trace
-overhead, or full-match context. The report must show those as compatibility
-fields rather than silently assume them.
+It does not prove equivalent whole-run workload distribution, power/thermal
+state, trace overhead, or full-run context. The report must show those as
+compatibility fields rather than silently assume them.
 
 ### Implemented decision engine
 
@@ -424,14 +456,25 @@ code_decision: <implemented decision>
 causal_interpretation: INVALID_OBSERVER_OVERHEAD | ELIGIBLE
 ```
 
-A `HOME_RUN` or `PROMISING` short result requires one cold confirmation and one
-marked full match before promotion to normal play.
+A `HOME_RUN` or `PROMISING` bounded result requires one cold confirmation and
+one marked full run before promotion to normal play.
+
+These relative decisions select whether a change is worth retaining; they do
+not redefine the product goal. Every report must separately emit:
+
+```text
+continuous_60_status: TARGET_MET | TARGET_NOT_MET | INVALID
+```
+
+`TARGET_MET` requires the full-run continuous-60 contract in Section 6. A
+candidate may be a measurable improvement while the overall graphics objective
+remains unfinished.
 
 ## 9. Reproducible SQL recipes
 
 Use bound parameters rather than copying example IDs into a new analysis.
 
-### Find marked full matches
+### Find marked full runs
 
 ```sql
 WITH marked AS (
@@ -492,6 +535,50 @@ SELECT n,
 FROM summary, slow;
 ```
 
+### Calculate the continuous 60 FPS deficit
+
+```sql
+WITH raw AS (
+  SELECT actual_present_ns, interval_ns, interval_ms,
+         CASE WHEN interval_ns > (1000000000.0/60.0) THEN 1 ELSE 0 END AS miss
+  FROM game_frame_intervals
+  WHERE session_id=:session_id
+    AND observed_monotonic_ns BETWEEN :start_ns AND :end_ns
+), marked AS (
+  SELECT *,
+         row_number() OVER (ORDER BY actual_present_ns) -
+         row_number() OVER (PARTITION BY miss ORDER BY actual_present_ns) AS grp
+  FROM raw
+), runs AS (
+  SELECT miss, grp, count(*) AS length
+  FROM marked
+  GROUP BY miss, grp
+)
+SELECT (SELECT count(*) FROM raw) AS intervals,
+       (SELECT sum(miss) FROM raw) AS budget_misses,
+       1.0*(SELECT sum(miss) FROM raw)/(SELECT count(*) FROM raw)
+         AS budget_miss_rate,
+       (SELECT sum(max(0,interval_ms-(1000.0/60.0))) FROM raw)
+         AS total_budget_overrun_ms,
+       (SELECT max(length) FROM runs WHERE miss=1)
+         AS longest_consecutive_budget_miss_run;
+```
+
+```sql
+SELECT count(*) AS complete_windows,
+       sum(effective_fps < 60.0) AS windows_below_60,
+       1.0*sum(effective_fps < 60.0)/count(*) AS below_60_rate,
+       sum(effective_fps < 50.0) AS windows_below_50,
+       sum(effective_fps < 40.0) AS windows_below_40,
+       sum(severe_count > 0) AS windows_with_severe_stall,
+       min(effective_fps) AS minimum_window_fps
+FROM game_frame_windows
+WHERE session_id=:session_id
+  AND status='AVAILABLE'
+  AND started_monotonic_ns>=:start_ns
+  AND ended_monotonic_ns<=:end_ns;
+```
+
 ### Validate exact-layer coverage
 
 ```sql
@@ -525,7 +612,7 @@ ORDER BY maximum_interval_ms DESC, p99_interval_ms DESC
 LIMIT 20;
 ```
 
-### Build deterministic 30-second high-load bins
+### Build deterministic 30-second continuous summaries
 
 ```sql
 WITH raw AS (
@@ -589,7 +676,7 @@ WHERE g.session_id=:session_id
 ```
 
 SurfaceFlinger miss counters are cumulative. Use only max-minus-min deltas
-between explicit boundaries, never their absolute value as a match metric.
+between explicit boundaries, never their absolute value as a full-run metric.
 
 ## 10. Required AI-readable output
 
@@ -607,7 +694,7 @@ JSON, SQL rows, or Markdown:
     "p95_clock_rtt_ms": 0.0,
     "invalid_reasons": []
   },
-  "whole_match": {
+  "whole_run": {
     "duration_seconds": 0.0,
     "intervals": 0,
     "weighted_fps": 0.0,
@@ -618,13 +705,17 @@ JSON, SQL rows, or Markdown:
     "max_ms": 0.0,
     "jank_rate": 0.0,
     "severe_rate": 0.0,
-    "missed_vsync_rate": 0.0
+    "missed_vsync_rate": 0.0,
+    "target_fps": 60.0,
+    "budget_miss_rate": 0.0,
+    "total_budget_overrun_ms": 0.0,
+    "longest_budget_miss_run": 0
   },
-  "segments": [
+  "under_target_episodes": [
     {
-      "segment_id": "...",
-      "label": "BATTLE_DIRECT|BATTLE_INFERRED|TELEMETRY_HIGH_LOAD",
-      "confidence": "DIRECT|INFERRED|UNKNOWN",
+      "episode_id": "...",
+      "label": "UNDER_TARGET|SEVERE_STALL|VISIBLE_STUTTER",
+      "confidence": "DIRECT|USER",
       "start_ns": 0,
       "end_ns": 0,
       "metrics": {},
@@ -643,7 +734,8 @@ JSON, SQL rows, or Markdown:
     "candidate_id": null,
     "deltas": null,
     "code_decision": "NO_DECISION",
-    "promotion_status": "NOT_ELIGIBLE"
+    "promotion_status": "NOT_ELIGIBLE",
+    "continuous_60_status": "TARGET_MET|TARGET_NOT_MET|INVALID"
   },
   "findings": [
     {
@@ -665,7 +757,7 @@ JSON, SQL rows, or Markdown:
 Never omit `invalid_reasons`, `unknowns`, or the difference between the code
 decision and the engineering/promotion decision.
 
-## 11. Current full-match finding: Build 7 Combat Latency A
+## 11. Current full-run finding: Build 7 Combat Latency A
 
 ### Identity and boundaries
 
@@ -679,12 +771,43 @@ decision and the engineering/promotion decision.
 | `MATCH_ENTRY` | event 1442, `2026-08-31T03:19:25Z`, host monotonic `262537257186708` |
 | `MATCH_END` | event 3065, `2026-08-31T03:51:00Z`, host monotonic `264432310804375` |
 | Marked duration | 1,895.054 seconds / 31m35.054s |
-| Evidence mode | `FULL_MATCH` |
+| Evidence mode | `FULL_RUN` |
 
-This match has no `COMBAT_START`, `COMBAT_END`, `VISIBLE_STUTTER`, or formal
-`combat_benchmarks` row. It is a marked full match, not a short formal A/B.
-The marker rows and bounded match data are queryable now; calculate a final
-whole-database hash only after normal app shutdown seals the session.
+This is a complete marked run, so every frame and supporting sample inside the
+range participates. It has no formal bounded-A/B row, which affects comparison
+only; it does not reduce the full-run evidence. The marker rows and bounded data
+are queryable now. Calculate a final whole-database hash only after normal app
+shutdown seals the session.
+
+### Data completeness inventory
+
+| Signal family | Rows in/overlapping marked range |
+| --- | ---: |
+| Events | 1,624 |
+| Frame samples | 1,562 |
+| Source frame-interval windows | 1,871 |
+| Presentation samples | 1,878 |
+| Exact game-frame intervals | 93,724 |
+| Exact game-frame windows | 1,695 |
+| Stream-freshness windows | 1,871 |
+| Host-presentation windows | 1,876 |
+| QEMU/TFT resource samples | 357 |
+| Guest-memory samples | 357 |
+| Host-resource samples | 357 |
+| Clock-sync samples | 59 |
+| SurfaceFlinger samples | 59 |
+| Audio samples | 59 |
+| Logcat aggregates | 357 |
+| Pipeline-log aggregates | 355 |
+| Graphics-pipeline snapshots | 59 |
+| Input metadata samples | 15,394 |
+| TFT process lifetimes overlapping range | 1 |
+| Diagnostic artifacts | 0 |
+
+The session also has 39 startup/runtime receipts. It has zero bounded benchmark,
+incident, or comparison rows because that optional feature was not started. That
+does not remove any continuous full-run telemetry; it means trace-based cause
+and matched A/B decision fields are unavailable.
 
 ### Exact guest-frame result
 
@@ -700,6 +823,12 @@ whole-database hash only after normal app shutdown seals the session.
 | Janky intervals | 17,911 / **19.110%** |
 | Severe intervals | 572 / **0.610%** |
 | Missed-vsync equivalents | 20,004 / 0.2134 per interval |
+| Intervals over the 60 FPS frame budget | 58,925 / **62.871%** |
+| Total 60 FPS budget overrun | **357,921.976 ms** |
+| Longest consecutive budget-miss run | **325 intervals** |
+| Complete one-second windows below 60 FPS | 1,599 / **94.448%** |
+| Windows below 50 / below 40 FPS | 678 / 314 |
+| Windows containing a severe stall | 353 |
 
 Tail distribution:
 
@@ -719,10 +848,7 @@ The interval sum is about 0.297 seconds longer than the marker duration because
 intervals arrive in polling batches at the range edges; weighted FPS uses the
 source-defined interval formula, not marker duration.
 
-### Worst high-load periods
-
-No semantic combat markers exist, so these are
-`TELEMETRY_HIGH_LOAD`, not proven battle labels:
+### Worst continuous 30-second intervals
 
 | Match time | Weighted FPS | Jank | Severe | Missed vsync | Max interval |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -733,9 +859,8 @@ No semantic combat markers exist, so these are
 | 22:30–23:00 | 39.189 | 47.40% | 1.759% | 633 | 66.334 ms |
 | 25:30–26:00 | 37.781 | 53.99% | 0.964% | 671 | 91.910 ms |
 
-The worst cluster was 21:30–22:00. It is direct evidence of a sustained bad
-performance period. With current data it is not direct proof of which battle or
-which internal graphics component caused it.
+The worst interval was 21:30–22:00. It is direct evidence of a sustained bad
+performance period. Its first late internal graphics boundary remains unknown.
 
 ### Source, final presenter, and resources
 
@@ -768,7 +893,7 @@ killed.
 
 | Gate | Result |
 | --- | --- |
-| Full-match product evidence | **VALID** for direct player-facing frame distribution |
+| Full-run product evidence | **VALID** for direct player-facing frame distribution |
 | Exact layer/coverage/history | pass |
 | In-range clock coverage | 97.494% |
 | Clock p95 RTT | **86.757 ms**, above 10 ms |
@@ -776,45 +901,53 @@ killed.
 | Matched Control | absent |
 | Formal short benchmark row | absent |
 | Candidate performance decision | **NO_DECISION / INCONCLUSIVE** |
+| Continuous 60 FPS status | **TARGET_NOT_MET** |
 
-Direct conclusion: the marked match had materially poor tail behavior despite a
-near-60 final output cadence. Combat Latency A is neither promoted nor rejected
-by this single unmatched run. The run is a valid candidate baseline and a valid
-product-performance problem record; exact internal ownership remains unknown
-because the clock gate failed and the frame-ID boundary ring does not yet exist.
+Direct conclusion: the marked run did not hold 60 FPS. More than 62% of raw
+intervals exceeded the 60 FPS frame budget and more than 94% of complete
+one-second windows were below 60, despite a near-60 final output cadence. Combat
+Latency A is neither promoted nor rejected by this single unmatched run. The run
+is a valid candidate baseline and product-performance problem record; exact
+internal ownership remains unknown because the clock gate failed and the
+frame-ID boundary ring does not yet exist.
 
 ## 12. Comparison and promotion policy
 
 For a one-factor candidate:
 
-1. Preserve one current valid Control full match.
+1. Preserve one current valid Control full run.
 2. Run the candidate under the same package, display, High/60/OFF game settings,
    power state, and comparable play pattern.
-3. Compare whole-match distributions and matched high-load/battle segments.
-4. Use the short code decision when a valid `COMBAT_AB` pair exists.
+3. Compare the complete whole-run distributions, continuous timelines,
+   under-target episodes, and resource/pipeline correlations.
+4. Use the bounded code decision when a valid `BOUNDED_AB` pair exists.
 5. Reject immediately for any boot/render/input/audio/login/cleanup regression or
    direct unacceptable player experience.
 6. Cold-confirm a short winner.
-7. Require one full marked match before normal-play promotion.
+7. Require one full marked run before normal-play promotion.
 
-Full matches need not have identical length. Compare:
+A relative winner below the continuous 60 FPS target is retained as progress,
+not described as the graphics problem being fixed.
+
+Full runs need not have identical length. Compare:
 
 - whole-run weighted/tail metrics with coverage shown;
-- per-battle metrics when battle segmentation is direct/validated;
-- otherwise the median and worst quartile of fixed high-load bins;
+- 60 FPS budget-miss rate, total overrun, and longest miss run;
+- complete one-second and five-second rolling distributions;
+- every under-target episode and the median/worst quartile of fixed intervals;
 - worst one-second incidents;
 - sustained resource/thermal/memory state;
 - correctness and direct player report.
 
 Never declare a gain from one isolated best window, different package/settings,
-different semantic layer, lobby-versus-combat, or output cadence alone.
+different semantic layer, unmarked/lobby data, or output cadence alone.
 
 ## 13. Retention and privacy
 
 Retain:
 
-- latest accepted Control full match;
-- latest candidate full match and any matching short A/B;
+- latest accepted Control full run;
+- latest candidate full run and any matching bounded A/B;
 - current package/runtime/configuration receipts;
 - every rejected candidate's compact metrics and reason;
 - unresolved incident evidence;
@@ -830,14 +963,12 @@ frames.
 
 ## 14. Known analysis gaps
 
-1. Native full-match semantic battle/round detection is not implemented.
-2. The current menu records only match entry/end, not combat/round/result.
-3. Current comparison matching does not enforce equivalent battle phase,
-   thermal/power state, or full-match context.
-4. `observer_overhead_invalid` is stored but does not alter the code decision.
-5. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
-6. Clock RTT is too high in the current full match for cross-host cause.
-7. No common frame ID currently spans guest submit through final present.
+1. Current comparison matching does not enforce equivalent whole-run workload,
+   thermal/power state, or full-run context.
+2. `observer_overhead_invalid` is stored but does not alter the code decision.
+3. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
+4. Clock RTT is too high in the current full run for cross-host cause.
+5. No common frame ID currently spans guest submit through final present.
 
 These gaps limit attribution and automation; they do not erase the direct
 player-facing frame distribution already captured.

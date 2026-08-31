@@ -17,12 +17,14 @@ Deliver a premium native Mac application that lets the user launch, log into,
 hear, and play official Teamfight Tactics fullscreen on the target M4 Mac mini.
 The Android emulator is part of the runtime implementation but is not exposed as
 the product UI. The application must also be an engineering laboratory that
-captures real combat behavior well enough to make and reject graphics-pipeline
-changes based on evidence.
+captures the complete runtime behavior well enough to make and reject graphics-
+pipeline changes based on evidence.
 
 The completion standard is not “the emulator process exists” and not “the lobby
 shows 60 FPS.” The user must be able to play through the native Mac window, and
-the logger must preserve the heavy-combat drops that affect gameplay.
+the logger must preserve every under-target period across the complete run. The
+graphics target is at least 60 useful FPS throughout, not only during selected
+scenes.
 
 ## 2. Current architecture
 
@@ -285,19 +287,15 @@ equivalents.
 - The result is `HOME_RUN`, `PROMISING`, `REJECT`, or `INCONCLUSIVE`.
 - A winning candidate needs a cold confirmation before promotion.
 
-### Full-match analysis
+### Full-run analysis
 
-Marked full matches are now the preferred product-performance record because
-they contain multiple battles and expose sustained/late-game pressure. The
-short Combat Benchmark remains the faster one-factor A/B screen. Root
+Marked full runs are the preferred product-performance record because every
+frame and every resource/pipeline sample participates. The current UI/source-
+named Combat Benchmark remains the faster bounded one-factor A/B screen. Root
 `benchmark.md` is the shared human/AI contract for pairing match markers,
-calculating exact raw-interval metrics, ranking high-load periods, correlating
-legal clock domains, and emitting claim/evidence/unknown records.
-
-Current native markers identify match entry/end but not semantic battle/round
-boundaries. Until a validated privacy-preserving phase classifier or combat
-markers exist, automatically selected bad periods are reported as
-`TELEMETRY_HIGH_LOAD`, not claimed to be proven battles.
+calculating exact raw-interval and continuous-60 deficit metrics, processing the
+complete timeline, correlating every legal clock domain, and emitting
+claim/evidence/unknown records. No semantic phase classification is required.
 
 ## 8. Performance development history
 
@@ -314,7 +312,7 @@ not current M4 performance. It remains valuable for avoiding repeated failures.
 - Resolution scaling was not automatically decisive: 2560×1440 versus 1600×900
   barely changed one controlled stage despite 2.56× source pixels.
 - The selected historical stack still did not meet the 57 FPS heavy-scene goal
-  or reproduce the user's worst late-game battle.
+  or reproduce the user's worst approximately 15 FPS gameplay period.
 
 The repository preserves full result tables in `docs/benchmarks.md` and the
 technical chronology in `docs/research-log.md`.
@@ -382,11 +380,13 @@ Direct evidence from that capture:
 - `TFT_READY_FOR_USER` with Unreal Engine and CoreAudio;
 - one-second and resource/clock/pipeline tables continued advancing;
 - Riot WebView ANR was recorded and recovered without restarting the emulator.
-- the user later marked one full match from `2026-08-31T03:19:25Z` through
+- the user later marked one full run from `2026-08-31T03:19:25Z` through
   `03:51:00Z` (31m35.054s);
 - that match recorded 49.449 weighted FPS, 16.300 FPS 1% low, 33.822 ms p95,
   48.746 ms p99, 1,254.162 ms maximum, 19.110% jank, and 0.610% severe
   intervals from 93,724 exact TFT actual-present intervals;
+- 58,925 intervals (62.871%) exceeded the 60 FPS frame budget and 1,599 of
+  1,693 complete one-second windows (94.448%) were below 60 FPS;
 - all overlapping exact-layer windows were available, the TFT layer was stable,
   and no frame history was truncated;
 - final Metal output remained near 60 Hz with zero drawable/command errors while
@@ -426,7 +426,7 @@ Current authority roles:
 | --- | --- |
 | `facts.md` | facts, hard boundaries, current observations, explicit unknowns |
 | `project.md` | project history, architecture pivots, current state, handoff |
-| `benchmark.md` | current full-match/short-A/B formulas, validity, AI report contract, and findings |
+| `benchmark.md` | current full-run/bounded-A/B formulas, validity, AI report contract, and findings |
 | `dev.md` | developer map, experiments, hypotheses, next code contracts |
 | `ssot/runtime-authority.json` | machine-readable current runtime/release evidence |
 | `ssot/STACK.lock.yaml` | frozen stack/profile/toolchain selections |
@@ -456,12 +456,12 @@ and historical Medium-profile records must not override the current SSOT.
 ## 12. Next decisive work
 
 1. Finish/persist this Build 7 repository handoff.
-2. Preserve the marked Combat Latency A full-match baseline and run a compatible
-   Control full match; a short Control/Candidate Combat A/B may be used for a
+2. Preserve the marked Combat Latency A full-run baseline and run a compatible
+   Control full run; a short bounded Control/Candidate A/B may be used for a
    faster controlled screen once clock quality passes.
-3. Compare whole-match and matched high-load/battle distributions using
-   `benchmark.md`; reject or cold-confirm the candidate from evidence, never
-   from launch receipts.
+3. Compare complete timelines, whole-run distributions, every sustained
+   under-60 episode, and all resource/pipeline correlations using
+   `benchmark.md`; reject or cold-confirm from evidence, never launch receipts.
 4. If configuration cannot produce or explain a gain, implement the allocation-
    free gfxstream frame-ID/queue-depth correlation ring described in `dev.md`.
 5. Use that evidence to choose the actual code owner: adaptive ASG, gfxstream
@@ -475,5 +475,5 @@ and historical Medium-profile records must not override the current SSOT.
 
 The native app is launchable and playable. The remaining project objective is
 not another wrapper or another generic FPS counter; it is a measured improvement
-to the heavy-combat graphics pipeline without destroying correctness or the
-official package boundary.
+that holds at least 60 useful FPS across the complete run without destroying
+correctness or the official package boundary.

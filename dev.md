@@ -3,20 +3,21 @@
 **Development baseline:** TFTMAC 2.2.0 build 7  
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
 **Active candidate:** `combat_latency_a`  
-**Primary objective:** improve heavy-combat 1% lows and tail latency while preserving the proven native app.
+**Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
 
 This is the engineering working file. It contains code ownership, measurement
 contracts, confirmed and rejected experiments, active hypotheses, and the next
 implementation gates. Facts that must not drift live in `facts.md`; project
-history and handoff live in `project.md`; exact full-match/A/B formulas and
+history and handoff live in `project.md`; exact full-run/A/B formulas and
 current findings live in `benchmark.md`.
 
 ## 1. Developer charter
 
-We are not trying to prove that frame loss exists; the player has already
-established that major battles lag. Development must identify the first boundary
-that becomes late, change an owned boundary, and demonstrate a repeatable combat
-gain without correctness, login, audio, memory, launch, or cleanup regression.
+We are not trying to prove that frame loss exists; the complete marked run has
+already established it. Development must process all captured data, identify the
+first boundary that becomes late, change an owned boundary, and demonstrate a
+repeatable whole-run gain toward continuous 60 FPS without correctness, login,
+audio, memory, launch, or cleanup regression.
 
 Rules:
 
@@ -103,7 +104,7 @@ QEMU child-thread inheritance=NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE
 
 The candidate configuration SHA-256 is
 `05039d1fd0987f46fc7da8de5f483d8c7ffaf8f39bd1eaecdd1aee11603bbb07`.
-It has passed launch/readiness and one marked full-match baseline, but it has no
+It has passed launch/readiness and one marked full-run baseline, but it has no
 valid matched Control comparison.
 
 ## 4. Graphics pipeline and observability
@@ -145,8 +146,8 @@ itself distinguish Unreal, ANGLE, ASG, gfxstream, or MoltenVK.
 
 ## 5. SQL and capture contract
 
-`benchmark.md` is authoritative for legal time-domain joins, raw-interval
-formulas, full-match/high-load segmentation, exact SQL, AI output shape, and
+`benchmark.md` is authoritative for legal time-domain joins, raw-interval and
+continuous-60 formulas, complete-timeline analysis, exact SQL, AI output shape, and
 promotion rules. The queries below are an operational index, not an alternate
 formula specification.
 
@@ -231,16 +232,15 @@ SELECT * FROM combat_incidents ORDER BY observed_monotonic_ns;
 SELECT * FROM combat_comparisons ORDER BY rowid;
 ```
 
-## 6. Full-match and Combat A/B validity and decisions
+## 6. Full-run and bounded A/B validity and decisions
 
 ### Full match
 
 - `MATCH_ENTRY` through `MATCH_END` is the preferred real-product record.
-- Full runs capture multiple battles, planning periods, late-game pressure, and
-  resource drift; they are required before normal-play promotion.
-- Current native data does not identify semantic combat/round boundaries.
-  Deterministic 30-second bad periods are `TELEMETRY_HIGH_LOAD` until explicit
-  markers or a validated privacy-preserving phase classifier exists.
+- Full runs process every frame and every resource/pipeline sample and are
+  required before normal-play promotion.
+- No semantic phase markers are required. Fixed intervals and
+  rolling windows expose every sustained under-60 period directly.
 - A bad clock gate leaves direct guest-frame results valid but makes cross-host
   ownership `UNKNOWN`.
 - A full candidate run without a compatible Control is a baseline, not an A/B
@@ -248,7 +248,7 @@ SELECT * FROM combat_comparisons ORDER BY rowid;
 
 ### Valid run
 
-- at least 300 seconds of representative combat;
+- at least 300 seconds of representative continuous gameplay;
 - automatic end at 480 seconds;
 - at least 95% exact TFT SurfaceView coverage;
 - at least 95% clock coverage;
@@ -286,6 +286,10 @@ Any HOME_RUN/PROMISING result needs a five-minute cold confirmation. Rollback is
 select Control and restart. A failed active candidate records correctness
 rejection and saves Control automatically.
 
+Relative decisions select the better implementation; they do not lower the
+goal. Report `TARGET_NOT_MET` until a complete marked run holds at least 60
+useful FPS throughout with no missed-vsync equivalents or severe stalls.
+
 ## 7. Retained results
 
 ### Historical campaign winners
@@ -319,7 +323,7 @@ The configuration combined Riot Performance Mode Beta with
 cannot allocate blame among those factors. Operationally, the complete preset is
 barred and should not be decomposed unless new evidence gives a specific reason.
 
-### Build 7 Combat Latency A marked full match
+### Build 7 Combat Latency A marked full run
 
 | Metric | Value |
 | --- | ---: |
@@ -330,16 +334,19 @@ barred and should not be decomposed unless new evidence gives a specific reason.
 | p50 / p95 / p99 | 16.965 / 33.822 / 48.746 ms |
 | Maximum | 1,254.162 ms |
 | Jank / severe rate | 19.110% / 0.610% |
+| Over-60-budget intervals | 58,925 / 62.871% |
+| One-second windows below 60 FPS | 1,599 of 1,693 / 94.448% |
+| Total budget overrun / longest miss run | 357,921.976 ms / 325 intervals |
 | Exact-layer coverage/history | 100% measured overlap / no truncation |
 | Final Metal output | 59.968 FPS mean; zero drawable/command errors; 3.267 ms max GPU time |
 | Repeated-source presentations | 23,231 |
 | Clock | 97.494% in-range bracket; 86.757 ms p95 RTT |
-| Decision | full-match candidate baseline; no matched Control; cross-host cause `UNKNOWN` |
+| Decision | full-run candidate baseline; no matched Control; cross-host cause `UNKNOWN` |
 
-This is direct proof that the current full-run tail remains poor and that final
+This is direct proof that the current run does not hold 60 FPS and that final
 OUT cadence masks repeated upstream frames. It does not prove whether Combat
-Latency A improved or regressed against Control. Complete formulas, high-load
-periods, resources, and claim limits are retained in `benchmark.md`.
+Latency A improved or regressed against Control. Complete formulas, the entire
+timeline, resources, and claim limits are retained in `benchmark.md`.
 
 ## 8. Negative-result ledger
 
@@ -404,11 +411,11 @@ QoS class, reducing scheduling delay in critical host work.
 **Implemented:** `RuntimeHost/main.c`, profile/receipt/rollback in native Swift,
 Game Mode eligibility, unit tests.
 
-**Evidence now held:** one marked candidate full match with exact actual-present,
+**Evidence now held:** one marked candidate full run with exact actual-present,
 source, final-presenter, CPU/memory, thermal/power, and audio data.
 
-**Evidence still needed:** a compatible Control, semantic or consistently
-inferred workload matching, and valid clock sync for cross-boundary ordering.
+**Evidence still needed:** a compatible Control full run and valid clock sync
+for cross-boundary ordering.
 
 **Accept:** HOME_RUN/PROMISING plus cold confirmation.  
 **Reject:** no gain, worse tails, or any correctness/login/audio/cleanup issue.  
@@ -568,15 +575,16 @@ or weaken AVD rollback merely to report a smaller startup number.
 
 ## 11. Fastest next development sequence
 
-1. Preserve Build 7 and the marked Combat Latency A full-match baseline.
-2. Run a compatible marked Control full match; optionally use a valid short
+1. Preserve Build 7 and the marked Combat Latency A full-run baseline.
+2. Run a compatible marked Control full run; optionally use a valid short
    Control/Candidate Combat A/B for a faster one-factor screen.
-3. Compare whole-match plus matched battle/high-load distributions using
-   `benchmark.md`; cold-confirm only a winner.
+3. Compare complete timelines, whole-run distributions, 60 FPS deficit, and all
+   resource/pipeline correlations using `benchmark.md`; cold-confirm only a
+   winner.
 4. If it fails or remains causally unknown, implement H2's fixed frame-ID ring.
 5. Use the first divergent boundary to choose exactly one of H3, H4, H5, or H6.
-6. Run a five-to-eight-minute heavy-combat A/B when screening is faster.
-7. Promote only after repeated gain, one marked full match, and no correctness/
+6. Run a five-to-eight-minute bounded gameplay A/B when screening is faster.
+7. Promote only after repeated gain, one marked full run, and no correctness/
    user-experience failure.
 
 This sequence does not mean “test forever.” The first two runs decide whether
@@ -645,9 +653,7 @@ session can seal and restore its AVD transaction.
 
 - compatible marked Control versus Combat Latency A comparison;
 - actual worker-thread QoS/inheritance evidence;
-- first-boundary frame correlation under a true heavy fight;
-- native semantic battle/round markers or a validated privacy-preserving phase
-  classifier;
+- first-boundary frame correlation during the worst sustained under-60 period;
 - recurrent Riot WebView/IME reliability;
 - audible-sound user acceptance;
 - public signing/notarization if distribution beyond this Mac becomes a goal;
@@ -656,4 +662,4 @@ session can seal and restore its AVD transaction.
 
 The current engineering posture is: preserve the proven app, reject generic
 averages and recycled settings, and write the next code at the first boundary
-that the synchronized combat data actually shows is late.
+that the synchronized full-run data actually shows is late.

@@ -10,7 +10,7 @@ runtime, source, SQL, or user-acceptance evidence. Requested settings are not
 effective settings; presentation cadence is not Unreal FPS; a hypothesis is not a
 result.
 
-Exact benchmark formulas, full-match analysis, AI-readable output shape, and the
+Exact benchmark formulas, full-run analysis, AI-readable output shape, and the
 current marked-match findings live in `benchmark.md`.
 
 ## Evidence vocabulary
@@ -319,17 +319,18 @@ Privacy facts:
 
 ## 10. Benchmark contract
 
-- **LOCKED:** marked full matches are preferred product-performance evidence
-  because they contain multiple battles and sustained early/late-game pressure.
-- **LOCKED:** the 5–8 minute Combat Benchmark remains the faster controlled A/B
-  screen; it does not replace a full-match promotion check.
-- **LOCKED:** current native code records `MATCH_ENTRY`/`MATCH_END`, but it does
-  not yet record semantic combat/round boundaries. Fixed high-load intervals
-  must be labeled `TELEMETRY_HIGH_LOAD`, not asserted to be proven battles.
+- **LOCKED:** marked full runs are preferred product-performance evidence. Every
+  logged frame and every resource/pipeline sample inside the range participates;
+  no phase selection or classification is required.
+- **LOCKED:** the current UI/source-named Combat Benchmark remains a faster
+  5–8 minute bounded A/B screen; it does not replace a full-run promotion check.
+- **LOCKED:** the product target is useful-frame cadence of at least 60 FPS
+  throughout the complete run, not a flattering average or selected scene.
 - **LOCKED:** `benchmark.md` is the formula and reporting authority. Historical
   `docs/benchmarks.md` results retain their original M1 Max/userdebug scope.
 
-- Start manually when representative heavy combat begins.
+- Start the bounded A/B during representative continuous gameplay; no semantic
+  phase marker is required.
 - Minimum valid combat duration: 300 seconds.
 - Automatic close: 480 seconds.
 - Exact TFT layer/timestamp availability: at least 95%.
@@ -360,6 +361,9 @@ Decision rules:
   configuration identity, or result between thresholds.
 - A winning candidate still requires a five-minute cold confirmation before
   normal-use promotion.
+- **LOCKED:** `HOME_RUN`/`PROMISING` are relative candidate decisions, not proof
+  that the product target is met. The separate full-run status remains
+  `TARGET_NOT_MET` until useful-frame cadence holds at least 60 FPS throughout.
 
 ## 11. Verified results and decisions
 
@@ -382,17 +386,21 @@ Decision rules:
 - **VERIFIED CURRENT:** the user marked one complete Build 7 match in that same
   session from event 1442 at `2026-08-31T03:19:25Z` through event 3065 at
   `2026-08-31T03:51:00Z`, a 1,895.054-second / 31m35.054s range.
-- **VERIFIED CURRENT:** the marked match contains 93,724 exact TFT
+- **VERIFIED CURRENT:** the marked run contains 93,724 exact TFT
   actual-present intervals: weighted FPS 49.449, 1% low 16.300 FPS, p95
   33.822 ms, p99 48.746 ms, maximum 1,254.162 ms, 19.110% jank, and 0.610%
   severe intervals. Exact-layer measured coverage was 100%, with one stable
   layer and no history truncation.
+- **VERIFIED CURRENT:** 58,925 intervals (62.871%) exceeded the 60 FPS frame
+  budget; total budget overrun was 357,921.976 ms; the longest consecutive
+  budget-miss run was 325 intervals; and 1,599 of 1,693 complete one-second
+  windows (94.448%) were below 60 FPS.
 - **VERIFIED CURRENT:** final TFTMAC Metal output averaged 59.968 FPS with zero
   drawable/command errors and maximum recorded final-presenter GPU time
   3.267 ms, while 23,231 presentations reused a source frame. This makes the
   final pass a poor explanation for the missing useful frames in this match; it
   does not identify which upstream component was first late.
-- **UNKNOWN:** this full match is not a candidate-vs-Control decision. It has no
+- **UNKNOWN:** this full run is not a candidate-vs-Control decision. It has no
   matched Control/formal benchmark row, and p95 clock RTT was 86.757 ms, so
   cross-host ownership is invalid. `benchmark.md` preserves the complete result.
 
@@ -424,7 +432,7 @@ campaign, useful for candidate selection but not current M4 Build 7 performance:
   30.5 to 31.3 FPS despite 2.56× source pixels, indicating that scene was not
   primarily pixel-fill bound.
 - The historical selected stack did not achieve the 57 FPS heavy-scene goal and
-  did not reproduce the user's late-game approximately 15 FPS battle.
+  did not reproduce the user's worst approximately 15 FPS gameplay period.
 
 ### Graphics council and ZoeMC simulation
 
@@ -476,24 +484,23 @@ campaign, useful for candidate selection but not current M4 Build 7 performance:
 
 ## 13. Explicit unknowns and open acceptance
 
-1. Combat Latency A's effect on real battle FPS, 1% low, p95/p99, and visible
-   stutter.
+1. Combat Latency A's effect on continuous whole-run FPS, 1% low, p95/p99,
+   frame-budget misses, and visible stutter versus Control.
 2. Whether QEMU decoder/render/submission workers actually receive beneficial
    scheduling after exec.
-3. The first divergent boundary in the user's worst late-game battles.
+3. The first divergent boundary in the run's worst sustained under-60 periods.
 4. Exact ASG-versus-gfxstream-versus-MoltenVK ownership without a frame-ID
    correlation ring and valid synchronized trace.
-5. Whether persistent MoltenVK pipeline caching removes meaningful combat
-   compilation stalls in this exact shipping path.
+5. Whether persistent MoltenVK pipeline caching removes meaningful frame stalls
+   in this exact shipping path.
 6. Whether MMAP can reduce host copy/frame age without tearing or ownership
    corruption. Raw gRPC remains the working control.
 7. Whether current sound is audibly correct at the user's output device.
 8. Whether Riot WebView input ANR recurs after future TFT/WebView updates.
 9. Public distribution acceptance: the current app is locally signed but not
    notarized.
-10. Semantic battle/round boundaries inside full matches; current native data
-    can identify deterministic high-load periods but cannot name them as proven
-    battles.
+10. Whether any owned candidate can hold the complete marked run at the 60 FPS
+    target without correctness, audio, login, memory, or cleanup regression.
 
 ## 14. Authority and update rule
 
