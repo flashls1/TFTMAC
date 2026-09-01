@@ -1,5 +1,10 @@
 # Research log
 
+> **Historical research only.** This log preserves earlier GLES/ANGLE, donor,
+> overlay, and fixed-stage work. It must not override current Build 8 facts,
+> direct Unreal Vulkan receipts, stock-runtime normal-play authority, or the
+> current no-marker automatic-logging policy.
+
 This edited log preserves the useful technical chronology and negative results.
 Benchmark tables and acceptance rules are summarized separately in
 [Benchmarks](benchmarks.md).

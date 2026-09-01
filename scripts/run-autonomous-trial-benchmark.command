@@ -32,9 +32,9 @@ readonly AVD_NAME="${TFT_AVD_NAME:-TftRootAffinity}"
 readonly AVD_DIR="$AVD_HOME/$AVD_NAME.avd"
 readonly CONFIG="$AVD_DIR/config.ini"
 readonly HARDWARE_CONFIG="$AVD_DIR/hardware-qemu.ini"
-readonly ASG_CONFIG_BACKUP="$CONFIG.mactician-asg-backup"
-readonly ASG_HARDWARE_BACKUP="$HARDWARE_CONFIG.mactician-asg-backup"
-readonly AVD_LOCK="$AVD_DIR/.mactician-avd.lock"
+readonly ASG_CONFIG_BACKUP="$CONFIG.tftmac-asg-backup"
+readonly ASG_HARDWARE_BACKUP="$HARDWARE_CONFIG.tftmac-asg-backup"
+readonly AVD_LOCK="$AVD_DIR/.tftmac-avd.lock"
 readonly WRAP_PROPERTY="wrap.$PACKAGE"
 
 if [[ -z "$CANDIDATE_ID" ]] \

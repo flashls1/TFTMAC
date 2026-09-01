@@ -524,7 +524,7 @@ INSERT INTO unknowns VALUES
 -- preserving those older rows as historical context elsewhere in the project.
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
-('current_playable_baseline','mactician_compatible_official_v0'),
+('current_playable_baseline','tftmac_official_baseline_v1'),
 ('current_playable_baseline_session','2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2'),
 ('current_guest','Android 16 / API 36 Google Play ARM64 revision >=7'),
 ('current_emulator','Google Android Emulator 37.1.11'),
@@ -556,9 +556,9 @@ INSERT OR REPLACE INTO runtime_configs (
     display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
     graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
 ) VALUES
-('mactician_compatible_official_v0',NULL,'Mactician-compatible official TFT control v0','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,6144,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','GuestAngle + explicit exposeNonConformantExtensionsAndVersions/exposeES32ForTesting compatibility adapter','ranchu guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL','2026-08-28T11:06:18Z','Completed a full first-place official TFT match. Compatibility exposure is a truthful workload adapter, not GLES conformance proof.'),
-('mactician_compatible_5gb_v1','mactician_compatible_official_v0','RAM 5 GiB candidate','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE','2026-08-28T21:31:30Z','One-factor candidate: only guest RAM changes 6144 -> 5120 MB. Direct 4096 MB cut deferred because observed heavy-gameplay guest headroom reaches about 1.64-1.75 GiB.'),
-('mactician_compatible_5gb_flush400_v1','mactician_compatible_5gb_v1','5 GiB + lower draw flush interval candidate','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','same as 5 GiB baseline','same as 5 GiB baseline','same as 5 GiB baseline','same as 5 GiB baseline','CANDIDATE','2026-08-28T23:47:00Z','One-factor graphics-transport candidate: hw.gltransport.drawFlushInterval 800 -> 400 only. AOSP defines this interval as the balance between host-GPU starvation and pipe-notification overhead; test only against SurfaceFlinger miss-rate and resource telemetry.');
+('tftmac_official_baseline_v1',NULL,'TFTMAC official playable baseline official TFT control v0','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,6144,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','GuestAngle + explicit exposeNonConformantExtensionsAndVersions/exposeES32ForTesting compatibility adapter','ranchu guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL','2026-08-28T11:06:18Z','Completed a full first-place official TFT match. Compatibility exposure is a truthful workload adapter, not GLES conformance proof.'),
+('tftmac_5gb_baseline_v1','tftmac_official_baseline_v1','RAM 5 GiB candidate','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE','2026-08-28T21:31:30Z','One-factor candidate: only guest RAM changes 6144 -> 5120 MB. Direct 4096 MB cut deferred because observed heavy-gameplay guest headroom reaches about 1.64-1.75 GiB.'),
+('tftmac_5gb_flush400_exp_v1','tftmac_5gb_baseline_v1','5 GiB + lower draw flush interval candidate','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5592',5040,5592,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','same as 5 GiB baseline','same as 5 GiB baseline','same as 5 GiB baseline','same as 5 GiB baseline','CANDIDATE','2026-08-28T23:47:00Z','One-factor graphics-transport candidate: hw.gltransport.drawFlushInterval 800 -> 400 only. AOSP defines this interval as the balance between host-GPU starvation and pipe-notification overhead; test only against SurfaceFlinger miss-rate and resource telemetry.');
 
 UPDATE hypotheses
 SET status='TESTING', confidence=0.60,
@@ -571,18 +571,18 @@ INSERT OR REPLACE INTO hypotheses VALUES
 ('h_gpu_frame_miss','GPU-side presentation misses contribute to visible lag','SURFACEFLINGER','A meaningful portion of visible gameplay lag is caused by GPU/presentation misses somewhere in the Unreal -> ANGLE -> Vulkan -> gfxstream -> MoltenVK -> Metal path.','TFT-specific SurfaceFlinger frametimeline traces show GPU-missed or late frames correlated with visible stalls while memory state is controlled.','TFT-specific frametimeline remains healthy during visible stalls, or misses disappear without improving perceived performance.','QUEUED',0.35,NULL,'2026-08-28T18:42:01Z','Nominated from cumulative SurfaceFlinger counters only: 2709 total missed, 2163 GPU missed, 546 HWC missed at the latest post-match read. These counters are since boot and are not match-scoped.');
 
 INSERT OR REPLACE INTO experiments VALUES
-('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION','mactician_compatible_official_v0','mactician_compatible_5gb_v1','HEAVY',1,'PLANNED',1,'Same official TFT version, renderer path, display, transport and vCPU; compare continuous-run pressure and native frame timing when available.','2026-08-28T21:31:30Z',NULL,'First RAM intervention. One GiB reduction only; 4096 MB is deferred because current guest headroom is insufficient for a safe first cut.'),
-('exp_native_frame_trace',NULL,'Native Unreal/Vulkan frame-timing capture','OBSERVATION','mactician_compatible_official_v0',NULL,'HEAVY',0,'PLANNED',0,'Capture android.surfaceflinger.frame + android.surfaceflinger.frametimeline + android.surfaceflinger.layers + android.gpu.memory during real TFT combat; align to the existing host monotonic clock. Add linux.ftrace only in the heavier validation run.','2026-08-28T18:30:59Z',NULL,'Blocking measurement experiment before renderer/transport tuning. All required Perfetto data sources are directly proven available on the current guest.');
+('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION','tftmac_official_baseline_v1','tftmac_5gb_baseline_v1','HEAVY',1,'PLANNED',1,'Same official TFT version, renderer path, display, transport and vCPU; compare continuous-run pressure and native frame timing when available.','2026-08-28T21:31:30Z',NULL,'First RAM intervention. One GiB reduction only; 4096 MB is deferred because current guest headroom is insufficient for a safe first cut.'),
+('exp_native_frame_trace',NULL,'Native Unreal/Vulkan frame-timing capture','OBSERVATION','tftmac_official_baseline_v1',NULL,'HEAVY',0,'PLANNED',0,'Capture android.surfaceflinger.frame + android.surfaceflinger.frametimeline + android.surfaceflinger.layers + android.gpu.memory during real TFT combat; align to the existing host monotonic clock. Add linux.ftrace only in the heavier validation run.','2026-08-28T18:30:59Z',NULL,'Blocking measurement experiment before renderer/transport tuning. All required Perfetto data sources are directly proven available on the current guest.');
 
 UPDATE experiments
-SET baseline_config_id='mactician_compatible_official_v0',
+SET baseline_config_id='tftmac_official_baseline_v1',
     state='COMPLETE',
     notes=COALESCE(notes,'') || ' Superseded runtime identity corrected to the proven playable baseline.'
 WHERE id='exp_control_direct_play';
 
 UPDATE experiments
 SET state='CANCELLED',
-    notes=COALESCE(notes,'') || ' Superseded by mactician_compatible_official_v0 and exp_native_frame_trace.'
+    notes=COALESCE(notes,'') || ' Superseded by tftmac_official_baseline_v1 and exp_native_frame_trace.'
 WHERE id IN ('exp_control_repeat_warm','exp_transition_capture','exp_heavy_capture')
   AND baseline_config_id='control_stock_direct_v0';
 
@@ -594,10 +594,10 @@ INSERT OR REPLACE INTO hypotheses VALUES
 ('h_asg_flush_latency','ASG draw flush cadence contributes to presentation lateness','GFXSTREAM_ASG','The current draw-flush cadence allows guest graphics work to reach the host late enough to contribute to SurfaceFlinger/HWC presentation misses even when GPU-miss counters remain flat.','Reducing drawFlushInterval 800 -> 400 lowers HWC/total missed-frame rate in comparable gameplay without a disproportionate CPU or notification-overhead penalty.','HWC/total miss rate does not improve, or host CPU/overhead rises materially enough to offset frame-pacing gains.','QUEUED',0.45,NULL,'2026-08-28T23:47:00Z','Nominated from broad 5 GiB run delta: +524 total misses, +524 HWC misses, +0 GPU misses, plus available host CPU headroom. Requires 10-second SurfaceFlinger counter stream for a clean A/B.');
 
 INSERT OR REPLACE INTO experiments VALUES
-('exp_asg_flush400_ab','h_asg_flush_latency','ASG draw flush interval 800 -> 400 A/B','INTERVENTION','mactician_compatible_5gb_v1','mactician_compatible_5gb_flush400_v1','HEAVY',1,'PLANNED',1,'Keep 5 GiB RAM, 6 vCPU, 1920x1080, Medium/60/Performance OFF, ANGLE/Vulkan/MoltenVK, ASG sizes and TFT package unchanged; compare 10-second SurfaceFlinger HWC/GPU/total miss rate plus CPU/memory.','2026-08-28T23:47:00Z',NULL,'Do not activate until a stable 5 GiB/CoreAudio control run is available with the new SurfaceFlinger counter stream.'),
-('exp_tft_performance_mode_ab',NULL,'TFT Performance Mode (Beta) A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Keep Medium graphics, 60 FPS cap, emulator/runtime/package identical; change only Performance Mode (Beta) ON/OFF and compare native frame timing + memory/GPU pressure.','2026-08-28T20:11:18Z',NULL,'First game-level intervention after the fully labeled Medium/60 baseline.'),
-('exp_tft_fps_cap_ab',NULL,'TFT FPS cap A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold graphics preset and Performance Mode constant; compare 60 versus None first, with 30 retained as a diagnostic lower-load control if needed.','2026-08-28T20:11:18Z',NULL,'Do not combine FPS-cap changes with graphics-preset changes.'),
-('exp_tft_graphics_preset_ab',NULL,'TFT graphics preset A/B','INTERVENTION','mactician_compatible_official_v0',NULL,'HEAVY',1,'PLANNED',0,'Hold FPS cap and Performance Mode constant; test Low, Medium, High, Ultra High one preset at a time with native frame timing.','2026-08-28T20:11:18Z',NULL,'Target is the highest preset that preserves stable 60-Hz frame pacing and acceptable memory/GPU pressure.');
+('exp_asg_flush400_ab','h_asg_flush_latency','ASG draw flush interval 800 -> 400 A/B','INTERVENTION','tftmac_5gb_baseline_v1','tftmac_5gb_flush400_exp_v1','HEAVY',1,'PLANNED',1,'Keep 5 GiB RAM, 6 vCPU, 1920x1080, Medium/60/Performance OFF, ANGLE/Vulkan/MoltenVK, ASG sizes and TFT package unchanged; compare 10-second SurfaceFlinger HWC/GPU/total miss rate plus CPU/memory.','2026-08-28T23:47:00Z',NULL,'Do not activate until a stable 5 GiB/CoreAudio control run is available with the new SurfaceFlinger counter stream.'),
+('exp_tft_performance_mode_ab',NULL,'TFT Performance Mode (Beta) A/B','INTERVENTION','tftmac_official_baseline_v1',NULL,'HEAVY',1,'PLANNED',0,'Keep Medium graphics, 60 FPS cap, emulator/runtime/package identical; change only Performance Mode (Beta) ON/OFF and compare native frame timing + memory/GPU pressure.','2026-08-28T20:11:18Z',NULL,'First game-level intervention after the fully labeled Medium/60 baseline.'),
+('exp_tft_fps_cap_ab',NULL,'TFT FPS cap A/B','INTERVENTION','tftmac_official_baseline_v1',NULL,'HEAVY',1,'PLANNED',0,'Hold graphics preset and Performance Mode constant; compare 60 versus None first, with 30 retained as a diagnostic lower-load control if needed.','2026-08-28T20:11:18Z',NULL,'Do not combine FPS-cap changes with graphics-preset changes.'),
+('exp_tft_graphics_preset_ab',NULL,'TFT graphics preset A/B','INTERVENTION','tftmac_official_baseline_v1',NULL,'HEAVY',1,'PLANNED',0,'Hold FPS cap and Performance Mode constant; test Low, Medium, High, Ultra High one preset at a time with native frame timing.','2026-08-28T20:11:18Z',NULL,'Target is the highest preset that preserves stable 60-Hz frame pacing and acceptable memory/GPU pressure.');
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('latest_observed_match_2','placement=1; result=WIN; exact result at 2026-08-28T20:57:14.054Z'),
@@ -637,14 +637,14 @@ INSERT OR REPLACE INTO decisions(id,experiment_id,decision,rationale,cold_confir
 ('decision_ram5_operational_keep','exp_ram_5gb_ab','KEEP','Retain 5120 MB guest RAM for continued development: host-pressure indicators improved materially and the guest retained usable headroom without OOM/ANR. Do not cut to 4096 MB now.','0',NULL,'2026-08-28T23:49:00Z','KEEP means current development default, not a permanent promoted performance fact.');
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
-('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; mactician_compatible_5gb_v1; raw SEALED; normalized COMPLETE; 18/18 required artifacts present.'),
+('latest_closed_run_session','2026-08-28T23-31-16-637Z-df54ebaa-561a-4567-ab20-d94baf0a3619; 3860.24s; tftmac_5gb_baseline_v1; raw SEALED; normalized COMPLETE; 18/18 required artifacts present.'),
 ('latest_closed_run_memory','Full-run weighted means: emulator CPU 171.87%, RSS 5829 MiB, host available 5.425 GiB, host compressed 2.793 GiB, guest available 2.224 GiB. Heavy windows reproduced about 1.70-1.90 GiB guest headroom. Keep 5120 MB and defer/reject 4096 MB for now.'),
 ('latest_closed_run_pageouts','10711 pageouts / 3860.24s = 166.48 per minute including cold boot. Excluding first 10 minutes gives about 127.94 per minute, close to prior 5 GiB run 133.54 per minute and below old 6 GiB baseline 207.18 per minute. Treat as repeated directional support, not perfectly matched workload proof.'),
 ('latest_closed_run_audio','CoreAudio sustained: explicit backend, 0 ranchu pcm_write I/O errors, active TFT 44.1 kHz stereo OpenSL ES track, 0 mixer underruns.'),
 ('latest_closed_run_network','No emulator/Android network disconnect reproduced: TFT PID stayed 5276; network 101 stayed assigned; end-of-game callback requests were immediately reassigned to network 101.'),
 ('latest_closed_run_presentation','Surface remains 1280x720 scaled to 1920x1080; post-run total missed=562 and HWC missed=562 at 60 Hz. Zero-valued GPU counter parsing was fixed so zero no longer becomes NULL. Next graphics intervention remains ASG drawFlushInterval 800 -> 400 only.'),
 ('current_5gb_operational_decision','KEEP 5120 MB as development runtime. Two long runs reproduce lower pressure/pageout direction versus 6144 MB while maintaining adequate heavy-game guest headroom; 4096 MB remains deferred.'),
-('current_graphics_experiment','Next one-factor candidate: mactician_compatible_5gb_flush400_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.'),
+('current_graphics_experiment','Next one-factor candidate: tftmac_5gb_flush400_exp_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.'),
 ('latest_graphics_quality_observation','2026-08-28 late game: user changed TFT from Medium to Ultra High, observed Ultra High as unplayable due to severe lag, then returned to Medium and playability recovered. Exact switch timestamps were not instrumented in this legacy run, so do not assign telemetry bins or inferred FPS values to the Ultra High interval.'),
 ('current_tft_graphics_observed','Medium'),
 ('ultra_high_current_usability','REJECT for current runtime usability until new native-app FPS/config instrumentation can quantify the boundary; direct user observation is decisive for usability but not causal pipeline attribution.');
@@ -664,3 +664,135 @@ COMMIT;
 -- SELECT * FROM v_open_hypotheses;
 -- SELECT * FROM v_experiment_scorecard;
 -- SELECT * FROM v_promoted_facts;
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-30 native AppKit/Metal runtime authority
+-- Historical 5040/5592/6144 rows above remain immutable experiment receipts.
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO runtime_configs (
+    id,parent_config_id,name,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+    avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,
+    display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
+    graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES
+('tftmac_5gb_native_v1','tftmac_5gb_baseline_v1','TFTMAC native full-screen 5 GiB baseline','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,'TFT_Ultra_Tablet','emulator-5582',5038,5582,6,5120,1920,1080,320,60.0,'host',1,'virtio-gpu-asg','GuestAngle + explicit exposeNonConformantExtensionsAndVersions/exposeES32ForTesting compatibility adapter','ranchu guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','authenticated raw gRPC -> AppKit Metal full screen','CONTROL','2026-08-30T08:40:36Z','Donor-compatible logged-in-session launcher: /usr/bin/open -n -W through packaged TFTMAC Emulator Host.app; ADB_VENDOR_KEYS absent. Native lobby acceptance passed; source/presentation counters are transport metrics, not Unreal engine FPS.');
+
+INSERT OR REPLACE INTO sessions(
+    id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,
+    boot_class,workload_class,package_name,package_version_name,package_version_code,
+    package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+    package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+) VALUES
+('2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94','tftmac_5gb_native_v1','2026-08-30T08:40:36Z',NULL,NULL,NULL,'COLD','LOBBY','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,0,'PARTIAL',1,NULL,'Native full-screen lobby acceptance; capture was still open when this SSOT receipt was written.');
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','tftmac_5gb_native_v1'),
+('current_native_runtime_config','tftmac_5gb_native_v1'),
+('current_native_acceptance_session','2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94'),
+('current_runtime_identity','ADB 5038; console 5582; serial emulator-5582; packaged app host via /usr/bin/open; no injected ADB_VENDOR_KEYS'),
+('current_native_frame_truth','Raw gRPC source-window rate and Metal presentation rate are transport/output metrics only. Do not label either as Unreal engine FPS.'),
+('current_native_logger','Private local capture: SQL receipts/events, one-second frame interval windows, presentation, qemu CPU/RSS, guest memory, clock sync, SurfaceFlinger deltas, AudioFlinger health, aggregate logcat signals, game PID sessions, input counts and explicit match/stutter markers.'),
+('current_surfaceflinger_counter_policy','Sample the live dumpsys SurfaceFlinger counters every 30 seconds during gameplay and at session boundaries. Compare deltas inside marked windows; absolute counters remain cumulative since boot.'),
+('current_optimization_priority','Hold 1920x1080/320 dpi, 5038/5582, 5120 MiB, 6 vCPU, CoreAudio, host GPU and the renderer chain. Run one restart-bound variable A/B at a time and require cold confirmation before promotion.');
+
+INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
+('ev_native_fullscreen_acceptance_20260830',NULL,'2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94',NULL,'DIRECT_MEASUREMENT','Native TFTMAC filled the 1920x1080 display in an AppKit full-screen window, authenticated Emulator37.1.11 gRPC, authorized emulator-5582 on ADB5038, rendered 1920x1080 RGBA through Metal at about 60 output presentations/s, and launched official TFT18.1 into Unreal GameActivity.','NEUTRAL','DECISIVE',NULL,'2026-08-30T08:41:35Z','Capture 2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94. Lobby/input/software-audio path proven; full-match and user-audible acceptance remain separate.');
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-31 Build 8 automatic full-run capture: current causal baseline
+-- This preserves older measurements while replacing neither their rows nor
+-- their historical conclusions. The raw SQLite capture remains private.
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO runtime_configs (
+    id,parent_config_id,name,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+    avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,
+    display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
+    graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES (
+    'tftmac_stock_build8_high60_control','tftmac_5gb_native_v1','Stock Build 8 High/60 normal-play control','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,
+    'TFT_Ultra_Tablet','emulator-5582',5038,5582,6,5120,1920,1080,320,60.0,'host',1,
+    'virtio-gpu-asg','Conditional: do not assume ANGLE is TFT main rendering path','Unreal direct Vulkan observed','gfxstream host Vulkan -> MoltenVK/Metal','authenticated raw gRPC -> AppKit Metal full screen','CONTROL','2026-08-31T22:30:26Z',
+    'Normal-play authority. Active observed experiment combat_latency_a uses High/60/Performance Mode OFF and is not a promoted performance intervention.'
+);
+
+INSERT OR REPLACE INTO sessions(
+    id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,
+    boot_class,workload_class,package_name,package_version_name,package_version_code,
+    package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+    package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+) VALUES (
+    '2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','tftmac_stock_build8_high60_control','2026-08-31T22:31:03Z','2026-08-31T23:13:30Z',NULL,NULL,
+    'UNKNOWN','MIXED','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,
+    0,'COMPLETE',1,NULL,'42m27s automatic PID/layer-lifetime run. Markers and battle labels are optional annotations; no marker is required for validity or causal analysis.'
+);
+
+INSERT OR REPLACE INTO artifacts(id,session_id,experiment_id,artifact_kind,path,sha256,byte_count,required,state,created_at,notes) VALUES
+('artifact_build8_current_private_db','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200',NULL,'PRIVATE_SQLITE_CAPTURE','PRIVATE_LOCAL_ONLY/TFTMAC_NATIVE_RUNTIME.sqlite','c1ef9c9ffe591a297cb86660e3ccfea7e9aeb593f22100e4e732b2fc77d4ee77',63897600,1,'PRESENT','2026-08-31T23:13:30Z','Metadata and integrity hash only; raw database is intentionally excluded from Git.');
+
+INSERT OR REPLACE INTO experiments VALUES
+('exp_build8_automatic_full_run',NULL,'Build 8 automatic full-run graphics observation','OBSERVATION','tftmac_stock_build8_high60_control',NULL,'MIXED',0,'COMPLETE',0,'Automatic PID/layer lifetime, exact TFT layer and receipt linkage; markers/battle labels are optional and have no validity role.','2026-08-31T22:30:26Z','2026-08-31T23:13:30Z','Diagnostic observation only; establishes current performance facts and preserves root attribution as UNKNOWN.');
+
+INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES
+('exp_build8_automatic_full_run','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','DIAGNOSTIC');
+
+INSERT INTO metrics(session_id,experiment_id,metric_scope,metric_name,metric_value,unit,source_artifact_id,semantic_valid,notes) VALUES
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','weighted_fps',56.98,'fps','artifact_build8_current_private_db',1,'Exact TFT SurfaceFlinger actual-present authority.'),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','fps_1_percent_low',21.49,'fps','artifact_build8_current_private_db',1,'Exact TFT SurfaceFlinger actual-present authority.'),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p50_frame_interval',16.707,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p95_frame_interval',21.51,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p99_frame_interval',33.434,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','max_frame_interval',2233.611,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','jank_count',6544,'frames','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','jank_percent',4.53,'percent','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','severe_stall_count',144,'windows','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','missed_vsync_equivalent_count',7644,'frames','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','exact_layer_coverage',99.629,'percent','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','frame_interval_count',144364,'intervals','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','degradation_incident_count',189,'incidents','artifact_build8_current_private_db',1,'Incident count is aggregate; no battle classifier is used as a causal gate.');
+
+INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
+('ev_build8_current_full_run',NULL,'2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','DIRECT_MEASUREMENT','Build 8 automatically captured a complete 42m27s TFT graphics run with 144364 exact-layer frame intervals and 99.629% exact-layer coverage. The observed direct path is Unreal Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE is conditional, final Mac presentation is context-only, and the first causal boundary remains UNKNOWN.','NEUTRAL','DECISIVE','artifact_build8_current_private_db','2026-08-31T23:13:30Z','No raw database, screenshots, credentials, or frame payloads are committed.'),
+('ev_build8_current_root_unknown',NULL,'2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','TRACE_CORRELATION','Current automatic logging proves degradation but cannot identify an internal owned root component because no shared guest-to-host causal work ID exists.','NEUTRAL','DECISIVE','artifact_build8_current_private_db','2026-08-31T23:13:30Z','Do not infer ASG, gfxstream, MoltenVK, Metal, ANGLE, or Unreal ownership from the present capture.');
+
+INSERT OR REPLACE INTO decisions(id,experiment_id,decision,rationale,cold_confirmation_complete,promoted_config_id,decided_at,notes) VALUES
+('decision_build8_current_full_run','exp_build8_automatic_full_run','DIAGNOSTIC_ONLY','The capture verifies automatic logging and current full-run degradation metrics, but it is not a controlled promotion and root attribution is UNKNOWN.',0,NULL,'2026-08-31T23:13:30Z','Keep stock Build 8 as normal-play authority; advanced source causal logging is planned.');
+
+INSERT OR REPLACE INTO unknowns(id,question,boundary,status,blocking,resolution_evidence_id,opened_at,resolved_at,notes) VALUES
+('u_current_internal_root_cause','Which owned graphics component first diverges before TFT SurfaceFlinger actual-present degradation?','CROSS_STACK_CAUSAL','OPEN',1,NULL,'2026-08-31T23:13:30Z',NULL,'Requires the planned source-instrumented causal logger and complete work-ID joins.');
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','tftmac_stock_build8_high60_control'),
+('current_playable_baseline_session','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200'),
+('current_release_gameplay_benchmark','VERIFIED_CAPTURE_ROOT_ATTRIBUTION_UNKNOWN'),
+('current_runtime_mode','STOCK_BUILD8_NORMAL_PLAY_AUTHORITY'),
+('current_active_experiment','combat_latency_a observed High/60/Performance Mode OFF; not promoted'),
+('current_renderer_path','Unreal direct Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE conditional only'),
+('current_mac_presenter_policy','Final Mac presenter is excluded from causal candidates and retained only as context/correctness telemetry.'),
+('current_marker_policy','MATCH_ENTRY, MATCH_END, combat, battle, and quality markers are optional annotations only; automatic process/layer lifetime defines capture validity.'),
+('current_root_attribution','UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE'),
+('advanced_source_causal_logger','PLANNED: isolated non-comparable tftmac-runtime diagnostic build; no causal code-site claim until complete work-ID joins, valid clocks, sealed streams, and overhead gate pass.');
+
+UPDATE experiments
+SET state='CANCELLED',
+    notes=COALESCE(notes,'') || ' Historical candidate retained; superseded as current work by the verified Build 8 full-run baseline and planned source causal logger. Do not execute as an active tuning recommendation.'
+WHERE id IN ('exp_asg_flush400_ab','exp_native_frame_trace','exp_tft_fps_cap_ab','exp_tft_graphics_preset_ab','exp_tft_performance_mode_ab')
+  AND state='PLANNED';
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_presentation_candidate','RETIRED_AS_CURRENT_ACTION: final Mac presentation and broad SurfaceFlinger/HWC directional candidates are context only; causal changes wait for the planned source causal logger.'),
+('current_graphics_next_action','Build and validate the isolated source causal logger. Do not run a tuning A/B until it identifies an owned first divergent boundary or explicitly reports that the first missing boundary is unowned.');
+
+-- Exact-key overrides for the Build 8 authority. Earlier values remain in the
+-- SQL history but cannot survive as the effective current policy.
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('logger_guard_policy','Automatic logging follows the TFT process and exact layer from game start until process/app close. MATCH_ENTRY, MATCH_END, combat, battle, quality, and result markers are optional annotations only.'),
+('multi_match_policy','Keep raw telemetry continuous across every game. Process/layer lifetime and timestamps define validity; marker pairing and battle classification are never required.'),
+('current_measurement_gap','Exact TFT SurfaceFlinger actual-present timing is implemented and verified. Internal causal attribution below the guest TFT surface remains unimplemented because owned-stage work IDs are absent.'),
+('current_tft_graphics_observed','High'),
+('current_tft_fps_cap_observed','60'),
+('current_tft_performance_mode_beta_observed','OFF'),
+('current_native_frame_truth','Exact TFT SurfaceFlinger actual-present timestamps are FPS authority. Final Mac presentation is hidden correctness context only and is excluded from causal ranking.'),
+('current_native_logger','Automatic private SQL capture covers the TFT PID/layer lifetime, exact intervals/windows, receipts, incidents, and bounded supporting telemetry. Markers are optional annotations.'),
+('current_surfaceflinger_counter_policy','Exact TFT actual-present intervals and one-second windows are primary. Cumulative counters are supporting context only and do not require marked windows.'),
+('current_optimization_priority','Analyze all automatic full-run graphics data. Do not tune or name a root component until the planned source causal logger proves the first divergent owned boundary or explicitly reports UNKNOWN.'),
+('current_graphics_experiment','No tuning A/B is active. The next development phase is the PLANNED isolated source causal logger; combat_latency_a is an observed High/60/Performance Mode OFF preset, not a promoted result.');

@@ -1,5 +1,6 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "status": "RETIRED_SOURCE_BUILD_EVIDENCE",
   "observedAt": "2026-08-28T04:03:27.389Z",
   "aemuBranch": "emu-master-dev",
   "manifestSHA256": "28865cd8a162178ba462b296f5714b6b7b6916e0cafcddfc0c5e44aa03f8e8d3",
@@ -13,8 +14,7 @@
   "guestAnglePass": true,
   "moltenVKIntegration": {
     "authority": "prebuilts/android-emulator",
-    "commit": "fb26612eb84576adb974fe7f18a49d263072116f",
-    "discovery": "ssot/moltenvk-integration-discovery.json"
+    "commit": "fb26612eb84576adb974fe7f18a49d263072116f"
   },
   "moltenVKReference": {
     "tag": "v1.4.2",
@@ -27,9 +27,5 @@
     "vulkanCTSCommit": "5c8aae22885448d70a2873e94a93b24b49505c32",
     "vulkanSamplesCommit": "89dd3af22d41f9244eeab6e0650460112285c0e1"
   },
-  "repoTool": {
-    "path": "/Volumes/MAC MINI M4/TFTMAC/Build/bin/repo",
-    "sha256": "1211b57b57e4122a9c546295a59b37d24068f1164d0e87bef096d5323c413e4f",
-    "version": "repo version v2.66.1\n       (from https://gerrit.googlesource.com/git-repo)\n       (tracking refs/heads/stable)\n       (Mon, 10 Aug 2026 13:37:04 -0700)\nrepo launcher version 2.65\n       (from /Volumes/MAC MINI M4/TFTMAC/Build/bin/repo)\n       (currently at 2.66.1)\nrepo User-Agent git-repo/2.66.1 (Darwin) git/2.50.1 (Apple Git-155) Python/3.14.6\ngit 2.50.1 (Apple Git-155)\ngit User-Agent git/2.50.1 (Apple Git-155) (Darwin) git-repo/2.66.1\nPython 3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]\nOS Darwin 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:11:03 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T8132)\nCPU arm64 (arm)\nBug reports: https://issues.gerritcodereview.com/issues/new?component=1370071"
-  }
+  "executionPolicy": "Historical source authority only. Normal TFTMAC operation must not recreate or execute the retired source-build laboratory."
 }

@@ -1,102 +1,78 @@
-# Telemetry and privacy
+# TFTMAC Telemetry and Diagnostics
 
-Mactician has two independent telemetry levels. The term "unlinkable" here
-means that the JSON has no stable identifier with which to connect events. That
-reduces privacy risk but does not by itself determine consent requirements in
-every jurisdiction.
+TFTMAC diagnostics are local-first and evidence-driven.
 
-## Basic first-session event
+## Native capture
 
-After the first session that reached the runtime `ready` state has ended,
-Mactician sends `first_game_session` once per retained macOS preferences domain:
+Each native app start creates a private `0700` session directory under:
 
-```json
-{
-  "schema_version": 2,
-  "event_id": "random-uuid",
-  "event": "first_game_session",
-  "occurred_on": "2026-08-09",
-  "duration_bucket": "30_60m",
-  "launcher_version": "1.0.0",
-  "launcher_build": "33"
-}
+```text
+~/Library/Application Support/TFTMAC/Captures/<session-id>/
 ```
 
-Allowed buckets are `under_5m`, `5_15m`, `15_30m`, `30_60m`, `60_120m`,
-`120_240m`, and `over_240m`. The event does not contain an installation or
-device identifier, exact duration/time, device properties, launcher settings,
-language, identity, logs, or network addresses.
+`TFTMAC_NATIVE_RUNTIME.sqlite` is the queryable session authority. `native-events.jsonl`, emulator stdout/stderr and session-scoped `logcat.raw.txt` are local sidecars. Raw logcat is sensitive, never copied into SQLite, and must not be published.
 
-The pending event is written to `telemetry.firstSession.pending.v2` before the
-request. A retry reuses its original `event_id`. HTTP 2xx or a duplicate
-acknowledgement completes it; 408, 429, 5xx, and network failures retain it. An
-unrecoverable 4xx is terminal. A pending event older than seven days is deleted
-without replacement. Resetting Android/TFT data does not change this state.
+Useful evidence may include:
 
-The server aggregates the event immediately by received date, launcher
-version/build, and duration bucket. The dashboard name is **Approximate
-activated installations**. It is approximate because macOS accounts can count
-separately, clearing preferences or reinstalling can count again, installs with
-no completed session are absent, and an event can expire during extended
-offline use. It must not be labelled `unique_users`, `people`, or `MAU`.
+- host monotonic timestamps;
+- emulator/runtime state;
+- one-second native frame-ingress interval windows and visual checkpoints;
+- raw-gRPC source freshness plus native Metal presentation internals retained as
+  hidden correctness/regression context and never called Unreal FPS;
+- aggregate logcat fault counts with raw lines kept outside SQL;
+- SurfaceFlinger render-rate and cumulative missed/HWC/GPU counters sampled at boundaries and every 30 seconds during gameplay;
+- AudioFlinger active output, sample rate, stereo state, tracks and underruns;
+- host CPU/RSS/memory-pressure samples;
+- guest `/proc/meminfo` and host/guest monotonic clock calibration;
+- renderer/graphics state;
+- package version, installer, and signer evidence;
+- explicit user stutter markers.
 
-## Optional extended diagnostics
+The base graphics logger is automatic: it opens from the observed TFT
+process/layer lifecycle, continues through process/layer replacement or loss,
+and seals only at TFT process or app close. It does not wait for a match marker,
+a battle classifier, or a Combat Benchmark. The Telemetry menu's
+`MATCH_ENTRY`, `VISIBLE_STUTTER`, and `MATCH_END` remain optional user context;
+the controlled Combat Benchmark remains an optional A/B protocol. `gfxinfo` is
+not Unreal/Vulkan frame authority. Perfetto remains a bounded incident
+diagnostic rather than an always-on observer.
 
-Extended diagnostics are created and sent only when
-`telemetry.extendedConsent.state.v1` is `granted` for consent version 1.
-`unknown` and `denied` both prohibit creation and transmission.
+The current source schema associates automatically captured samples with
+`graphics_runs`, records a canonical graphics-stack receipt and SHA-256 at each
+snapshot, and links exact guest intervals to their containing frame window when
+available. Every exact guest interval and one-second game window also carries
+the active immutable `stack_sha256`, so stack identity survives incomplete
+window joins and later layer changes. These source-level changes are
+**VERIFIED CURRENT runtime** evidence through the Build 8 automatic captures. A stack receipt establishes
+the observed route/configuration for that sample; it does not prove causal
+ownership of a slow frame.
 
-Each completed session then sends an independent event:
+## Retention
 
-```json
-{
-  "schema_version": 2,
-  "event_id": "random-uuid",
-  "event": "game_session_diagnostics",
-  "occurred_at": "2026-08-09T12:34:56Z",
-  "duration_seconds": 2871,
-  "launcher_version": "1.0.0",
-  "launcher_build": "33",
-  "consent_version": 1,
-  "launcher_settings": {
-    "profile_id": "quality",
-    "effects_quality_id": "performance",
-    "display_width": 2560,
-    "display_height": 1440,
-    "display_density": 416,
-    "ui_scale_percent": 100,
-    "guest_memory_mb": 8192,
-    "guest_cpu_cores": 6
-  },
-  "device": {
-    "model_identifier": "Mac16,1",
-    "macos_version": "26.0.0",
-    "physical_memory_mb": 32768,
-    "logical_cpu_count": 10
-  }
-}
-```
+Keep only evidence that protects a current product decision:
 
-It never contains an installation ID, Mac name, serial number, MAC address,
-Apple ID, macOS username, Riot ID, IP field, application list, or game logs.
-Turning diagnostics off immediately stops event creation and deletes the entire
-local diagnostic queue; it does not affect the pending basic event. A change to
-the diagnostic field set increments `consent_version` and invalidates prior
-consent.
+- latest successful playable baseline;
+- latest native-app acceptance capture;
+- current package-authority evidence;
+- current promoted A/B evidence;
+- current unresolved crash/failure capture.
 
-## Server retention and processing
+Superseded runs should be compacted to their session ID, configuration hash, verdict, key metrics, and relevant source hashes before raw bulk is removed.
 
-The API strictly rejects unknown fields and out-of-range values, bounds request
-size, and deduplicates by `event_id`. It does not persist source IP or
-User-Agent and never logs an invalid request body. Client addresses exist only
-in the in-memory rate limiter with a short TTL.
+## Privacy
 
-Basic payloads are not retained as raw events. Their aggregates are retained;
-only SHA-256 event-ID hashes remain for deduplication and expire after 14 days.
-Raw extended diagnostic events are retained for 90 days. Longer-lived
-aggregates must avoid small identifiable cohorts.
+Diagnostics must not intentionally capture or publish Google/Riot credentials, tokens, cookies, account identifiers, private Android userdata, or unrelated application data. Sanitize any excerpt before sharing it.
 
-The release order is server compatibility, schema-v2 verification, public
-privacy-policy publication, then the launcher update. No legacy event contract
-is retained because the previous API and its data belonged only to the local
-pre-release laboratory.
+No remote telemetry service is required for the current TFTMAC runtime or acceptance path.
+
+## Conservative graphics views
+
+The automatic logger may construct per-window stack joins through
+`graphics_run_id`, direct per-frame `stack_sha256`, frame-window linkage, and
+the matching snapshot receipt. Its user-facing views are conservative: `TFT`
+identifies exact SurfaceFlinger presentation and `PIPE` identifies controller
+freshness/transport delivery. The final TFTMAC presenter is retained only as a
+hidden correctness receipt. A report must use `UNKNOWN` when a trusted work
+handoff is missing; current Build 8 evidence cannot identify an internal
+graphics owner. CPU, RAM, thermal, power, and audio samples remain
+health/correctness context only in this graphics-only optimization effort.

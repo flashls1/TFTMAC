@@ -76,8 +76,8 @@ Runtime root: /Volumes/MAC MINI M4/TFTMAC/Runtime
 Android Emulator: 37.1.11.0 / build 15917651
 ADB: 1.0.41
 AVD: TFT_Ultra_Tablet
-Console port: 5592
-ADB server: isolated port 5040
+Console port: 5582
+ADB server: donor port 5038
 Google Play ARM64 API36 image
 ```
 

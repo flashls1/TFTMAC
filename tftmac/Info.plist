@@ -19,15 +19,19 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.0</string>
+    <string>2.3.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>8</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.games</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>15.0</string>
+    <key>LSSupportsGameMode</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>TFTMAC uses the Android emulator runtime stored on MAC MINI M4.</string>
     <key>NSHumanReadableCopyright</key>
     <string>TFTMAC. Teamfight Tactics and Riot Games are property of their respective owners.</string>
 </dict>

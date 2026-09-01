@@ -17,15 +17,15 @@ const PLAY_PROFILE_LABEL = 'TFT Ultra Tablet - 13.5in Freeform / Galaxy Tab S10 
 const PLAY_DISPLAY_WIDTH = 2960;
 const PLAY_DISPLAY_HEIGHT = 1848;
 const PLAY_DISPLAY_DENSITY = 320;
-const PLAY_RAM_MB = 8192;
-const DONOR_PROFILE = Object.freeze({
-  id: 'mactician_compatible_official_v0',
-  label: 'Mactician-compatible official TFT control',
+const PLAY_RAM_MB = 5120;
+const BASELINE_PROFILE = Object.freeze({
+  id: 'tftmac_5gb_native_v1',
+  label: 'TFTMAC native playable 5 GiB baseline',
   width: 1920,
   height: 1080,
   density: 320,
   vcpu: 6,
-  ramMB: 6144,
+  ramMB: 5120,
   refreshHz: 60,
   glTransport: 'virtio-gpu-asg',
   asgWriteBufferSize: 1048576,
@@ -36,9 +36,11 @@ const DONOR_PROFILE = Object.freeze({
   angleEnabledFeatures: 'exposeNonConformantExtensionsAndVersions:exposeES32ForTesting',
   angleDisabledFeatures: 'preferSubmitAtFBOBoundary'
 });
-const ADB_PORT = '5040';
-const SERIAL = 'emulator-5592';
-const EMULATOR_PORT = '5592';
+// Preserve the donor topology that completed real TFT games in the logged-in
+// macOS user session. 5040/5592 was the service-context regression.
+const ADB_PORT = '5038';
+const SERIAL = 'emulator-5582';
+const EMULATOR_PORT = '5582';
 const EXTERNAL_ROOT = '/Volumes/MAC MINI M4/TFTMAC/Runtime';
 function resolveConsoleUserHome() {
   const userResult = spawnSync('/usr/bin/stat', ['-f', '%Su', '/dev/console'], { encoding: 'utf8' });
@@ -78,6 +80,66 @@ function readJSON(file, fallback = null) { try { return JSON.parse(fs.readFileSy
 function writeJSON(file, value) { ensureDir(path.dirname(file)); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); }
 function sha256File(file) { const h = crypto.createHash('sha256'); h.update(fs.readFileSync(file)); return h.digest('hex'); }
 function matchNumber(text, pattern) { const match = String(text ?? '').match(pattern); return match ? Number(match[1]) : null; }
+
+function bootstrapNativeGate1Authority() {
+  const runtime = discover();
+  const installedProto = path.join(runtime.sdkRoot, 'emulator', 'lib', 'emulator_controller.proto');
+  if (!exists(installedProto)) throw new Error(`INSTALLED_EMULATOR_CONTROLLER_PROTO_MISSING: ${installedProto}`);
+  const vendorRoot = path.join(repoRoot, 'Vendor', 'AndroidEmulator');
+  const vendoredProto = path.join(vendorRoot, 'emulator_controller.proto');
+  const sourcePath = path.join(vendorRoot, 'SOURCE.json');
+  ensureDir(vendorRoot);
+  const installedSHA256 = sha256File(installedProto);
+  if (exists(vendoredProto)) {
+    const currentSHA256 = sha256File(vendoredProto);
+    if (currentSHA256 !== installedSHA256) {
+      throw new Error(`EMULATOR_CONTROLLER_PROTO_DRIFT: vendored=${currentSHA256} installed=${installedSHA256}`);
+    }
+  } else {
+    fs.copyFileSync(installedProto, vendoredProto);
+  }
+  const phase0 = readJSON(path.join(repoRoot, 'ssot', 'phase0-source.json'), {});
+  const source = {
+    schema: 1,
+    observedAt: nowISO(),
+    authority: 'INSTALLED_ANDROID_EMULATOR',
+    emulatorVersion: runtime.emulatorVersion,
+    emulatorBinary: runtime.emulator,
+    installedProtoPath: installedProto,
+    installedProtoSHA256: installedSHA256,
+    vendoredProtoPath: path.relative(repoRoot, vendoredProto),
+    vendoredProtoSHA256: sha256File(vendoredProto),
+    aemuAuthority: {
+      branch: phase0.aemuBranch ?? null,
+      qemuCommit: phase0.commits?.qemu ?? null,
+      aemuCommit: phase0.commits?.aemu ?? null,
+      manifestSHA256: phase0.manifestSHA256 ?? null
+    },
+    contract: 'The vendored protocol bytes come directly from the installed stock Android Emulator runtime used by TFTMAC. Build/generation must fail on byte drift until the authority is intentionally refreshed.'
+  };
+  writeJSON(sourcePath, source);
+  return {
+    action: 'NATIVE_GATE1_EMULATOR_PROTOCOL_FROZEN',
+    emulatorVersion: runtime.emulatorVersion,
+    installedProto,
+    installedProtoSHA256: installedSHA256,
+    vendoredProto: path.relative(repoRoot, vendoredProto),
+    source: path.relative(repoRoot, sourcePath),
+    sourceSHA256: sha256File(sourcePath)
+  };
+}
+
+function nativeGate1Script(scriptName, actionName) {
+  const script = path.join(repoRoot, 'scripts', scriptName);
+  if (!exists(script)) throw new Error(`NATIVE_GATE1_SCRIPT_MISSING: ${script}`);
+  const result = command('/bin/zsh', [script], { allowFailure: true, timeout: 3600000, maxBuffer: 128 * 1024 * 1024 });
+  if (result.status !== 0) {
+    const stdoutTail = result.stdout.slice(-24000);
+    const stderrTail = result.stderr.slice(-24000);
+    throw new Error(`${actionName}_FAILED\nSTDOUT_TAIL:\n${stdoutTail}\nSTDERR_TAIL:\n${stderrTail}`);
+  }
+  return { action: actionName, status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() || null };
+}
 
 function command(executablePath, args = [], options = {}) {
   const result = spawnSync(executablePath, args, {
@@ -653,16 +715,16 @@ function startEmulator(runtime, captureDir) {
   return child.pid;
 }
 
-function donorConfigBackupPath(runtime) {
-  if (!runtime.avdDir) throw new Error('Donor control requires a resolved AVD directory.');
-  return path.join(runtime.avdDir, 'config.ini.tftmac-donor-backup');
+function baselineConfigBackupPath(runtime) {
+  if (!runtime.avdDir) throw new Error('Baseline control requires a resolved AVD directory.');
+  return path.join(runtime.avdDir, 'config.ini.tftmac-baseline-backup');
 }
 
-function prepareDonorAVD(runtime, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
-  if (!runtime.avdDir || !runtime.avdConfig) throw new Error('Donor control requires an existing official Play AVD.');
-  if (!isUnder(runtime.avdDir, EXTERNAL_ROOT)) throw new Error('Donor control AVD must remain on the external runtime volume.');
+function prepareBaselineAVD(runtime, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval) {
+  if (!runtime.avdDir || !runtime.avdConfig) throw new Error('Baseline control requires an existing official Play AVD.');
+  if (!isUnder(runtime.avdDir, EXTERNAL_ROOT)) throw new Error('Baseline control AVD must remain on the external runtime volume.');
   const configPath = path.join(runtime.avdDir, 'config.ini');
-  const backupPath = donorConfigBackupPath(runtime);
+  const backupPath = baselineConfigBackupPath(runtime);
   if (exists(backupPath)) {
     const restored = fs.readFileSync(backupPath, 'utf8');
     fs.writeFileSync(configPath, restored);
@@ -672,27 +734,27 @@ function prepareDonorAVD(runtime, drawFlushInterval = DONOR_PROFILE.drawFlushInt
   fs.writeFileSync(backupPath, baseline);
   let config = baseline;
   const values = {
-    'hw.cpu.ncore': String(DONOR_PROFILE.vcpu),
-    'hw.ramSize': String(DONOR_PROFILE.ramMB),
-    'hw.lcd.width': String(DONOR_PROFILE.width),
-    'hw.lcd.height': String(DONOR_PROFILE.height),
-    'hw.lcd.density': String(DONOR_PROFILE.density),
+    'hw.cpu.ncore': String(BASELINE_PROFILE.vcpu),
+    'hw.ramSize': String(BASELINE_PROFILE.ramMB),
+    'hw.lcd.width': String(BASELINE_PROFILE.width),
+    'hw.lcd.height': String(BASELINE_PROFILE.height),
+    'hw.lcd.density': String(BASELINE_PROFILE.density),
     'hw.gpu.enabled': 'yes',
     'hw.gpu.mode': 'host',
-    'hw.gltransport': DONOR_PROFILE.glTransport,
+    'hw.gltransport': BASELINE_PROFILE.glTransport,
     'hw.gltransport.drawFlushInterval': String(drawFlushInterval),
-    'hw.gltransport.asg.writeBufferSize': String(DONOR_PROFILE.asgWriteBufferSize),
-    'hw.gltransport.asg.writeStepSize': String(DONOR_PROFILE.asgWriteStepSize),
-    'hw.gltransport.asg.dataRingSize': String(DONOR_PROFILE.asgDataRingSize),
+    'hw.gltransport.asg.writeBufferSize': String(BASELINE_PROFILE.asgWriteBufferSize),
+    'hw.gltransport.asg.writeStepSize': String(BASELINE_PROFILE.asgWriteStepSize),
+    'hw.gltransport.asg.dataRingSize': String(BASELINE_PROFILE.asgDataRingSize),
     'showDeviceFrame': 'no',
-    'skin.name': `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
+    'skin.name': `${BASELINE_PROFILE.width}x${BASELINE_PROFILE.height}`,
     'fastboot.forceColdBoot': 'yes',
     'fastboot.forceFastBoot': 'no'
   };
   for (const [key, value] of Object.entries(values)) config = setIniValue(config, key, value);
   fs.writeFileSync(configPath, config);
   return {
-    profile: DONOR_PROFILE,
+    profile: BASELINE_PROFILE,
     configPath,
     configSHA256: sha256File(configPath),
     baselineSHA256: crypto.createHash('sha256').update(baseline).digest('hex'),
@@ -700,41 +762,42 @@ function prepareDonorAVD(runtime, drawFlushInterval = DONOR_PROFILE.drawFlushInt
   };
 }
 
-function restoreDonorAVD(runtime) {
+function restoreBaselineAVD(runtime) {
   if (!runtime?.avdDir) return { restored: false, reason: 'AVD_UNRESOLVED' };
   const configPath = path.join(runtime.avdDir, 'config.ini');
-  const backupPath = donorConfigBackupPath(runtime);
-  if (!exists(backupPath)) return { restored: false, reason: 'NO_DONOR_BACKUP' };
+  const backupPath = baselineConfigBackupPath(runtime);
+  if (!exists(backupPath)) return { restored: false, reason: 'NO_BASELINE_BACKUP' };
   const baseline = fs.readFileSync(backupPath, 'utf8');
   fs.writeFileSync(configPath, baseline);
   fs.unlinkSync(backupPath);
   return { restored: true, configPath, configSHA256: sha256File(configPath) };
 }
 
-function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id) {
+function startBaselineEmulator(runtime, captureDir, ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, embeddedControl = false) {
   if (!runtime.avdHome || !runtime.avdIni || !runtime.avdDir) throw new Error(`Official AVD ${AVD_NAME} is not present under the external runtime.`);
   const out = fs.openSync(path.join(captureDir, 'emulator.stdout.log'), 'a');
   const err = fs.openSync(path.join(captureDir, 'emulator.stderr.log'), 'a');
   const args = [
     `@${AVD_NAME}`, '-id', 'TFTMAC', '-port', EMULATOR_PORT,
-    '-gpu', 'host', '-audio', 'coreaudio', '-feature', DONOR_PROFILE.featureList,
+    '-gpu', 'host', '-audio', 'coreaudio', '-feature', BASELINE_PROFILE.featureList,
     '-append-userspace-opt', 'androidboot.opengles.version=196610',
     '-append-userspace-opt', 'androidboot.tftmac.graphics_profile=tftmac',
-    '-skin', `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
-    '-vsync-rate', String(DONOR_PROFILE.refreshHz),
+    '-skin', `${BASELINE_PROFILE.width}x${BASELINE_PROFILE.height}`,
+    '-vsync-rate', String(BASELINE_PROFILE.refreshHz),
     '-dns-server', '1.1.1.1,8.8.8.8',
-    '-cores', String(DONOR_PROFILE.vcpu), '-memory', String(ramMB),
+    '-cores', String(BASELINE_PROFILE.vcpu), '-memory', String(ramMB),
     '-no-hidpi-scaling',
     '-no-snapshot', '-no-metrics', '-no-boot-anim', '-crash-report-mode', 'disabled'
   ];
-  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1') {
+  if (embeddedControl) args.push('-qt-hide-window', '-grpc-use-token', '-idle-grpc-timeout', '300');
+  if (process.env.TFTMAC_NATIVE_FULLSCREEN === '1' && !embeddedControl) {
     const screenWidth = Number(process.env.TFTMAC_HOST_SCREEN_WIDTH ?? 0);
     const screenHeight = Number(process.env.TFTMAC_HOST_SCREEN_HEIGHT ?? 0);
     const controlWidth = Number(process.env.TFTMAC_NATIVE_CONTROL_WIDTH ?? 64);
     const titleChrome = Number(process.env.TFTMAC_NATIVE_TOPBAR_HEIGHT ?? 30);
     const backingScale = Number(process.env.TFTMAC_HOST_BACKING_SCALE ?? 1) || 1;
-    const widthScalePoints = screenWidth > controlWidth ? (screenWidth - controlWidth) / DONOR_PROFILE.width : 1;
-    const heightScalePoints = screenHeight > titleChrome ? (screenHeight - titleChrome) / DONOR_PROFILE.height : 1;
+    const widthScalePoints = screenWidth > controlWidth ? (screenWidth - controlWidth) / BASELINE_PROFILE.width : 1;
+    const heightScalePoints = screenHeight > titleChrome ? (screenHeight - titleChrome) / BASELINE_PROFILE.height : 1;
     const logicalScale = Math.max(0.1, Math.min(widthScalePoints, heightScalePoints, 4));
     const scale = logicalScale * backingScale;
     args.push('-scale', scale.toFixed(6));
@@ -745,16 +808,38 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
     ...runtime.env,
     ANDROID_AVD_HOME: runtime.avdHome,
     ANDROID_EMULATOR_USE_SYSTEM_LIBS: '0',
-    ANGLE_FEATURE_OVERRIDES_ENABLED: DONOR_PROFILE.angleEnabledFeatures,
-    ANGLE_FEATURE_OVERRIDES_DISABLED: DONOR_PROFILE.angleDisabledFeatures,
+    ANGLE_FEATURE_OVERRIDES_ENABLED: BASELINE_PROFILE.angleEnabledFeatures,
+    ANGLE_FEATURE_OVERRIDES_DISABLED: BASELINE_PROFILE.angleDisabledFeatures,
     MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS: '0',
     MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE: '64',
     MVK_CONFIG_FAST_MATH_ENABLED: '1'
   };
-  const child = spawn(runtime.emulator, args, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
+  delete env.ADB_VENDOR_KEYS;
+  const hostApp = path.join(repoRoot, 'dist', 'TFTMAC.app', 'Contents', 'Resources', 'TFTMAC Emulator Host.app');
+  if (!exists(hostApp)) throw new Error(`TFTMAC_EMULATOR_HOST_MISSING: build the native app first: ${hostApp}`);
+  const openArgs = [
+    '-n', '-W',
+    '--env', `TFT_EMULATOR=${runtime.emulator}`,
+    '--env', `TFT_ADB_SERVER_PORT=${ADB_PORT}`,
+    '--env', `ANDROID_ADB_SERVER_PORT=${ADB_PORT}`,
+    '--env', 'ADB_MDNS_AUTO_CONNECT=',
+    '--env', `ANDROID_SDK_ROOT=${runtime.sdkRoot}`,
+    '--env', `ANDROID_AVD_HOME=${runtime.avdHome}`,
+    '--env', 'ANDROID_EMULATOR_USE_SYSTEM_LIBS=0',
+    '--env', `ANGLE_FEATURE_OVERRIDES_ENABLED=${env.ANGLE_FEATURE_OVERRIDES_ENABLED}`,
+    '--env', `ANGLE_FEATURE_OVERRIDES_DISABLED=${env.ANGLE_FEATURE_OVERRIDES_DISABLED}`,
+    '--env', `MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=${env.MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS}`,
+    '--env', `MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=${env.MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE}`,
+    '--env', `MVK_CONFIG_FAST_MATH_ENABLED=${env.MVK_CONFIG_FAST_MATH_ENABLED}`,
+    '--env', `TFT_HOST_STDOUT=${path.join(captureDir, 'emulator.stdout.log')}`,
+    '--env', `TFT_HOST_STDERR=${path.join(captureDir, 'emulator.stderr.log')}`,
+    hostApp, '--args', ...args
+  ];
+  const child = spawn('/usr/bin/open', openArgs, { cwd: repoRoot, env, detached: true, stdio: ['ignore', out, err] });
   child.unref();
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), {
-    utc: nowISO(), event: 'DONOR_EMULATOR_STARTED', pid: child.pid, args,
+    utc: nowISO(), event: 'BASELINE_EMULATOR_STARTED', launcherPid: child.pid, args,
+    launcher: '/usr/bin/open -n -W --env ... --args ...', adbVendorKeysPresent: false,
     profile: controlProfileId,
     env: {
       ANGLE_FEATURE_OVERRIDES_ENABLED: env.ANGLE_FEATURE_OVERRIDES_ENABLED,
@@ -767,14 +852,14 @@ function startDonorEmulator(runtime, captureDir, ramMB = DONOR_PROFILE.ramMB, co
   return child.pid;
 }
 
-function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
+function baselineRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval) {
   const display = adb(runtime, ['shell', 'wm', 'size'], { allowFailure: true }).stdout.trim();
   const density = adb(runtime, ['shell', 'wm', 'density'], { allowFailure: true }).stdout.trim();
   const state = {
     observedAt: nowISO(),
     control: controlProfileId,
     compatibilityAdapter: true,
-    compatibilitySource: 'Mactician 1.1.0 measured runtime on this host',
+    compatibilitySource: 'TFTMAC measured playable runtime on this host',
     externalRoot: runtime.externalRoot,
     sdkRoot: runtime.sdkRoot,
     emulatorVersion: runtime.emulatorVersion,
@@ -787,23 +872,23 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DON
     adbSerial: SERIAL,
     adbServerPort: Number(ADB_PORT),
     emulatorConsolePort: Number(EMULATOR_PORT),
-    vcpu: DONOR_PROFILE.vcpu,
+    vcpu: BASELINE_PROFILE.vcpu,
     ramMB,
-    ramSource: ramMB === DONOR_PROFILE.ramMB ? 'profile' : 'emulator-command-line-override',
-    displayRequested: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`,
-    densityRequested: DONOR_PROFILE.density,
-    refreshTargetHz: DONOR_PROFILE.refreshHz,
+    ramSource: ramMB === BASELINE_PROFILE.ramMB ? 'profile' : 'emulator-command-line-override',
+    displayRequested: `${BASELINE_PROFILE.width}x${BASELINE_PROFILE.height}`,
+    densityRequested: BASELINE_PROFILE.density,
+    refreshTargetHz: BASELINE_PROFILE.refreshHz,
     gpuMode: 'host',
-    graphicsTransportRequested: DONOR_PROFILE.glTransport,
+    graphicsTransportRequested: BASELINE_PROFILE.glTransport,
     guestAngleRequested: true,
     vulkanRequested: true,
     glesCompatibilityExposure: 196610,
-    angleDisabledFeatures: DONOR_PROFILE.angleDisabledFeatures,
+    angleDisabledFeatures: BASELINE_PROFILE.angleDisabledFeatures,
     moltenVK: { synchronousQueueSubmits: false, maxActiveMetalCommandBuffersPerQueue: 64, fastMath: true },
     asg: {
-      writeBufferSize: DONOR_PROFILE.asgWriteBufferSize,
-      writeStepSize: DONOR_PROFILE.asgWriteStepSize,
-      dataRingSize: DONOR_PROFILE.asgDataRingSize,
+      writeBufferSize: BASELINE_PROFILE.asgWriteBufferSize,
+      writeStepSize: BASELINE_PROFILE.asgWriteStepSize,
+      dataRingSize: BASELINE_PROFILE.asgDataRingSize,
       drawFlushInterval
     },
     audioEnabled: true,
@@ -818,18 +903,31 @@ function donorRuntimeState(runtime, captureDir, prepared, bootClass, ramMB = DON
   return state;
 }
 
-async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId = DONOR_PROFILE.id, drawFlushInterval = DONOR_PROFILE.drawFlushInterval) {
+async function startBaselineControl(ramMB = BASELINE_PROFILE.ramMB, controlProfileId = BASELINE_PROFILE.id, drawFlushInterval = BASELINE_PROFILE.drawFlushInterval, embeddedControl = false) {
   const preAudit = runtimeProcessAudit();
-  const hasActiveRuntime = preAudit.processes.some(item => ['ANDROID_EMULATOR', 'TFTMAC_SAMPLER'].includes(item.kind));
-  if (!hasActiveRuntime && preAudit.adb5040 === 'LISTENER_PRESENT') cleanupTftmacAdbResidue();
+  const hasEmulator = preAudit.processes.some(item => item.kind === 'ANDROID_EMULATOR');
+  if (!hasEmulator) {
+    const staleSamplers = preAudit.processes.filter(item => item.kind === 'TFTMAC_SAMPLER');
+    for (const sampler of staleSamplers) {
+      try { process.kill(sampler.pid, 'SIGTERM'); } catch {}
+    }
+    if (staleSamplers.length) await sleep(250);
+    for (const sampler of staleSamplers) {
+      if (processAlive(sampler.pid)) {
+        try { process.kill(sampler.pid, 'SIGKILL'); } catch {}
+      }
+    }
+    cleanupTftmacAdbResidue();
+    if (staleSamplers.length) await sleep(100);
+  }
   singleRuntimePreflight();
   const runtime = discover();
   if (!isUnder(runtime.sdkRoot, EXTERNAL_ROOT)) throw new Error('Selected SDK is not on the required external runtime volume.');
   if (!runtime.requiredImagePresent) throw new Error(`Required official Play image is missing: ${runtime.requiredImagePath}`);
   if (!runtime.avdIni || !runtime.avdConfig || !runtime.avdDir) throw new Error(`Required official Play AVD ${AVD_NAME} was not found.`);
   ensureDir(STATE_ROOT); ensureDir(CAPTURE_ROOT); ensureDir(DIAGNOSTICS_ROOT);
-  const prepared = prepareDonorAVD(runtime, drawFlushInterval);
-  const windowFit = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
+  const prepared = prepareBaselineAVD(runtime, drawFlushInterval);
+  const windowFit = embeddedControl ? { prepared: false, reason: 'HIDDEN_EMBEDDED_CONTROL' } : prepareEmulatorWindowFit(runtime, BASELINE_PROFILE.width, BASELINE_PROFILE.height);
   const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomUUID()}`;
   const captureDir = path.join(CAPTURE_ROOT, sessionId);
   for (const d of [captureDir, path.join(captureDir, 'surfaceflinger'), path.join(captureDir, 'gfxinfo')]) ensureDir(d);
@@ -847,27 +945,31 @@ async function startDonorControl(ramMB = DONOR_PROFILE.ramMB, controlProfileId =
   appendJSONL(path.join(captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'SAMPLER_STARTED', pid: samplerPid });
   await sleep(350);
   if (!processAlive(samplerPid)) throw new Error(`LOGGER_START_FAILED: sampler PID ${samplerPid} did not remain alive.`);
-  adbServer(runtime);
-  const emulatorPid = startDonorEmulator(runtime, captureDir, ramMB, controlProfileId);
+  let emulatorPid = null;
   try {
+    adbServer(runtime);
+    const launcherPid = startBaselineEmulator(runtime, captureDir, ramMB, controlProfileId, embeddedControl);
     await waitForBoot(runtime);
+    const observedEmulator = runtimeProcessAudit().processes.find(item => item.kind === 'ANDROID_EMULATOR' && item.command.includes(`-port ${EMULATOR_PORT}`));
+    if (!observedEmulator) throw new Error(`EMULATOR_PID_NOT_OBSERVED_AFTER_OPEN: console port ${EMULATOR_PORT}`);
+    emulatorPid = observedEmulator.pid;
     const guestUnlock = wakeGuestScreen(runtime, captureDir);
     const fullscreenPolicy = prepareGuestFullscreenPolicy(runtime);
     const clockPreflight = await ensureGuestClock(runtime, captureDir);
-    const runtimeObserved = donorRuntimeState(runtime, captureDir, prepared, 'COLD', ramMB, controlProfileId, drawFlushInterval);
+    const runtimeObserved = baselineRuntimeState(runtime, captureDir, prepared, 'COLD', ramMB, controlProfileId, drawFlushInterval);
     const pkg = packageState(runtime, captureDir, false);
     const renderer = rendererState(runtime, captureDir);
     const state = {
-      schema: 1, sessionId, captureDir, samplerPid, emulatorPid, reusedRunningEmulator: false,
+      schema: 1, sessionId, captureDir, samplerPid, emulatorPid, launcherPid, reusedRunningEmulator: false,
       sdkRoot: runtime.sdkRoot, avdHome: runtime.avdHome, startedUTC: session.startedUTC,
-      packageState: pkg.state, controlProfile: controlProfileId, donorConfigBackupPath: prepared.backupPath
+      packageState: pkg.state, controlProfile: controlProfileId, baselineConfigBackupPath: prepared.backupPath, embeddedControl
     };
     writeJSON(CONTROL_STATE, state);
     return { ...state, package: pkg, clockPreflight, runtime: runtimeObserved, renderer, next: pkg.state === 'MISSING' ? 'run play-action to install official TFT from Google Play' : 'run play-action to verify/update official TFT, then launch-game' };
   } catch (error) {
     if (processAlive(samplerPid)) { try { process.kill(samplerPid, 'SIGTERM'); } catch {} }
     try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
-    restoreDonorAVD(runtime);
+    restoreBaselineAVD(runtime);
     throw error;
   }
 }
@@ -1403,7 +1505,7 @@ function ingestApproximateLatestMatch() {
   try {
     if (initialize) db.exec(fs.readFileSync(schemaPath, 'utf8'));
     db.exec('PRAGMA foreign_keys = ON;');
-    const configId = 'mactician_compatible_official_v0';
+    const configId = BASELINE_PROFILE.id;
     const labSessionId = `${analysis.sessionId}-match-${analysis.matchOrdinal}-approx`;
     const packageInfo = readJSON(path.join(captureDir, 'package-state.json'), {});
     const packageFile = path.join(captureDir, 'package-state.json');
@@ -1892,7 +1994,7 @@ function ingestContinuousRunIntoLab() {
     const sessionFile = readJSON(path.join(captureDir, 'session.json'), {});
     const packageFile = path.join(captureDir, 'package-state.json');
     const rendererFile = path.join(captureDir, 'renderer-state.json');
-    const currentConfigId = 'mactician_compatible_official_v0';
+    const currentConfigId = BASELINE_PROFILE.id;
     const now = nowISO();
     db.exec('BEGIN IMMEDIATE;');
     try {
@@ -2137,12 +2239,12 @@ function ingestAnalysisIntoLab() {
           .sort((a, b) => b.mtimeMs - a.mtimeMs);
         if (metas[0]) latestTraceMetadata = readJSON(metas[0].path, null);
       } catch {}
-      const currentConfigId = 'mactician_compatible_official_v0';
-      const candidateConfigId = 'mactician_compatible_5gb_v1';
+      const currentConfigId = BASELINE_PROFILE.id;
+      const candidateConfigId = 'tftmac_5gb_baseline_v1';
 
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('last_gameplay_ingest_at', now);
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_gameplay_baseline_session', labSessionId);
-      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', '1 preserve continuous-run logger; 2 use pre-play app refresh when memory-pressure thresholds fire; 3 one-factor guest RAM 6144->5120 A/B; 4 test Performance Mode/FPS/graphics by setting timestamps; 5 only then graphics transport/queue experiments');
+      db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_optimization_priority', 'Hold the proven 5120-MiB native baseline; correlate native frame windows, SurfaceFlinger deltas, memory, audio and explicit setting markers; change one restart-bound variable at a time.');
       db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('current_game_settings', JSON.stringify(analysis.match.gameSettings));
       if (latestTraceMetadata) db.prepare('INSERT OR REPLACE INTO lab_meta(key,value) VALUES(?,?)').run('native_trace_collector_smoke', JSON.stringify({ label: latestTraceMetadata.label, durationSeconds: latestTraceMetadata.durationSeconds, byteCount: latestTraceMetadata.byteCount, sha256: latestTraceMetadata.sha256, dataSources: latestTraceMetadata.dataSources, parseState: latestTraceMetadata.parseState }));
 
@@ -2160,9 +2262,9 @@ function ingestAnalysisIntoLab() {
         refresh_hz=excluded.refresh_hz,gpu_mode=excluded.gpu_mode,audio_enabled=excluded.audio_enabled,
         graphics_transport=excluded.graphics_transport,angle_mode=excluded.angle_mode,vulkan_mode=excluded.vulkan_mode,
         moltenvk_mode=excluded.moltenvk_mode,presentation_mode=excluded.presentation_mode,state=excluded.state,notes=excluded.notes`);
-      const currentNotes = 'First playable official TFT control: API36 Play ARM64, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream, MoltenVK/Metal. First full match placed 1st.';
-      configStmt.run(currentConfigId,null,'Mactician-compatible official TFT control v0',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,6144,1920,1080,320,60,'host',1,'virtio-gpu-asg','GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','direct emulator window','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
-      configStmt.run(candidateConfigId,currentConfigId,'RAM 5 GiB candidate',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,5120,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as baseline','same as baseline','same as baseline','same as baseline','CANDIDATE',now,'One-factor candidate: only guest RAM changes from 6144 MB to 5120 MB; 4096 MB is deferred because observed guest headroom makes a 2 GiB cut too aggressive.');
+      const currentNotes = 'Current native baseline: API36 Play ARM64, 5038/5582 donor identity, 5 GiB, authenticated gRPC raw frames, AppKit/Metal presentation, ANGLE ES3.2 compatibility exposure, Vulkan/ranchu, virtio-gpu-asg, gfxstream and MoltenVK/Metal.';
+      configStmt.run(currentConfigId,null,'TFTMAC native playable 5 GiB baseline',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),BASELINE_PROFILE.vcpu,BASELINE_PROFILE.ramMB,BASELINE_PROFILE.width,BASELINE_PROFILE.height,BASELINE_PROFILE.density,BASELINE_PROFILE.refreshHz,'host',1,BASELINE_PROFILE.glTransport,'GuestAngle + explicit ES3.2 compatibility exposure','ranchu / guest Vulkan','gfxstream host Vulkan -> MoltenVK/Metal','native AppKit Metal embedded','CONTROL',sessionFile.startedUTC ?? now,currentNotes);
+      configStmt.run(candidateConfigId,'tftmac_official_baseline_v1','RAM 5 GiB candidate (historical)',null,'37.1.11','37.0.1',REQUIRED_IMAGE,REQUIRED_IMAGE_MIN_REVISION,AVD_NAME,SERIAL,Number(ADB_PORT),Number(EMULATOR_PORT),6,5120,1920,1080,320,60,'host',1,'virtio-gpu-asg','same as historical 6 GiB baseline','same as historical baseline','same as historical baseline','same as historical baseline','HISTORICAL',now,'Preserved historical 6144 -> 5120 MiB experiment receipt; current authority is tftmac_5gb_native_v1.');
 
       db.prepare(`INSERT INTO sessions(
         id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,boot_class,workload_class,
@@ -2246,7 +2348,7 @@ function ingestAnalysisIntoLab() {
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,candidate_config_id=excluded.candidate_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
-        .run('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION',currentConfigId,candidateConfigId,'HEAVY',1,'PLANNED',1,'Same official TFT version, same renderer/transport/display/vCPU; compare full-match or matched heavy-combat resource pressure plus native frame timing once available.',now,null,'Safer first RAM intervention selected after Game 2: reduce one GiB only and compare continuous-run pressure.');
+        .run('exp_ram_5gb_ab','h_guest_ram_host_pressure','Guest RAM 6144 -> 5120 MB A/B','INTERVENTION','tftmac_official_baseline_v1',candidateConfigId,'HEAVY',1,'COMPLETE',1,'Historical one-factor experiment preserved; current native runs hold 5120 MiB unless a new explicit experiment is selected.',now,now,'Historical RAM experiment closed by promotion of the 5120-MiB native baseline.');
       db.prepare(`INSERT INTO experiments(id,hypothesis_id,name,experiment_type,baseline_config_id,candidate_config_id,run_class,one_factor,state,required_cold_confirmation,semantic_gate,created_at,completed_at,notes)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET baseline_config_id=excluded.baseline_config_id,state=excluded.state,semantic_gate=excluded.semantic_gate,notes=excluded.notes`)
@@ -2254,7 +2356,7 @@ function ingestAnalysisIntoLab() {
       db.prepare(`UPDATE experiments SET state='COMPLETE',baseline_config_id=?,completed_at=?,notes=? WHERE id='exp_control_direct_play'`)
         .run(currentConfigId,now,`First official full match completed with placement ${analysis.match.placement}; resource telemetry valid; native frame timing unavailable through gfxinfo.`);
       db.prepare(`UPDATE experiments SET state='CANCELLED',notes=COALESCE(notes,'') || ? WHERE id IN ('exp_control_repeat_warm','exp_transition_capture','exp_heavy_capture') AND baseline_config_id='control_stock_direct_v0'`)
-        .run(' Superseded by the proven mactician_compatible_official_v0 baseline and native Perfetto trace experiment.');
+        .run(' Superseded by the proven tftmac_official_baseline_v1 baseline and native Perfetto trace experiment.');
       db.prepare('INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES(?,?,?)').run('exp_control_direct_play',labSessionId,analysis.match.matchOrdinal === 1 ? 'BASELINE' : 'DIAGNOSTIC');
 
       db.exec('COMMIT;');
@@ -3215,12 +3317,12 @@ function fitEmulatorWindow() {
   const result = command('/usr/bin/osascript', ['-e', script], { allowFailure: true, timeout: 10000 });
   const output = `${result.stdout}${result.stderr}`.trim();
   if (result.status !== 0) {
-    const nextLaunch = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
-    return { action: 'EMULATOR_WINDOW_FIT_LIVE_PERMISSION_REQUIRED', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`, nextLaunch, nextBootGuestPolicy, manualLiveAction: 'Use macOS fullscreen (Control-Command-F) or resize the emulator window smaller.' };
+    const nextLaunch = prepareEmulatorWindowFit(runtime, BASELINE_PROFILE.width, BASELINE_PROFILE.height);
+    return { action: 'EMULATOR_WINDOW_FIT_LIVE_PERMISSION_REQUIRED', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${BASELINE_PROFILE.width}x${BASELINE_PROFILE.height}`, nextLaunch, nextBootGuestPolicy, manualLiveAction: 'Use macOS fullscreen (Control-Command-F) or resize the emulator window smaller.' };
   }
-  const nextLaunch = prepareEmulatorWindowFit(runtime, DONOR_PROFILE.width, DONOR_PROFILE.height);
+  const nextLaunch = prepareEmulatorWindowFit(runtime, BASELINE_PROFILE.width, BASELINE_PROFILE.height);
   if (state?.captureDir) appendJSONL(path.join(state.captureDir, 'host-events.jsonl'), { utc: nowISO(), event: 'EMULATOR_WINDOW_FIT_HOST', source: 'macOS window resize', emulatorPid: observedPid, result: output, nextLaunch });
-  return { action: 'EMULATOR_WINDOW_FIT_HOST', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${DONOR_PROFILE.width}x${DONOR_PROFILE.height}`, nextLaunch, nextBootGuestPolicy };
+  return { action: 'EMULATOR_WINDOW_FIT_HOST', output, emulatorPid: observedPid, guestResolutionPreserved: true, guestResolution: `${BASELINE_PROFILE.width}x${BASELINE_PROFILE.height}`, nextLaunch, nextBootGuestPolicy };
 }
 
 async function status() {
@@ -3992,7 +4094,7 @@ function normalizePerformanceLab(captureDir, frames, metrics, storage, manifestS
       const safeConfigHash = !hashOwner || hashOwner === runtimeConfigId ? observedConfigHash : null;
       const runtimeConfigExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(runtimeConfigId));
       if (!runtimeConfigExists) {
-        const baselineId = 'mactician_compatible_official_v0';
+        const baselineId = BASELINE_PROFILE.id;
         const baselineExists = Boolean(db.prepare('SELECT 1 AS ok FROM runtime_configs WHERE id=?').get(baselineId));
         const parentConfigId = runtimeConfigId !== baselineId && baselineExists ? baselineId : null;
         db.prepare(`INSERT INTO runtime_configs(
@@ -4292,8 +4394,8 @@ async function stopControl() {
   writeJSON(path.join(captureDir, 'control-result.json'), controlResult);
   const result = { sessionId: state.sessionId, captureDir, ...controlResult };
   try { adb(runtime, ['emu', 'kill'], { allowFailure: true, timeout: 10000 }); } catch {}
-  if (state.controlProfile === DONOR_PROFILE.id || String(state.controlProfile ?? '').startsWith('mactician_compatible_')) {
-    try { result.donorAvdRestore = restoreDonorAVD(runtime); } catch (error) { result.donorAvdRestore = { restored: false, error: error instanceof Error ? error.message : String(error) }; }
+  if (state.controlProfile === BASELINE_PROFILE.id || String(state.controlProfile ?? '').startsWith('tftmac_')) {
+    try { result.baselineAvdRestore = restoreBaselineAVD(runtime); } catch (error) { result.baselineAvdRestore = { restored: false, error: error instanceof Error ? error.message : String(error) }; }
   }
   try { fs.unlinkSync(CONTROL_STATE); } catch {}
   return result;
@@ -4470,8 +4572,6 @@ function buildApp() {
   const sdkPath = command('/usr/bin/xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { env: xcodeEnv }).stdout.trim();
   command(swiftc, ['-O', '-parse-as-library', '-target', 'arm64-apple-macosx14.0', '-sdk', sdkPath, ...sources, '-o', binary], { timeout: 240000, env: xcodeEnv });
   fs.copyFileSync(path.join(repoRoot, 'tftmac', 'Info.plist'), path.join(contents, 'Info.plist'));
-  const iconSource = path.join(repoRoot, 'branding', 'generated', 'Mactician.icns');
-  if (exists(iconSource)) fs.copyFileSync(iconSource, path.join(contents, 'Resources', 'TFTMAC.icns'));
   fs.copyFileSync(scriptPath, path.join(contents, 'Resources', 'tftmac-direct-control.mjs'));
   const labSource = path.join(repoRoot, 'ssot', 'TFTMAC_PERFORMANCE_LAB.sql');
   if (exists(labSource)) fs.copyFileSync(labSource, path.join(contents, 'Resources', 'TFTMAC_PERFORMANCE_LAB.sql'));
@@ -4484,7 +4584,7 @@ function buildApp() {
 function runtimeProcessAudit() {
   const ps = command('/bin/ps', ['axo', 'pid=,ppid=,etime=,command='], { allowFailure: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024 });
   const lines = ps.stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const relevant = lines.filter(line => /(TFTMAC|Mactician|TftPBE|TFT_Ultra_Tablet|TFTMAC_Live_API36|qemu-system-aarch64|\/emulator(?:\s|$)|adb.*fork-server|tftmac-direct-control\.mjs\s+sampler)/i.test(line));
+  const relevant = lines.filter(line => /(TFTMAC|TFT_Ultra_Tablet|TFTMAC_Live_API36|qemu-system-aarch64|\/emulator(?:\s|$)|adb.*fork-server|tftmac-direct-control\.mjs\s+sampler)/i.test(line));
   const classified = relevant.map(line => {
     const match = line.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
     const pid = match ? Number(match[1]) : null;
@@ -4494,7 +4594,6 @@ function runtimeProcessAudit() {
     let kind = 'OTHER_RELEVANT';
     if (/tftmac-direct-control\.mjs\s+sampler/i.test(commandLine)) kind = 'TFTMAC_SAMPLER';
     else if (/TFTMAC\.app\/Contents\/MacOS\/TFTMAC/i.test(commandLine)) kind = 'TFTMAC_APP';
-    else if (/Mactician\.app\/Contents\/MacOS\/Mactician/i.test(commandLine)) kind = 'MACTICIAN_APP';
     else if (/qemu-system-aarch64|\/emulator(?:\s|$)/i.test(commandLine)) kind = 'ANDROID_EMULATOR';
     else if (/adb.*fork-server/i.test(commandLine)) kind = 'ADB_SERVER';
     return { pid, ppid, elapsed, kind, command: commandLine };
@@ -4511,7 +4610,6 @@ function runtimeProcessAudit() {
     controlState: readJSON(CONTROL_STATE),
     duplicateRisk: {
       tftmacApps: classified.filter(item => item.kind === 'TFTMAC_APP').length,
-      macticianApps: classified.filter(item => item.kind === 'MACTICIAN_APP').length,
       emulators: classified.filter(item => item.kind === 'ANDROID_EMULATOR').length,
       samplers: classified.filter(item => item.kind === 'TFTMAC_SAMPLER').length,
       adbServers: classified.filter(item => item.kind === 'ADB_SERVER').length
@@ -4523,160 +4621,35 @@ function cleanupTftmacAdbResidue() {
   const auditBefore = runtimeProcessAudit();
   const tftmacAdb = auditBefore.processes.filter(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command));
   if (!tftmacAdb.length) return { action: 'TFTMAC_ADB_RESIDUE_ABSENT', auditBefore, auditAfter: auditBefore };
-  const runtime = discover();
-  const killed = command(runtime.adb, ['-P', ADB_PORT, 'kill-server'], { env: runtime.env, allowFailure: true, timeout: 10000 });
+  for (const item of tftmacAdb) {
+    try { process.kill(item.pid, 'SIGTERM'); } catch {}
+  }
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && tftmacAdb.some(item => processAlive(item.pid))) {
+    const until = Date.now() + 50;
+    while (Date.now() < until) {}
+  }
+  for (const item of tftmacAdb) {
+    if (processAlive(item.pid)) {
+      try { process.kill(item.pid, 'SIGKILL'); } catch {}
+    }
+  }
   const auditAfter = runtimeProcessAudit();
   if (auditAfter.processes.some(item => item.kind === 'ADB_SERVER' && /tcp:5040\b/.test(item.command))) {
-    throw new Error(`TFTMAC_ADB_RESIDUE_CLEANUP_FAILED: ${(killed.stderr || killed.stdout || '').trim()}`);
+    throw new Error('TFTMAC_ADB_RESIDUE_CLEANUP_FAILED: private ADB listener remains on port 5040');
   }
-  return { action: 'TFTMAC_ADB_RESIDUE_CLEANED', killedPids: tftmacAdb.map(item => item.pid), killStatus: killed.status, auditBefore, auditAfter };
+  return { action: 'TFTMAC_ADB_RESIDUE_CLEANED', killedPids: tftmacAdb.map(item => item.pid), auditBefore, auditAfter };
 }
 
 function singleRuntimePreflight() {
   const audit = runtimeProcessAudit();
   const tftmacApps = audit.processes.filter(item => item.kind === 'TFTMAC_APP');
-  const blockers = audit.processes.filter(item => ['MACTICIAN_APP', 'ANDROID_EMULATOR', 'TFTMAC_SAMPLER', 'ADB_SERVER'].includes(item.kind));
+  const blockers = audit.processes.filter(item => ['ANDROID_EMULATOR', 'TFTMAC_SAMPLER', 'ADB_SERVER'].includes(item.kind));
   if (tftmacApps.length > 1) blockers.push(...tftmacApps.slice(1));
   if (blockers.length || audit.ports.length) {
     throw new Error(`SINGLE_RUNTIME_PREFLIGHT_BLOCKED: ${JSON.stringify({ blockers, ports: audit.ports, adb5040: audit.adb5040, tftmacLauncherCount: tftmacApps.length })}`);
   }
   return { pass: true, observedAt: audit.observedAt, tftmacLauncherCount: tftmacApps.length, audit };
-}
-
-function launchMacticianControl() {
-  const preflight = singleRuntimePreflight();
-  const app = '/Applications/Mactician.app';
-  const binary = path.join(app, 'Contents', 'MacOS', 'Mactician');
-  if (!executable(binary)) throw new Error(`MACTICIAN_APP_MISSING: ${binary}`);
-  const env = { ...process.env, ANDROID_ADB_SERVER_PORT: '5038', ADB_MDNS_AUTO_CONNECT: '' };
-  const child = spawn(binary, [], { env, detached: true, stdio: 'ignore' });
-  child.unref();
-  return { action: 'MACTICIAN_LAUNCHED', app, binary, pid: child.pid, inheritedAdbServerPort: 5038, preflight, observedAt: nowISO() };
-}
-
-async function stopMacticianControl() {
-  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
-  const lines = ps.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const targets = lines.flatMap(line => {
-    const match = line.match(/^(\d+)\s+(.+)$/);
-    if (!match) return [];
-    const pid = Number(match[1]);
-    const cmd = match[2];
-    if (/Mactician\.app\/Contents\/MacOS\/Mactician|\/Mactician\/sdk\/emulator\/.*qemu-system-aarch64|launcher-runtime\.command|run-asg-experiment\.command|run-tft-root-affinity\.command/i.test(cmd)) return [{ pid, cmd }];
-    return [];
-  });
-  for (const target of [...targets].sort((a, b) => b.pid - a.pid)) {
-    try { process.kill(target.pid, 'SIGTERM'); } catch {}
-  }
-  const adbCandidates = [
-    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
-    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
-  ].filter(executable);
-  if (adbCandidates.length) command(adbCandidates[0], ['-P', '5038', 'kill-server'], { allowFailure: true, timeout: 10000 });
-  await sleep(1200);
-  const after = runtimeProcessAudit();
-  const remaining = after.processes.filter(item => ['MACTICIAN_APP','ANDROID_EMULATOR'].includes(item.kind) || (item.kind === 'ADB_SERVER' && /tcp:5038\b/.test(item.command)));
-  if (remaining.length) throw new Error(`MACTICIAN_STOP_INCOMPLETE: ${JSON.stringify(remaining)}`);
-  return { action: 'MACTICIAN_STOPPED', terminated: targets, observedAt: nowISO(), auditAfter: after };
-}
-
-function newestMatchingFile(roots, pattern, maximum = 20000) {
-  const candidates = [];
-  for (const root of roots) {
-    if (!exists(root)) continue;
-    for (const file of walk(root, 5, maximum)) {
-      try {
-        const stat = fs.statSync(file);
-        if (stat.isFile() && pattern.test(file)) candidates.push({ file, mtimeMs: stat.mtimeMs });
-      } catch {}
-    }
-  }
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return candidates[0]?.file ?? null;
-}
-
-function macticianRuntimeAudit() {
-  const processAudit = runtimeProcessAudit();
-  const ps = command('/bin/ps', ['axo', 'pid=,ppid=,etime=,command='], { allowFailure: true, timeout: 10000, maxBuffer: 32 * 1024 * 1024 });
-  const processTree = ps.stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-    .filter(line => /(Mactician|TftPBE|emulator-5582|qemu-system-aarch64|\/emulator(?:\s|$))/i.test(line));
-  const app = '/Applications/Mactician.app';
-  const appVersion = exists(path.join(app, 'Contents', 'Info.plist'))
-    ? command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(app, 'Contents', 'Info.plist')], { allowFailure: true, timeout: 10000 }).stdout.trim() || null
-    : null;
-  const appBuild = exists(path.join(app, 'Contents', 'Info.plist'))
-    ? command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion', path.join(app, 'Contents', 'Info.plist')], { allowFailure: true, timeout: 10000 }).stdout.trim() || null
-    : null;
-  const macticianAdbPort = processTree.map(line => line.match(/adb\s+-L\s+tcp:(\d+)\s+fork-server/i)?.[1]).find(Boolean)
-    ?? processAudit.processes.map(item => item.command.match(/adb\s+-L\s+tcp:(\d+)\s+fork-server/i)?.[1]).find(Boolean)
-    ?? '5038';
-  const adbCandidates = [
-    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
-    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
-  ].filter(executable);
-  const adbSnapshots = adbCandidates.map(adbPath => {
-    const devices = command(adbPath, ['-P', macticianAdbPort, 'devices', '-l'], { allowFailure: true, timeout: 10000 });
-    const serials = [...devices.stdout.matchAll(/^(emulator-\d+)\s+device\b/gm)].map(match => match[1]);
-    const snapshots = serials.map(serial => {
-      const shell = args => command(adbPath, ['-P', macticianAdbPort, '-s', serial, ...args], { allowFailure: true, timeout: 20000, maxBuffer: 24 * 1024 * 1024 }).stdout.trim();
-      const packageDump = shell(['shell', 'dumpsys', 'package', PACKAGE]);
-      const props = {};
-      for (const key of ['ro.boot.qemu.avd_name','ro.hardware.egl','ro.hardware.vulkan','ro.opengles.version','ro.boot.qemu.gltransport','ro.boot.qemu.gles']) props[key] = shell(['shell', 'getprop', key]) || null;
-      const angleSettings = {};
-      for (const key of ['angle_gl_driver_all_angle','angle_gl_driver_selection_pkgs','angle_gl_driver_selection_values']) angleSettings[key] = shell(['shell', 'settings', 'get', 'global', key]) || null;
-      const surfaceFlinger = shell(['shell', 'dumpsys', 'SurfaceFlinger']);
-      return {
-        serial,
-        bootCompleted: shell(['shell', 'getprop', 'sys.boot_completed']) || null,
-        avdName: shell(['emu', 'avd', 'name']) || props['ro.boot.qemu.avd_name'],
-        packagePath: shell(['shell', 'pm', 'path', PACKAGE]) || null,
-        versionName: packageDump.match(/versionName=([^\s]+)/)?.[1] ?? null,
-        versionCode: packageDump.match(/versionCode=(\d+)/)?.[1] ?? null,
-        packagePid: shell(['shell', 'pidof', PACKAGE]) || null,
-        topActivity: shell(['shell', 'dumpsys', 'activity', 'activities']).split(/\r?\n/).filter(line => /topResumedActivity|mResumedActivity|teamfighttactics|leagueoflegends/i.test(line)).slice(0, 40),
-        properties: props,
-        angleSettings,
-        displaySize: shell(['shell', 'wm', 'size']) || null,
-        displayDensity: shell(['shell', 'wm', 'density']) || null,
-        surfaceFlingerGraphics: surfaceFlinger.split(/\r?\n/).filter(line => /GLES|OpenGL|Vulkan|ANGLE|gfxstream|GPU|renderer/i.test(line)).slice(0, 160)
-      };
-    });
-    return { adbPath, devices: devices.stdout.trim(), snapshots };
-  });
-  const logRoots = [
-    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'logs'),
-    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician'),
-    '/Volumes/MAC MINI M4/Mactician'
-  ];
-  const latestLog = newestMatchingFile(logRoots, /(?:launcher|emulator|mactician|tft).*\.log$/i);
-  let graphicsLogEvidence = [];
-  let failureLogEvidence = [];
-  let latestLogTail = [];
-  if (latestLog) {
-    try {
-      const logLines = fs.readFileSync(latestLog, 'utf8').split(/\r?\n/);
-      latestLogTail = logLines.slice(-240);
-      graphicsLogEvidence = logLines.filter(line => /ANGLE|ASG|gfxstream|MoltenVK|Metal|Vulkan|Setting ICD|gltransport|GuestAngle|feature/i.test(line)).slice(-200);
-      failureLogEvidence = logLines.filter(line => /error|failed|failure|fatal|abort|offline|not found|missing|exit|terminated|could not|cannot|timed out|timeout/i.test(line)).slice(-160);
-    } catch {}
-  }
-  const relevantPorts = command('/usr/sbin/lsof', ['-nP', '-iTCP:5037', '-iTCP:5038', '-iTCP:5040', '-iTCP:5582', '-iTCP:5592'], { allowFailure: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 }).stdout.split(/\r?\n/).filter(Boolean);
-  return { observedAt: nowISO(), appVersion, appBuild, macticianAdbPort: Number(macticianAdbPort), processAudit, processTree, relevantPorts, adbSnapshots, latestLog, latestLogTail, failureLogEvidence, graphicsLogEvidence };
-}
-
-function cleanupObserverAdb5037() {
-  const ps = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout;
-  const observed = ps.split(/\r?\n/).map(line => line.trim()).filter(line => /adb\s+-L\s+tcp:5037\s+fork-server/i.test(line));
-  if (!observed.length) return { action: 'OBSERVER_ADB_5037_ABSENT' };
-  const adbCandidates = [
-    path.join(USER_HOME, 'Library', 'Application Support', 'Mactician', 'sdk', 'platform-tools', 'adb'),
-    '/Volumes/MAC MINI M4/Mactician/sdk/platform-tools/adb'
-  ].filter(executable);
-  if (!adbCandidates.length) throw new Error('No Mactician adb binary available to remove observer-created 5037 server.');
-  const killed = command(adbCandidates[0], ['-P', '5037', 'kill-server'], { allowFailure: true, timeout: 10000 });
-  const after = command('/bin/ps', ['axo', 'pid=,command='], { allowFailure: true, timeout: 10000 }).stdout.split(/\r?\n/).map(line => line.trim()).filter(line => /adb\s+-L\s+tcp:5037\s+fork-server/i.test(line));
-  if (after.length) throw new Error(`OBSERVER_ADB_5037_CLEANUP_FAILED: ${(killed.stderr || killed.stdout || '').trim()}`);
-  return { action: 'OBSERVER_ADB_5037_CLEANED', observed, killStatus: killed.status };
 }
 
 function openPlayWeb() {
@@ -4715,6 +4688,9 @@ async function main() {
   if (action === 'prepare') { json(prepareAVD()); return; }
   if (action === 'engineering-map-selftest') { json(engineeringMapSelfTest()); return; }
   if (action === 'lab-selftest') { json(labSelfTest()); return; }
+  if (action === 'native-gate1-bootstrap') { json(bootstrapNativeGate1Authority()); return; }
+  if (action === 'native-gate1-build') { json(nativeGate1Script('build-native-app.command', 'NATIVE_GATE1_BUILD')); return; }
+  if (action === 'native-gate1-test') { json(nativeGate1Script('test-native-app.command', 'NATIVE_GATE1_TEST')); return; }
   if (action === 'build') { json(buildApp()); return; }
   if (action === 'install-app') { json(installApp()); return; }
   if (action === 'launch-app') { json(launchApp()); return; }
@@ -4722,14 +4698,11 @@ async function main() {
   if (action === 'runtime-process-audit') { json(runtimeProcessAudit()); return; }
   if (action === 'cleanup-tftmac-adb-residue') { json(cleanupTftmacAdbResidue()); return; }
   if (action === 'single-runtime-preflight') { json(singleRuntimePreflight()); return; }
-  if (action === 'launch-mactician-control') { json(launchMacticianControl()); return; }
-  if (action === 'stop-mactician-control') { json(await stopMacticianControl()); return; }
-  if (action === 'mactician-runtime-audit') { json(macticianRuntimeAudit()); return; }
-  if (action === 'cleanup-observer-adb-5037') { json(cleanupObserverAdb5037()); return; }
   if (action === 'start') { json(await startControl()); return; }
-  if (action === 'start-donor-control') { json(await startDonorControl()); return; }
-  if (action === 'start-donor-control-5gb') { json(await startDonorControl(5120, 'mactician_compatible_5gb_v1', 800)); return; }
-  if (action === 'start-donor-control-5gb-flush400') { json(await startDonorControl(5120, 'mactician_compatible_5gb_flush400_v1', 400)); return; }
+  if (action === 'start-baseline-control') { json(await startBaselineControl()); return; }
+  if (action === 'start-baseline-control-5gb') { json(await startBaselineControl(5120, 'tftmac_5gb_baseline_v1', 800)); return; }
+  if (action === 'start-native-controller-probe') { json(await startBaselineControl(5120, 'tftmac_5gb_baseline_v1', 800, true)); return; }
+  if (action === 'start-baseline-control-5gb-flush400') { json(await startBaselineControl(5120, 'tftmac_5gb_flush400_exp_v1', 400)); return; }
   if (action === 'play-action') { json(await playAction()); return; }
   if (action === 'play-probe') { json(await playProbe()); return; }
   if (action === 'launch-game') { json(await launchGame()); return; }
@@ -4836,7 +4809,7 @@ async function main() {
     await sampler(args[captureIndex + 1], args[sessionIndex + 1]);
     return;
   }
-  throw new Error('Usage: tftmac-direct-control.mjs inventory|prepare|lab-selftest|build|launch-app|runtime-process-audit|single-runtime-preflight|launch-mactician-control|mactician-runtime-audit|start|start-donor-control|play-action|launch-game|gles-capability-probe|launch-failure-probe|status|play-certification|marker|match-entry|combat-start|stop|package-state');
+  throw new Error('Usage: tftmac-direct-control.mjs inventory|prepare|lab-selftest|build|launch-app|runtime-process-audit|single-runtime-preflight|start|start-baseline-control|play-action|launch-game|gles-capability-probe|launch-failure-probe|status|play-certification|marker|match-entry|combat-start|stop|package-state');
 }
 
 main().catch(error => { process.stderr.write(`${error.stack || error.message}\n`); process.exit(1); });
