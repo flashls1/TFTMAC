@@ -1,0 +1,36 @@
+{
+  "active_step": "WAVE_B_RUNTIME_MODES_AND_DIAGNOSTIC_BUILD_IDENTITY",
+  "authority_receipt": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/AUTHORITY.json",
+    "sha256": "290f5e445597b72cd7f65aa4fd07ffba8012df9a636989602a3ebd3d65cd1f51"
+  },
+  "blocked_action": "Diagnostic first boot, loaded-runtime proof, TFT launch, and source instrumentation remain closed while the protected stock runtime is active or until all launch preconditions pass.",
+  "change_id": "e66bd32e-b6c5-43bd-ae7e-792a234335bf",
+  "control_runtime_active": true,
+  "diagnostic_runtime_active": false,
+  "head_sha": "c8b79ea009197c25bc7e64bebd5e8948eea918b1",
+  "inferred": [
+    "The smallest safe product change is a typed runtime-mode registry plus fail-closed path/lease/identity resolution before any diagnostic boot."
+  ],
+  "next_safe_action": "Implement the exact three-mode registry and fail-closed app-side mode/identity plumbing without launching or replacing any runtime.",
+  "observed_at": "2026-09-01T19:23:52.210992Z",
+  "project_id": "tftmac",
+  "schema": 1,
+  "state": "SOURCE_INTEGRATION_READY_DIAGNOSTIC_BOOT_BLOCKED_CONTROL_ACTIVE",
+  "unknown": [
+    "A collision-free diagnostic EmulatorController port has not yet been selected and receipted.",
+    "No loaded emulator/gfxstream identity receipt exists because the diagnostic AVD has never booted.",
+    "Diagnostic AVD package, login availability, gameplay frame, renderer, layer, input, audio, and reconnect acceptance remain untested.",
+    "No internal graphics root cause is named or inferred."
+  ],
+  "verified": [
+    "Original implementation plan restored and SHA-256 verified.",
+    "ZenMC v2 receipt matches its SHA-256 sidecar and reports PASS.",
+    "Accepted r9 diagnostic build and artifacts match their sealed manifests.",
+    "Final R9 physical stopped-clone receipt is valid; first boot and launch remain false.",
+    "Native macOS diagnostic host build is accepted and preserves the /usr/bin/open logged-in-session architecture.",
+    "The current stock app source has one exact runtime configuration/launch seam, currently hard-coded to the control mode.",
+    "No diagnostic build, clone, boot, TFT launch, or control-runtime mutation was repeated."
+  ],
+  "worktree_status_at_capture": "## clara/integrate-the-accepted-r9-isolated-diagn-e66bd32e\n?? .clara/"
+}
