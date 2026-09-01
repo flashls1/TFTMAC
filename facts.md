@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
-**Authority date:** 2026-08-30 America/Chicago  
-**Observed runtime evidence through:** 2026-08-31T21:41:12Z
+**Authority date:** 2026-08-31 America/Chicago
+**Observed runtime evidence through:** 2026-08-31T23:13:30Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -10,8 +10,8 @@ runtime, source, SQL, or user-acceptance evidence. Requested settings are not
 effective settings; presentation cadence is not Unreal FPS; a hypothesis is not a
 result.
 
-Exact benchmark formulas, full-run analysis, AI-readable output shape, and the
-current marked-match findings live in `benchmark.md`.
+Exact benchmark formulas, automatic full-run analysis, AI-readable output
+shape, and current findings live in `benchmark.md`.
 
 ## Evidence vocabulary
 
@@ -71,10 +71,16 @@ must never be presented as measurements of this M4 Mac mini.
 - **VERIFIED CURRENT:** the official full-bleed penguin-samurai icon is embedded.
   The source, 1024-pixel output, and ICNS hashes are frozen in
   `ssot/runtime-authority.json`.
-- **VERIFIED CURRENT:** the app is signed with the local `TFTMAC Local Code
-  Signing` identity. Outside the restricted tool sandbox, `codesign --verify
-  --deep --strict` reports valid on disk and satisfying the designated
-  requirement. It is not notarized for public distribution.
+- **VERIFIED HISTORICAL RELEASE ACCEPTANCE:** Build 8 was signed with the local
+  `TFTMAC Local Code Signing` identity and passed deep/strict verification when
+  the release receipt was created. It is not notarized for public distribution.
+- **VERIFIED CURRENT HOST AUDIT (2026-08-31T23:13:30Z):** the installed TFTMAC
+  executable and emulator-host hashes still match that Build 8 receipt, but the
+  login keychain now exposes zero valid code-signing identities and
+  `codesign --verify --deep --strict` fails with `CSSMERR_TP_NOT_TRUSTED`.
+  Current-host installed-runtime verification is therefore blocked until the
+  local identity is repaired in a separate operational task. This does not
+  rewrite the historical acceptance result.
 
 ## 3. Launch and ADB architecture
 
@@ -142,10 +148,8 @@ must never be presented as measurements of this M4 Mac mini.
 ## 5. Current graphics and audio pipeline
 
 ```text
-TFT Unreal workload
-  -> Android GLES/Vulkan-facing application path
-  -> guest ANGLE compatibility layer
-  -> Vulkan command stream
+TFT Unreal direct-Vulkan workload
+  -> guest Vulkan command stream
   -> gfxstream over virtio-gpu ASG
   -> MoltenVK Vulkan-to-Metal translation
   -> Apple Metal / M4 GPU
@@ -159,9 +163,12 @@ Boundary rules:
 
 - Unreal owns game simulation, effects, render-thread/RHI workload, and the
   game's actual frame production.
-- ANGLE owns GLES-to-Vulkan translation. Exposing ES 3.2 through
-  `exposeNonConformantExtensionsAndVersions:exposeES32ForTesting` is a named TFT
-  compatibility route, not general conformance proof.
+- **VERIFIED CURRENT PATH:** the latest stack receipt identifies
+  `UNREAL_ENGINE_VULKAN`. ANGLE may be present for another guest/package path,
+  but is not assumed to render TFT unless a per-run receipt proves it.
+- ANGLE owns GLES-to-Vulkan translation only when a game selects GLES/EGL and
+  Android selects ANGLE for that package. Its ES 3.2 exposure is a compatibility
+  route, not general conformance proof.
 - gfxstream/ASG owns guest-to-host graphics command transport. Configured ring,
   buffer, and flush values do not prove per-frame transport latency.
 - MoltenVK owns host Vulkan-to-Metal translation. Environment values are
@@ -315,17 +322,19 @@ credential-bearing or full raw data.
 | `game_process_sessions` | TFT PID lifetime | process transition |
 | `input_samples` | touch metadata and keyboard counts only | each input event |
 
-- **IMPLEMENTED IN CURRENT SOURCE; RUNTIME NOT YET VERIFIED:** base graphics
-  logging is automatic from the observed TFT process/layer start through TFT
-  process or app close. It is independent of the optional Combat Benchmark and
-  does not use a battle classifier.
-- **IMPLEMENTED IN CURRENT SOURCE; RUNTIME NOT YET VERIFIED:** graphics
-  snapshots carry canonical stack-receipt JSON, SHA-256, completeness, and
-  explicit unknowns; graphics rows are scoped by `graphics_run_id`, and exact
-  intervals may join their containing frame window.
-- **LOCKED:** those joins support conservative `TFT`/`PIPE`/`MAC` weakest-
-  boundary views only. They do not create a trusted per-frame guest-to-host ID
-  or permit causal ownership beyond the evidence.
+- **VERIFIED CURRENT:** base graphics logging opens automatically from the
+  observed TFT process/layer and seals only at process/app close. It is
+  independent of match markers, Combat Benchmark controls, and battle
+  classification.
+- **VERIFIED CURRENT:** stack receipts, SHA-256, `graphics_run_id`, and exact
+  interval/window joins are written continuously. They prove scope and receipt
+  integrity, not internal causal ownership.
+- **LOCKED:** the final native Mac presenter remains a hidden correctness
+  receipt. It is not displayed, ranked, or selected as a graphics root cause.
+- **UNKNOWN / PLANNED:** no shared work ID or source-site span currently crosses
+  guest submit, ASG/gfxstream, host Vulkan, MoltenVK, and Metal. The current
+  logger cannot identify an internal root; advanced causal instrumentation is
+  planned in an isolated diagnostic runtime.
 
 Privacy facts:
 
@@ -337,9 +346,10 @@ Privacy facts:
 
 ## 10. Benchmark contract
 
-- **LOCKED:** marked full runs are preferred product-performance evidence. Every
-  logged frame and every resource/pipeline sample inside the range participates;
-  no phase selection or classification is required.
+- **LOCKED:** complete automatic TFT process/layer runs are preferred
+  product-performance evidence. Every logged frame and resource/pipeline sample
+  inside the lifecycle participates; match/combat markers and classifiers are
+  optional annotations only.
 - **LOCKED:** the current UI/source-named Combat Benchmark remains a faster
   5–8 minute bounded A/B screen; it does not gate base graphics logging or
   replace a full-run promotion check.
@@ -390,6 +400,17 @@ Decision rules:
 ## 11. Verified results and decisions
 
 ### Current native/runtime evidence
+
+- **VERIFIED CURRENT:** automatic capture
+  `2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200` recorded an
+  uninterrupted 42m27s TFT graphics run (PID 2774) with 144,364 exact
+  SurfaceFlinger intervals, 99.629% exact-layer coverage, and 189 degradation
+  incidents. Weighted FPS was 56.98, 1% low 21.49 FPS, p95 21.510 ms, p99
+  33.434 ms, and 53.72% of intervals missed the 60-FPS budget.
+- **VERIFIED CURRENT BOUNDARY:** final native presentation remained near 60 Hz
+  during this run, so it is retained only as hidden correctness context. The
+  first internal graphics boundary remains `UNKNOWN`; present evidence localizes
+  lateness upstream of or at the exact TFT SurfaceFlinger layer.
 
 - **VERIFIED CURRENT:** Build 7 live capture
   `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494`
@@ -520,9 +541,9 @@ campaign, useful for candidate selection but not current M4 runtime performance:
    corruption. Raw gRPC remains the working control.
 7. Whether current sound is audibly correct at the user's output device.
 8. Whether Riot WebView input ANR recurs after future TFT/WebView updates.
-9. Public distribution acceptance: the current app is locally signed but not
-   notarized.
-10. Whether any owned candidate can hold the complete marked run at the 60 FPS
+9. Public distribution acceptance: Build 8 has a historical local-signing
+   receipt, current-host trust is blocked, and no notarization is claimed.
+10. Whether any owned candidate can hold the complete automatic run at the 60 FPS
     target without correctness, audio, login, memory, or cleanup regression.
 
 ## 14. Authority and update rule

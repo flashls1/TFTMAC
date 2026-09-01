@@ -1,8 +1,8 @@
 # TFTMAC Benchmark and Analysis Contract
 
-**Authority date:** 2026-08-30 America/Chicago
+**Authority date:** 2026-08-31 America/Chicago
 **Formula version:** `tftmac-benchmark-v2`
-**Current installed runtime:** TFTMAC 2.3.0 build 8 on the M4 Mac mini; automatic graphics lifecycle and complete stack receipts live-verified, first Build 8 marked gameplay benchmark pending
+**Current installed runtime:** TFTMAC 2.3.0 build 8 on the M4 Mac mini; automatic graphics lifecycle and complete stack receipts live-verified, including a 42m27s automatic graphics run
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
 This file is the current benchmark-analysis authority. `docs/benchmarks.md` is
@@ -22,26 +22,27 @@ TFTMAC recognizes five evidence modes:
 
 | Mode | Meaning | Authority |
 | --- | --- | --- |
-| `FULL_RUN` | A user-marked run from `MATCH_ENTRY` through `MATCH_END` | Primary evidence for continuous FPS, the complete workload, sustained resource pressure, correctness, and promotion to normal play |
-| `GRAPHICS_RUN` | Automatically observed TFT process/layer lifetime from start through process/app close | Base graphics lifecycle, exact-layer availability, stack receipt, and incident evidence; no battle classifier or user marker is required |
+| `FULL_RUN` | A complete automatically observed TFT process/layer lifetime | Primary evidence for continuous FPS, complete workload, sustained pressure, correctness, and promotion to normal play; user markers are optional annotations |
+| `GRAPHICS_RUN` | Automatically observed TFT process/layer lifetime from start through process/app close | The SQL lifecycle identity used by a full run; no battle classifier or user marker is required |
 | `BOUNDED_AB` | A 300–480 second continuous-gameplay window under one named preset | Fast controlled screening of one candidate against a compatible Control; currently implemented by the UI/source named Combat Benchmark |
 | `DIAGNOSTIC_ONLY` | Launch, login, lobby, unmarked gameplay, partial capture, or isolated incident | Useful for diagnosis; cannot prove full-run performance or promote a candidate |
 | `INVALID` | Missing/corrupt boundaries, inadequate coverage, changed identity, correctness failure, or other declared invalidator | Retain as negative/operational evidence; do not use for a positive performance claim |
 
 Full runs are preferred because they include the complete performance envelope,
-not a hand-selected scene. Every logged frame and every resource/pipeline sample
-inside the marked range participates in analysis. A bounded A/B remains useful
-because it produces a faster controlled answer. It does not require any
-semantic phase label. A short winner is not promoted until it also survives a
-full marked run. A full run can immediately veto a candidate
-for correctness or player experience.
+not a hand-selected scene. Every logged frame and resource/pipeline sample
+inside the automatic process/layer lifecycle participates. A bounded A/B
+remains useful because it produces a faster controlled answer. It does not
+require any semantic phase label. A short winner is not promoted until it also
+survives a complete automatic full run. A full run can immediately veto a
+candidate for correctness or player experience.
 
 A lobby, a reported `SRC 60`, an `OUT 60`, a successful launch, or an emulator
 process is never a gameplay benchmark.
 
 The graphics-only optimization equation is limited to direct graphics cadence,
-tail latency, missed-vsync/severe behavior, source freshness, final-presenter
-health, stack receipts, and conservative boundary joins. CPU, RAM, thermal,
+tail latency, missed-vsync/severe behavior, source freshness, stack receipts,
+and conservative owned-boundary joins. The final native presenter is hidden
+correctness context only. CPU, RAM, thermal,
 power, and audio may invalidate correctness or explain health context, but are
 not optimization variables or a substitute graphics owner in this contract.
 
@@ -75,8 +76,8 @@ Mandatory rules:
    `SurfaceView` are guest gameplay-cadence authority.
 2. `SRC` is distinct completed controller images. `OUT` is TFTMAC's final Metal
    presentation cadence. Neither is Unreal FPS.
-3. A fast final presenter can repeatedly present an old source frame; 60 OUT
-   therefore does not contradict 30–50 useful game FPS.
+3. A fast final presenter can repeatedly present an old source frame. It is not
+   a current graphics root-cause candidate and is omitted from causal ranking.
 4. Requested configuration, effective receipt, and observed outcome are three
    separate facts.
 5. A guest-frame stall does not identify Unreal, ANGLE, ASG/gfxstream,
@@ -152,8 +153,8 @@ different session.
 | `game_frame_intervals` | exact TFT actual-present deltas | authoritative FPS/tail calculations |
 | `game_frame_windows` | one-second gameplay summaries and availability | incident/worst-window discovery and coverage |
 | `stream_freshness_windows` | received, changed, identical, and lost controller frames | distinguish upstream freshness from final output |
-| `host_presentation_windows` | Metal submit/complete/reuse/error/latency/GPU time | test whether TFTMAC's final presenter is the late boundary |
-| `presentation_samples` | cumulative/instant SRC and OUT behavior | source/presenter cadence trend |
+| `host_presentation_windows` | Metal submit/complete/reuse/error/latency/GPU time | hidden final-presenter correctness/regression context only |
+| `presentation_samples` | cumulative/instant source/output behavior | hidden transport/presenter correctness trend |
 | `resource_samples` | QEMU CPU/RSS, TFT PID, foreground activity | host-emulator load and process continuity |
 | `guest_memory_samples` | guest available memory and swap | Android pressure trajectory |
 | `host_resource_samples` | host memory/compression/swap/pageouts/thermal/power | Mac pressure and comparability |
@@ -173,9 +174,9 @@ different session.
 
 The current source schema also stores canonical stack-receipt JSON/SHA-256 on
 each graphics snapshot and joins intervals to their containing frame window
-where available. This is **source-level implemented**, not runtime verified,
-until a fresh capture carries the schema. The SHA proves receipt identity, not
-that every row shares a trusted cross-process frame ID.
+where available. Build 8 automatic captures **runtime-verify** this schema and
+receipt linkage. The SHA proves receipt identity, not that every row shares a
+trusted cross-process work ID.
 
 ## 5. Time domains and legal joins
 
@@ -186,8 +187,8 @@ were the same number.
 
 `events.monotonic_ns`, `game_frame_windows.started_monotonic_ns`, resource
 samples, stream/presenter windows, and most SQL sampling boundaries use the host
-monotonic clock. Use this clock for marked full-run boundaries and ordinary
-same-host overlap joins.
+monotonic clock. Use this clock for automatic lifecycle boundaries, optional
+annotations, and ordinary same-host overlap joins.
 
 ### Guest SurfaceFlinger clock
 
@@ -267,7 +268,7 @@ to create a whole-run FPS when raw intervals are available.
 ### Continuous 60 FPS target
 
 The product target is not “good average FPS.” It is a useful-frame cadence of
-at least 60 FPS throughout the marked run:
+at least 60 FPS throughout the complete automatic run:
 
 ```text
 target_fps = 60
@@ -284,7 +285,7 @@ fps_deficit = max(0, target_fps - measured_fps)
 
 The analyzer must also calculate the longest consecutive budget-miss run and a
 five-second rolling weighted FPS at one-second steps. A continuous-60 claim
-requires the complete marked run—not just its mean—to meet the target, with no
+requires the complete automatic run—not just its mean—to meet the target, with no
 missed-vsync equivalents or severe stalls. Until then, report the exact deficit
 and improvement; do not redefine success downward.
 
@@ -340,26 +341,22 @@ relative_reduction = (control_rate - candidate_rate) / control_rate
    emulator/TFT path and opens a `GRAPHICS_RUN` from the observed TFT
    process/layer lifecycle.
 2. Do not change a restart-bound setting during the run.
-3. Select `Mark Match Entry` when the actual match/game board begins.
-4. Play normally. The entire run is the dataset; do not wait for or label a
+3. Play normally. The automatic graphics run is the dataset; do not wait for or label a
    particular game phase.
-5. Use `Visible Stutter` whenever practical. Absence of a marker never means
+4. Optional Match Entry/End and Visible Stutter annotations may add player
+   context. Absence of a marker never means
    absence of stutter.
-6. Select `Mark Match End` at the result/end boundary.
-7. Analyze the marked range immediately; seal the complete session after normal
+5. Analyze the complete automatic run after normal
    app shutdown and AVD rollback.
 
-The current native menu writes `MATCH_ENTRY` and `MATCH_END`. Those two markers
-are sufficient for optional full-run segmentation. No battle or semantic phase
-classifier participates in base graphics collection, graphics-run validity, or
-weakest-boundary analysis.
+The current native menu writes optional `MATCH_ENTRY` and `MATCH_END` annotations.
+They never determine full-run validity. No battle or semantic phase classifier
+participates in collection, validity, or causal analysis.
 
 ### Full-run validity
 
-A marked full run is valid product evidence when:
+A full automatic graphics run is valid product evidence when:
 
-- one ordered `MATCH_ENTRY`/`MATCH_END` pair exists in the same session;
-- end is later than start;
 - the expected TFT Unreal `SurfaceView` is stable and unambiguous;
 - exact-layer measured coverage is at least 95%;
 - no SurfaceFlinger history truncation affects the range;
@@ -378,11 +375,10 @@ join across the range. There is no phase-selection or battle-classifier gate.
 Resource, memory, thermal, power, and audio rows remain correctness/health
 context; do not rank them as graphics weak links.
 
-For each graphics run/window, publish only these conservative views: `TFT`
-(exact SurfaceFlinger actual-present), `PIPE` (controller freshness/delivery),
-and `MAC` (final presenter). The weakest-boundary view is the first observed
-view with a failing/missing receipt; where joins cannot prove ordering or a
-trusted frame handoff is absent, output `UNKNOWN` rather than an owner.
+For each graphics run/window, publish `TFT` (exact SurfaceFlinger
+actual-present) and `PIPE` (controller freshness/delivery). The native Mac
+presenter remains hidden correctness context. Where joins cannot prove ordering
+or a trusted work handoff is absent, output `UNKNOWN` rather than an owner.
 
 Before interpreting performance, build a completeness matrix for every table in
 the SQL data dictionary: row count inside the range, first/last timestamp,
@@ -414,13 +410,15 @@ the remaining data from the result.
 
 ### Full-run report order
 
-1. Manifest and marker boundaries.
+1. Manifest and automatic process/layer lifecycle boundaries; list any markers
+   only as optional annotations.
 2. Configuration/package/layer identity and correctness.
 3. Coverage, clock quality, and invalidators.
 4. Whole-run exact frame distribution and continuous-60 target deficit.
 5. Complete one-second/rolling timeline and all under-target episodes.
 6. Worst 30-second intervals and visible-stutter neighborhoods.
-7. Source freshness and final-presenter behavior across the same full timeline.
+7. Source freshness across the same full timeline; preserve final-presenter
+   data only as hidden correctness context.
 8. CPU/memory/thermal/power/audio and structured failures across the same full timeline.
 9. Valid cross-boundary correlations; otherwise explicit unknowns.
 10. Claim ledger and next one-factor candidate.
@@ -482,7 +480,7 @@ causal_interpretation: INVALID_OBSERVER_OVERHEAD | ELIGIBLE
 ```
 
 A `HOME_RUN` or `PROMISING` bounded result requires one cold confirmation and
-one marked full run before promotion to normal play.
+one complete automatic full run before promotion to normal play.
 
 These relative decisions select whether a change is worth retaining; they do
 not redefine the product goal. Every report must separately emit:
@@ -499,7 +497,19 @@ remains unfinished.
 
 Use bound parameters rather than copying example IDs into a new analysis.
 
-### Find marked full runs
+### Select complete automatic full runs
+
+```sql
+SELECT graphics_run_id, session_id, game_pid, started_utc, ended_utc,
+       start_reason, end_reason, configuration_sha256, target_fps,
+       exact_layer_name
+FROM graphics_runs
+WHERE session_id=:session_id
+  AND ended_utc IS NOT NULL
+ORDER BY started_monotonic_ns;
+```
+
+### Find optional Match Entry/End annotation pairs
 
 ```sql
 WITH marked AS (
@@ -519,8 +529,9 @@ ORDER BY session_id, monotonic_ns;
 
 ### Calculate exact whole-range frame metrics
 
-Use `observed_monotonic_ns` for the host-marked range; do not compare host
-markers directly to guest `actual_present_ns`.
+Use `observed_monotonic_ns` for the selected automatic lifecycle range. Optional
+host markers may annotate that range but must not determine validity; never
+compare them directly to guest `actual_present_ns`.
 
 ```sql
 WITH raw AS (
@@ -569,14 +580,14 @@ WITH raw AS (
   FROM game_frame_intervals
   WHERE session_id=:session_id
     AND observed_monotonic_ns BETWEEN :start_ns AND :end_ns
-), marked AS (
+), grouped AS (
   SELECT *,
          row_number() OVER (ORDER BY actual_present_ns) -
          row_number() OVER (PARTITION BY miss ORDER BY actual_present_ns) AS grp
   FROM raw
 ), runs AS (
   SELECT miss, grp, count(*) AS length
-  FROM marked
+  FROM grouped
   GROUP BY miss, grp
 )
 SELECT (SELECT count(*) FROM raw) AS intervals,
@@ -750,7 +761,7 @@ JSON, SQL rows, or Markdown:
   "pipeline_boundaries": {
     "guest_actual_present": {},
     "source_freshness": {},
-    "final_presenter": {},
+    "hidden_presenter_correctness": {},
     "resources": {},
     "clock_eligibility": "PRECISE|COARSE|UNKNOWN"
   },
@@ -782,9 +793,26 @@ JSON, SQL rows, or Markdown:
 Never omit `invalid_reasons`, `unknowns`, or the difference between the code
 decision and the engineering/promotion decision.
 
-## 11. Current full-run finding: Build 7 Combat Latency A
+## 11. Current full-run findings
 
-### Identity and boundaries
+### 11.1 Latest automatic Build 8 graphics finding
+
+Capture `2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200`
+contains an automatic 42m27s exact TFT process/layer run (PID 2774), with
+144,364 frame intervals, 99.629% exact-layer coverage, 189 degradation
+incidents, 56.98 weighted FPS, 21.49 FPS 1% low, 21.510 ms p95, 33.434 ms p99,
+and 53.72% missed 16.667-ms frame budgets. This is valid direct gameplay
+performance evidence without a Match Entry/End marker.
+
+It does **not** identify an internal graphics root. Build 8 has no shared work
+identity across guest Vulkan, gfxstream, host Vulkan, MoltenVK, and Metal; its
+source-level incident owner remains `UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE`.
+The native Mac presenter remained near 60 Hz and is retained only as hidden
+correctness context.
+
+### 11.2 Build 7 Combat Latency A historical finding
+
+#### Identity and boundaries
 
 | Field | Direct finding |
 | --- | --- |
@@ -949,7 +977,7 @@ For a one-factor candidate:
 5. Reject immediately for any boot/render/input/audio/login/cleanup regression or
    direct unacceptable player experience.
 6. Cold-confirm a short winner.
-7. Require one full marked run before normal-play promotion.
+7. Require one complete automatic full run before normal-play promotion.
 
 A relative winner below the continuous 60 FPS target is retained as progress,
 not described as the graphics problem being fixed.
@@ -965,7 +993,8 @@ Full runs need not have identical length. Compare:
 - correctness and direct player report.
 
 Never declare a gain from one isolated best window, different package/settings,
-different semantic layer, unmarked/lobby data, or output cadence alone.
+different semantic layer, lobby-only data, or output cadence alone. Missing
+markers alone never invalidates an automatic full run.
 
 ## 13. Retention and privacy
 
@@ -978,8 +1007,9 @@ Retain:
 - unresolved incident evidence;
 - normalized trace summaries and SHA-256 links when valid.
 
-Older raw captures may be compacted only after preserving session ID, marker
-range, configuration/package/runtime identity, formula version, verdict, key
+Older raw captures may be compacted only after preserving session ID, automatic
+lifecycle range, optional marker annotations, configuration/package/runtime
+identity, formula version, verdict, key
 metrics, source database hash, and artifact hashes.
 
 Raw logcat, raw traces, and any sensitive sidecars remain local/private. Reports
@@ -993,8 +1023,9 @@ frames.
 2. `observer_overhead_invalid` is stored but does not alter the code decision.
 3. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
 4. Clock RTT is too high in the current full run for cross-host cause.
-5. No common frame ID currently spans guest submit through final present. The
-   allocation-free source-built correlation ring remains a planned, gated next
+5. No common work ID currently spans guest submit through owned emulator
+   transport/translation completion. The allocation-free source-built
+   correlation ring remains a planned, gated next
    layer; stack-receipt/frame-window joins do not replace it.
 
 These gaps limit attribution and automation; they do not erase the direct

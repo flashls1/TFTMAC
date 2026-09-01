@@ -17,7 +17,8 @@ Useful evidence may include:
 - host monotonic timestamps;
 - emulator/runtime state;
 - one-second native frame-ingress interval windows and visual checkpoints;
-- raw-gRPC source-window and Metal output-presentation rates, labeled separately and never called Unreal FPS;
+- raw-gRPC source freshness plus native Metal presentation internals retained as
+  hidden correctness/regression context and never called Unreal FPS;
 - aggregate logcat fault counts with raw lines kept outside SQL;
 - SurfaceFlinger render-rate and cumulative missed/HWC/GPU counters sampled at boundaries and every 30 seconds during gameplay;
 - AudioFlinger active output, sample rate, stereo state, tracks and underruns;
@@ -41,8 +42,8 @@ The current source schema associates automatically captured samples with
 snapshot, and links exact guest intervals to their containing frame window when
 available. Every exact guest interval and one-second game window also carries
 the active immutable `stack_sha256`, so stack identity survives incomplete
-window joins and later layer changes. These source-level changes require a fresh runtime capture before
-they become **VERIFIED CURRENT runtime** evidence. A stack receipt establishes
+window joins and later layer changes. These source-level changes are
+**VERIFIED CURRENT runtime** evidence through the Build 8 automatic captures. A stack receipt establishes
 the observed route/configuration for that sample; it does not prove causal
 ownership of a slow frame.
 
@@ -68,11 +69,10 @@ No remote telemetry service is required for the current TFTMAC runtime or accept
 
 The automatic logger may construct per-window stack joins through
 `graphics_run_id`, direct per-frame `stack_sha256`, frame-window linkage, and
-the matching snapshot receipt. Its views are
-conservative: `TFT` identifies exact SurfaceFlinger presentation, `PIPE`
-identifies controller freshness/transport delivery, and `MAC` identifies the
-final TFTMAC presenter. A view may say which observed boundary first lacks a
-healthy receipt; it must use `UNKNOWN` when a per-frame trusted handoff is
-missing. CPU, RAM, thermal, power, and audio samples remain health/correctness
-context only in this graphics-only optimization effort; they are not candidates
-in the graphics optimization equation.
+the matching snapshot receipt. Its user-facing views are conservative: `TFT`
+identifies exact SurfaceFlinger presentation and `PIPE` identifies controller
+freshness/transport delivery. The final TFTMAC presenter is retained only as a
+hidden correctness receipt. A report must use `UNKNOWN` when a trusted work
+handoff is missing; current Build 8 evidence cannot identify an internal
+graphics owner. CPU, RAM, thermal, power, and audio samples remain
+health/correctness context only in this graphics-only optimization effort.

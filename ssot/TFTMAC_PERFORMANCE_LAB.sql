@@ -697,3 +697,102 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 
 INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
 ('ev_native_fullscreen_acceptance_20260830',NULL,'2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94',NULL,'DIRECT_MEASUREMENT','Native TFTMAC filled the 1920x1080 display in an AppKit full-screen window, authenticated Emulator37.1.11 gRPC, authorized emulator-5582 on ADB5038, rendered 1920x1080 RGBA through Metal at about 60 output presentations/s, and launched official TFT18.1 into Unreal GameActivity.','NEUTRAL','DECISIVE',NULL,'2026-08-30T08:41:35Z','Capture 2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94. Lobby/input/software-audio path proven; full-match and user-audible acceptance remain separate.');
+
+-- ---------------------------------------------------------------------------
+-- 2026-08-31 Build 8 automatic full-run capture: current causal baseline
+-- This preserves older measurements while replacing neither their rows nor
+-- their historical conclusions. The raw SQLite capture remains private.
+-- ---------------------------------------------------------------------------
+INSERT OR REPLACE INTO runtime_configs (
+    id,parent_config_id,name,emulator_version,platform_tools_version,system_image_package,system_image_revision,
+    avd_name,adb_serial,adb_server_port,emulator_console_port,vcpu,ram_mb,
+    display_width,display_height,density_dpi,refresh_hz,gpu_mode,audio_enabled,
+    graphics_transport,angle_mode,vulkan_mode,moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES (
+    'tftmac_stock_build8_high60_control','tftmac_5gb_native_v1','Stock Build 8 High/60 normal-play control','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,
+    'TFT_Ultra_Tablet','emulator-5582',5038,5582,6,5120,1920,1080,320,60.0,'host',1,
+    'virtio-gpu-asg','Conditional: do not assume ANGLE is TFT main rendering path','Unreal direct Vulkan observed','gfxstream host Vulkan -> MoltenVK/Metal','authenticated raw gRPC -> AppKit Metal full screen','CONTROL','2026-08-31T22:30:26Z',
+    'Normal-play authority. Active observed experiment combat_latency_a uses High/60/Performance Mode OFF and is not a promoted performance intervention.'
+);
+
+INSERT OR REPLACE INTO sessions(
+    id,runtime_config_id,started_utc,ended_utc,host_start_mono_ns,host_end_mono_ns,
+    boot_class,workload_class,package_name,package_version_name,package_version_code,
+    package_state_sha256,renderer_state_sha256,session_manifest_sha256,
+    package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
+) VALUES (
+    '2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','tftmac_stock_build8_high60_control','2026-08-31T22:31:03Z','2026-08-31T23:13:30Z',NULL,NULL,
+    'UNKNOWN','MIXED','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,
+    0,'COMPLETE',1,NULL,'42m27s automatic PID/layer-lifetime run. Markers and battle labels are optional annotations; no marker is required for validity or causal analysis.'
+);
+
+INSERT OR REPLACE INTO artifacts(id,session_id,experiment_id,artifact_kind,path,sha256,byte_count,required,state,created_at,notes) VALUES
+('artifact_build8_current_private_db','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200',NULL,'PRIVATE_SQLITE_CAPTURE','PRIVATE_LOCAL_ONLY/TFTMAC_NATIVE_RUNTIME.sqlite','c1ef9c9ffe591a297cb86660e3ccfea7e9aeb593f22100e4e732b2fc77d4ee77',63897600,1,'PRESENT','2026-08-31T23:13:30Z','Metadata and integrity hash only; raw database is intentionally excluded from Git.');
+
+INSERT OR REPLACE INTO experiments VALUES
+('exp_build8_automatic_full_run',NULL,'Build 8 automatic full-run graphics observation','OBSERVATION','tftmac_stock_build8_high60_control',NULL,'MIXED',0,'COMPLETE',0,'Automatic PID/layer lifetime, exact TFT layer and receipt linkage; markers/battle labels are optional and have no validity role.','2026-08-31T22:30:26Z','2026-08-31T23:13:30Z','Diagnostic observation only; establishes current performance facts and preserves root attribution as UNKNOWN.');
+
+INSERT OR REPLACE INTO experiment_sessions(experiment_id,session_id,role) VALUES
+('exp_build8_automatic_full_run','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','DIAGNOSTIC');
+
+INSERT INTO metrics(session_id,experiment_id,metric_scope,metric_name,metric_value,unit,source_artifact_id,semantic_valid,notes) VALUES
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','weighted_fps',56.98,'fps','artifact_build8_current_private_db',1,'Exact TFT SurfaceFlinger actual-present authority.'),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','fps_1_percent_low',21.49,'fps','artifact_build8_current_private_db',1,'Exact TFT SurfaceFlinger actual-present authority.'),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p50_frame_interval',16.707,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p95_frame_interval',21.51,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','p99_frame_interval',33.434,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','max_frame_interval',2233.611,'ms','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','jank_count',6544,'frames','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','jank_percent',4.53,'percent','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','severe_stall_count',144,'windows','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','missed_vsync_equivalent_count',7644,'frames','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','exact_layer_coverage',99.629,'percent','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','frame_interval_count',144364,'intervals','artifact_build8_current_private_db',1,NULL),
+('2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','GRAPHICS_RUN','degradation_incident_count',189,'incidents','artifact_build8_current_private_db',1,'Incident count is aggregate; no battle classifier is used as a causal gate.');
+
+INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
+('ev_build8_current_full_run',NULL,'2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','DIRECT_MEASUREMENT','Build 8 automatically captured a complete 42m27s TFT graphics run with 144364 exact-layer frame intervals and 99.629% exact-layer coverage. The observed direct path is Unreal Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE is conditional, final Mac presentation is context-only, and the first causal boundary remains UNKNOWN.','NEUTRAL','DECISIVE','artifact_build8_current_private_db','2026-08-31T23:13:30Z','No raw database, screenshots, credentials, or frame payloads are committed.'),
+('ev_build8_current_root_unknown',NULL,'2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','exp_build8_automatic_full_run','TRACE_CORRELATION','Current automatic logging proves degradation but cannot identify an internal owned root component because no shared guest-to-host causal work ID exists.','NEUTRAL','DECISIVE','artifact_build8_current_private_db','2026-08-31T23:13:30Z','Do not infer ASG, gfxstream, MoltenVK, Metal, ANGLE, or Unreal ownership from the present capture.');
+
+INSERT OR REPLACE INTO decisions(id,experiment_id,decision,rationale,cold_confirmation_complete,promoted_config_id,decided_at,notes) VALUES
+('decision_build8_current_full_run','exp_build8_automatic_full_run','DIAGNOSTIC_ONLY','The capture verifies automatic logging and current full-run degradation metrics, but it is not a controlled promotion and root attribution is UNKNOWN.',0,NULL,'2026-08-31T23:13:30Z','Keep stock Build 8 as normal-play authority; advanced source causal logging is planned.');
+
+INSERT OR REPLACE INTO unknowns(id,question,boundary,status,blocking,resolution_evidence_id,opened_at,resolved_at,notes) VALUES
+('u_current_internal_root_cause','Which owned graphics component first diverges before TFT SurfaceFlinger actual-present degradation?','CROSS_STACK_CAUSAL','OPEN',1,NULL,'2026-08-31T23:13:30Z',NULL,'Requires the planned source-instrumented causal logger and complete work-ID joins.');
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','tftmac_stock_build8_high60_control'),
+('current_playable_baseline_session','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200'),
+('current_release_gameplay_benchmark','VERIFIED_CAPTURE_ROOT_ATTRIBUTION_UNKNOWN'),
+('current_runtime_mode','STOCK_BUILD8_NORMAL_PLAY_AUTHORITY'),
+('current_active_experiment','combat_latency_a observed High/60/Performance Mode OFF; not promoted'),
+('current_renderer_path','Unreal direct Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE conditional only'),
+('current_mac_presenter_policy','Final Mac presenter is excluded from causal candidates and retained only as context/correctness telemetry.'),
+('current_marker_policy','MATCH_ENTRY, MATCH_END, combat, battle, and quality markers are optional annotations only; automatic process/layer lifetime defines capture validity.'),
+('current_root_attribution','UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE'),
+('advanced_source_causal_logger','PLANNED: isolated non-comparable tftmac-runtime diagnostic build; no causal code-site claim until complete work-ID joins, valid clocks, sealed streams, and overhead gate pass.');
+
+UPDATE experiments
+SET state='CANCELLED',
+    notes=COALESCE(notes,'') || ' Historical candidate retained; superseded as current work by the verified Build 8 full-run baseline and planned source causal logger. Do not execute as an active tuning recommendation.'
+WHERE id IN ('exp_asg_flush400_ab','exp_native_frame_trace','exp_tft_fps_cap_ab','exp_tft_graphics_preset_ab','exp_tft_performance_mode_ab')
+  AND state='PLANNED';
+
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_presentation_candidate','RETIRED_AS_CURRENT_ACTION: final Mac presentation and broad SurfaceFlinger/HWC directional candidates are context only; causal changes wait for the planned source causal logger.'),
+('current_graphics_next_action','Build and validate the isolated source causal logger. Do not run a tuning A/B until it identifies an owned first divergent boundary or explicitly reports that the first missing boundary is unowned.');
+
+-- Exact-key overrides for the Build 8 authority. Earlier values remain in the
+-- SQL history but cannot survive as the effective current policy.
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('logger_guard_policy','Automatic logging follows the TFT process and exact layer from game start until process/app close. MATCH_ENTRY, MATCH_END, combat, battle, quality, and result markers are optional annotations only.'),
+('multi_match_policy','Keep raw telemetry continuous across every game. Process/layer lifetime and timestamps define validity; marker pairing and battle classification are never required.'),
+('current_measurement_gap','Exact TFT SurfaceFlinger actual-present timing is implemented and verified. Internal causal attribution below the guest TFT surface remains unimplemented because owned-stage work IDs are absent.'),
+('current_tft_graphics_observed','High'),
+('current_tft_fps_cap_observed','60'),
+('current_tft_performance_mode_beta_observed','OFF'),
+('current_native_frame_truth','Exact TFT SurfaceFlinger actual-present timestamps are FPS authority. Final Mac presentation is hidden correctness context only and is excluded from causal ranking.'),
+('current_native_logger','Automatic private SQL capture covers the TFT PID/layer lifetime, exact intervals/windows, receipts, incidents, and bounded supporting telemetry. Markers are optional annotations.'),
+('current_surfaceflinger_counter_policy','Exact TFT actual-present intervals and one-second windows are primary. Cumulative counters are supporting context only and do not require marked windows.'),
+('current_optimization_priority','Analyze all automatic full-run graphics data. Do not tune or name a root component until the planned source causal logger proves the first divergent owned boundary or explicitly reports UNKNOWN.'),
+('current_graphics_experiment','No tuning A/B is active. The next development phase is the PLANNED isolated source causal logger; combat_latency_a is an observed High/60/Performance Mode OFF preset, not a promoted result.');

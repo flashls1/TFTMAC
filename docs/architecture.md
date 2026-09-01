@@ -18,7 +18,10 @@ The runtime root is external to the repository so application source changes do 
 
 ## Native application
 
-`TFTMAC/App/` owns application lifecycle and the main window. `TFTMAC/Presentation/` owns the Metal presentation shell and viewport mapping. The source target is Apple Silicon and the application bundle identifier is `com.flashls1.tftmac`.
+`tftmac/App/` owns application lifecycle and the main window.
+`tftmac/Presentation/` owns the Metal presentation shell and viewport mapping.
+The source target is Apple Silicon and the application bundle identifier is
+`com.flashls1.tftmac`.
 
 The presentation layer maintains the game aspect ratio and maps native viewport coordinates into the 1920x1080 Android source coordinate space while rejecting input in letterbox regions.
 
@@ -36,11 +39,20 @@ TFTMAC does not mirror, bundle, patch, re-sign, or privately update Riot binarie
 
 Bulk runtime state is outside Git under `/Volumes/MAC MINI M4/TFTMAC/Runtime`. Repository source contains only code, tests, protocol snapshots, compact evidence, and configuration that is safe to version.
 
-The abandoned source-built emulator development tree is not part of the normal product architecture and is eligible for controlled reclamation after independence checks pass.
+The source-built emulator development tree is not part of normal product
+architecture. The stock Build 8 runtime is the only normal-play authority. An
+isolated source-built `tftmac-runtime` at `c8aa26e` is eligible solely for future
+source-level causal diagnostics; it cannot replace or be performance-compared
+with the stock runtime until separate parity and correctness gates pass.
 
 ## Diagnostics
 
-Raw runtime telemetry is captured append-only, then normalized for analysis. Measurements identify the first boundary where behavior changes from PASS to FAIL. Performance changes are one-variable, reversible A/B experiments with explicit KEEP/REJECT decisions.
+Raw runtime telemetry is captured append-only, then normalized for analysis.
+Build 8 identifies exact SurfaceFlinger degradation but cannot identify an
+internal graphics root because no work ID crosses its guest/host pipeline.
+Source-level causal instrumentation is planned; current measurements must leave
+that owner `UNKNOWN`. Performance changes are one-variable, reversible A/B
+experiments with explicit KEEP/REJECT decisions.
 
 ## Failure boundaries
 

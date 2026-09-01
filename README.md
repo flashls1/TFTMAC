@@ -27,7 +27,9 @@ The working runtime is stored outside the repository under:
 
 The current stock emulator authority is Android Emulator 37.1.11. The exact installed EmulatorController protocol is vendored at `Vendor/AndroidEmulator/emulator_controller.proto` with provenance in `Vendor/AndroidEmulator/SOURCE.json`.
 
-The abandoned source-built emulator laboratory is not part of the normal product path.
+The source-built emulator laboratory is not part of the normal product path.
+`flashls1/tftmac-runtime@c8aa26e` is eligible only as an isolated,
+non-comparable diagnostic source runtime for the planned causal logger.
 
 ## Current handoff authority
 
@@ -35,7 +37,7 @@ The abandoned source-built emulator laboratory is not part of the normal product
 - [`project.md`](project.md) — complete project history, architecture pivots, current Build 8 logger state, and continuity for a new chat.
 - [`dev.md`](dev.md) — code ownership, experiment ledger, SQL contracts, hypotheses, and the next development gates.
 
-Historical plans and benchmark records remain useful evidence, but they do not override these current boundaries or the machine-readable files under `ssot/`.
+Historical plans and benchmark records remain useful evidence, but they do not override these current boundaries or the machine-readable files under `ssot/`. The dated archive under `docs/history/2026-08-31-pre-build8/` is not current execution authority.
 
 ## Native build
 
@@ -59,11 +61,21 @@ Test:
 /bin/zsh scripts/test-native-app.command
 ```
 
-Full repository validation:
+Repository/CI validation (no installed app, private runtime, credentials, or
+signing identity required):
 
 ```sh
 /bin/zsh scripts/verify-tftmac.command
 ```
+
+Local installed-app/runtime/signing validation:
+
+```sh
+/bin/zsh scripts/verify-installed-runtime.command
+```
+
+The latter currently reports the known missing local signing identity and
+`CSSMERR_TP_NOT_TRUSTED`; it is intentionally not a CI dependency.
 
 The native application bundle identifier is `com.flashls1.tftmac`.
 
@@ -87,7 +99,7 @@ If Google Play or Riot requires authentication, MFA, consent, or CAPTCHA, TFTMAC
 
 ## Performance and diagnostics
 
-Performance work is evidence-driven. Raw telemetry is append-only during capture, then normalized for analysis. A/B changes are small, reversible, and accepted only when repeatable evidence supports them.
+Performance work is evidence-driven. Build 8 automatically logs the TFT process/layer lifetime and has been live-verified. It proves exact gameplay cadence and degradation, but it does not yet name an internal graphics root. Source-level causal instrumentation is planned in an isolated diagnostic runtime, never by silently replacing the stock playable runtime.
 
 The current target is 1920x1080 at 60 Hz. High graphics at a 60 FPS cap with Riot Performance Mode OFF is the accepted playable baseline. Ultra High and Riot Performance Mode Beta were rejected on the target M4 host because of severe lag and unacceptable combat tails.
 

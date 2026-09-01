@@ -1,6 +1,6 @@
 # TFTMAC Native Runtime Knowledge Base
 
-**Authority date:** 2026-08-30
+**Authority date:** 2026-08-31
 
 **Product target:** Native macOS TFT client experience backed by the official Android TFT package
 
@@ -24,11 +24,13 @@
 | Primary touch and keyboard transport | VERIFIED | Mac primary-pointer down/drag/up uses EmulatorController `TouchEvent` with stable identifier `0` and pressure `1 -> 0`; keyboard remains gRPC evdev input; SQL records coordinates, pressure, counts and special keys, never typed content |
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
-| Full match in this exact native build | NOT YET VERIFIED | Earlier donor runtime completed matches; current native lobby/GameActivity is proven, but a start-to-result native match receipt is still needed |
-| Release build/install integrity | VERIFIED | All 43 native tests pass. Installed `/Applications/TFTMAC.app` is deep-code-sign-valid 2.3.0 build 8 and matches the Build 8 executable, host, and icon receipts. |
+| Automatic full-session graphics evidence | LIVE VERIFIED | Latest Build 8 automatic process/layer run lasted 42m27s with 144,364 exact intervals and 99.629% coverage; markers were not required |
+| Historical Build 8 release acceptance | VERIFIED HISTORICAL | All 43 native tests passed and `/Applications/TFTMAC.app` was deep-code-sign-valid when the signed 2.3.0 build 8 release receipt was created. |
+| Current-host installed-runtime audit | BLOCKED | Main and emulator-host hashes still match Build 8, but the login keychain exposes zero valid signing identities and current deep/strict verification reports `CSSMERR_TP_NOT_TRUSTED`. Repair is a separate operational task. |
 | Build 7 live launch | VERIFIED | Capture `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494` reached authorized ADB, 1920x1080 first frame, powered/stay-awake guest, healthy SQL logger, official TFT and `TFT_READY_FOR_USER` under Combat Latency A |
 | Build 8 automatic graphics logger | LIVE VERIFIED | Capture `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31` proves automatic PID/layer admission, `COMPLETE` stack receipts, and direct run/hash/window/receipt linkage for every observed frame fact. |
-| Combat Latency A performance | NOT YET VERIFIED | Host pre-exec QoS receipt is direct, but no valid matched Control/Candidate combat benchmark exists and QEMU worker inheritance is not claimed |
+| Internal graphics root cause | UNKNOWN / PLANNED | Build 8 has no shared work ID across guest Vulkan, gfxstream, host Vulkan, MoltenVK and Metal. It cannot name an internal owner; isolated diagnostic instrumentation is planned. |
+| Combat Latency A performance | OBSERVED / NOT PROMOTED | Latest Build 8 run captured the preset at High/60/Performance OFF, but no controlled gain is established; scheduling testing is deferred behind causal instrumentation |
 | External-runtime permission retention | VERIFIED | Stable designated requirement installed; a clean second launch immediately reopened `/Volumes/MAC MINI M4/TFTMAC/Runtime` and started QEMU without another drive-access dialog |
 | Secure-unlock display | VERIFIED | Secure unlock stays manual and logged, while non-error runtime instructions are suppressed from the Android display; live signed launch showed no TFTMAC center overlay |
 
@@ -146,19 +148,21 @@ There are two Metal owners:
 
 Do not assign a stall to Unreal, ANGLE, gfxstream, MoltenVK, TFTMAC Metal, or macOS presentation from a metric owned by a different boundary.
 
-## 4. What the FPS display means
+## 4. What frame telemetry means
 
-The overlay is intentionally explicit:
+Player-facing causal reporting uses:
 
 ```text
-SRC <rate> · OUT <rate>
+TFT <exact actual-present rate/tails> · PIPE <source freshness>
 ```
 
-- `SRC` is the rate of distinct images received through authenticated gRPC.
-- `OUT` is the native Metal presentation cadence.
-- Neither number is automatically Unreal engine FPS.
-- A static Android image may be re-presented at 60 OUT while SRC is lower.
-- Unreal/guest/display attribution requires marked SurfaceFlinger deltas and, for deep diagnosis, a bounded Perfetto FrameTimeline trace.
+- `TFT` is derived from exact SurfaceFlinger actual-present timestamps.
+- `PIPE` reports completed-source freshness through authenticated gRPC.
+- Raw native-presenter cadence/GPU data remains stored only as hidden
+  correctness/regression context; it is not displayed or ranked as a root.
+- Neither controller-source nor native-presenter cadence is Unreal engine FPS.
+- Deep attribution requires the planned shared work-ID/source-site diagnostic
+  logger; optional markers and aggregate Perfetto counts cannot supply it.
 - `dumpsys gfxinfo` is blind to the native Unreal/Vulkan workload and must not be used as primary FPS authority.
 
 ## 5. Native logging system
@@ -241,8 +245,10 @@ raw-only state. The persistent comparison authority is:
 ```
 
 The build, SQL schema, preset invariants and decision engine are statically
-verified. A matched Control/Combat Latency A combat pair remains runtime
-acceptance and must not be claimed until the user runs it.
+verified. The current 42m27s automatic Build 8 run proves logging and the
+performance deficit while leaving internal attribution unknown. The next
+development gate is isolated source instrumentation, not another mandatory
+match-marker or combat-pair run.
 
 ### Riot login input contract
 
@@ -295,16 +301,16 @@ SELECT started_monotonic_ns, status, unavailable_reason,
        jank_count, severe_count, missed_vsync_equivalents
 FROM game_frame_windows ORDER BY started_monotonic_ns;
 
--- Delivery freshness and final Mac presenter are separate boundaries
+-- Delivery freshness is causal context; final Mac presenter is hidden correctness context
 SELECT * FROM stream_freshness_windows ORDER BY started_monotonic_ns;
 SELECT * FROM host_presentation_windows ORDER BY started_monotonic_ns;
 
--- Marked gameplay correlation
+-- Optional user annotations; never required for automatic full-run validity
 SELECT kind, monotonic_ns FROM events
 WHERE kind IN ('MATCH_ENTRY','COMBAT_START','VISIBLE_STUTTER','MATCH_END')
 ORDER BY monotonic_ns;
 
--- SurfaceFlinger deltas belong inside a marked window
+-- SurfaceFlinger deltas belong inside the automatic graphics-run lifetime
 SELECT sample_label, monotonic_ns, render_rate_hz,
        total_missed_frames, hwc_missed_frames, gpu_missed_frames
 FROM surfaceflinger_samples ORDER BY monotonic_ns;
@@ -362,8 +368,10 @@ root-cause verdict.
 2. Change exactly one restart-bound variable.
 3. Quit cleanly and relaunch; never mutate an AVD profile mid-match.
 4. Keep the same TFT build, graphics preset, FPS cap, workload phase and login state where practical.
-5. Mark match entry, combat, visible stutters and match end.
-6. Compare frame-window p95/max, SurfaceFlinger counter deltas, QEMU CPU/RSS, guest available memory, ANR/fatal/LMK counts and audio underruns.
+5. Let the automatic process/layer logger define the full run. Match, combat and
+   visible-stutter markers are optional annotations only.
+6. Compare exact full-run cadence/tails, source freshness, stack receipts and
+   valid owned diagnostic spans. Resource/audio data remains correctness context.
 7. Reject any boot, ADB, package, crash, memory, audio or usability regression.
 8. KEEP only after a comparable repeat plus cold confirmation.
 9. Record why a candidate was kept or rejected; never promote from a single lobby sample.
@@ -375,7 +383,8 @@ Current product decisions:
 - KEEP High / 60 / Performance OFF as the user-confirmed current in-game control.
 - REJECT Ultra High for current usability; direct user observation found severe lag, without fabricating a numeric FPS.
 - RETAIN 800 µs ASG flush in Control; do not recycle the historical 400 µs screen as a new result.
-- TEST Combat Latency A as a one-factor macOS scheduling candidate; promote only from matched combat evidence.
+- DEFER Combat Latency A promotion; its latest active observation is not a
+  controlled gain and the causal logger is now the next development layer.
 - KEEP raw gRPC as the working native presentation transport now.
 - DEFER MMAP until producer readiness, tear-free integrity, frame-age and performance are empirically proven.
 
@@ -433,8 +442,10 @@ Source research artifacts:
 ## 10. Remaining decisive gaps
 
 1. User confirms sound is audible at the Mac speakers/headphones.
-2. Complete one full match in the installed native build and mark entry/combat/stutter/end.
-3. Correlate a bounded active-combat Perfetto trace with SQL clock sync and SurfaceFlinger deltas before attributing a graphics bottleneck.
+2. Implement source-level causal work-ID instrumentation in the isolated
+   diagnostic runtime; normal-play Build 8 evidence must not fabricate an owner.
+3. Correlate bounded diagnostic traces with SQL clock sync and SurfaceFlinger
+   deltas before attributing a graphics bottleneck.
 4. Validate whether MMAP improves CPU/frame age without tearing; keep raw gRPC if it does not.
 5. Treat source rate, output rate, guest frame timing and panel visibility as separate clocks and claims.
 6. If black/white or missing board materials recur during active combat, mark `VISIBLE_STUTTER` and take guest/native screenshots at the same instant before changing ANGLE, Vulkan, gfxstream or MoltenVK flags.

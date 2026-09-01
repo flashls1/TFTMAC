@@ -1,7 +1,7 @@
 # TFTMAC Runtime — Single Source of Truth
 
 **Status:** CURRENT RUNTIME AUTHORITY  
-**Updated:** 2026-08-30
+**Updated:** 2026-08-31
 **Project:** TFTMAC
 
 ## Current production/control runtime
@@ -20,7 +20,11 @@ Package: com.riotgames.league.teamfighttactics
 Installer/update authority: com.android.vending
 ```
 
-The current native playable profile is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, High graphics, 60 FPS, Performance OFF. Ultra High and Riot Performance Mode Beta are rejected configurations on the target M4 host because of severe lag and unacceptable combat tails. Build 7's `combat_latency_a` is a one-factor host-scheduling candidate layered over this exact control; it is launch-verified but not performance-promoted.
+The normal-play control is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, High
+graphics, 60 FPS, Performance OFF. The latest Build 8 capture observed
+`combat_latency_a` layered over those values; that is an observed active preset,
+not a performance promotion. Ultra High and Riot Performance Mode Beta remain
+rejected on the target M4 host because of unacceptable tails and playability.
 
 The launcher boundary is frozen: TFTMAC starts its packaged `TFTMAC Emulator Host.app` through `/usr/bin/open -n -W --env ... --args ...` in the logged-in user session. It does not directly spawn QEMU from a Node/service context and does not inject `ADB_VENDOR_KEYS`. The previous `5040/5592` direct-service identity is retained only in historical evidence as the ADB-authorization regression.
 
@@ -53,7 +57,16 @@ Google Play owns package installation and updates. Riot owns its own application
 
 ## Graphics/control evidence
 
-The known-good stock control currently uses host GPU acceleration through gfxstream, ANGLE/Vulkan and MoltenVK/Metal. The control profile exists to preserve the measured playable runtime while the native presentation/control path is completed. It is not a claim that every exposed graphics capability is independently conformant.
+The known-good stock control uses host GPU acceleration through gfxstream,
+host Vulkan, MoltenVK and Metal. The latest TFT receipt identifies direct Unreal
+Vulkan; ANGLE may be present for another guest path but is not assumed to render
+the game. The native Mac presenter is hidden correctness context only.
+
+Build 8 automatic logging is live-verified and captures the TFT process/layer
+lifetime without match markers. It can prove exact SurfaceFlinger degradation,
+but it cannot yet name an internal graphics owner. Source-level instrumentation
+is planned only in isolated `tftmac-runtime` commit `c8aa26e`, never as a
+normal-play replacement or stock-performance comparison.
 
 Performance changes remain one-variable, reversible A/B experiments with explicit KEEP/REJECT evidence. Raw capture remains append-only during measurement and is normalized after capture.
 
@@ -65,10 +78,20 @@ The abandoned source-build laboratory is not runtime authority. Historical sourc
 
 ## Validation
 
-Current source validation is:
+Repository/source validation, including an unsigned Release compile and all 43
+native tests, is:
 
 ```sh
 /bin/zsh scripts/verify-tftmac.command
 ```
 
-Runtime acceptance additionally verifies the stock SDK/AVD, controller-protocol equality, official TFT package/installer authority, clean start/stop, and absence of dependency on the retired source-build tree.
+Current-host installed/runtime/signing validation is deliberately separate:
+
+```sh
+/bin/zsh scripts/verify-installed-runtime.command
+```
+
+The 2026-08-31 current-host audit confirmed matching Build 8 executable and
+emulator-host hashes, but found zero available local signing identities and
+`CSSMERR_TP_NOT_TRUSTED`. That local verifier remains non-passing until a
+separate signing-identity repair; historical release acceptance remains intact.

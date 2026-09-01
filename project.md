@@ -2,7 +2,7 @@
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
 **Current development line:** `codex/native-tftmac-2.0.0`  
-**Current installed release:** TFTMAC 2.3.0 build 8, signed, installed, live-launched, and automatically logging
+**Current installed release:** TFTMAC 2.3.0 build 8, installed, live-launched, and automatically logging; release hashes match, while the timestamped current-host signing audit is blocked by the missing local identity
 **Project record through:** 2026-08-31 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
@@ -31,7 +31,7 @@ scenes.
 ```text
 /Applications/TFTMAC.app
   -> AppKit window, menus, fullscreen space, settings and benchmark controls
-  -> native Metal presenter and SRC/OUT overlay
+  -> native Metal presenter and gameplay-cadence overlay
   -> authenticated loopback EmulatorController gRPC
   -> packaged TFTMAC Emulator Host.app
   -> /usr/bin/open -n -W --env ... --args ...
@@ -138,6 +138,7 @@ Mac application:
 | 2026-08-31 UTC | Home Run A rejected | Riot Performance Mode Beta experience rejected and made non-selectable |
 | 2026-08-31 UTC | Build 7 Combat Latency A | One-factor pre-exec host QoS candidate built, tested, installed, and live-launched; combat gain still unproven |
 | 2026-08-31 UTC | Build 8 automatic graphics logger | Signed 2.3.0/8 installed and live-launched; PID 2704 and the exact TFT SurfaceView opened the logger automatically, periodic receipts reached `COMPLETE`, and every observed frame fact resolved through its run, stack hash, window, and receipt |
+| 2026-08-31 UTC | Latest automatic graphics run | 42m27s automatic process/layer run recorded 144,364 exact intervals and 189 degradation incidents; it proves the continuous logger and performance deficit, not an internal root cause |
 
 Relevant Git milestones:
 
@@ -145,6 +146,9 @@ Relevant Git milestones:
 8d9ce17  Build native full-screen TFTMAC runtime
 558c0ea  Add rapid combat A/B benchmark and telemetry
 2123cd0  Add official TFTMAC penguin samurai icon
+6bdb188  Add Build 7 combat latency candidate and project handoff
+a9192ea  Refocus benchmark analysis on continuous FPS
+2889cf0  Finish Build 8 automatic graphics logger
 ```
 
 Build 7 work was developed after `2123cd0` and includes the candidate, guest
@@ -290,13 +294,13 @@ equivalents.
 
 ### Full-run analysis
 
-Marked full runs are the preferred product-performance record because every
-frame and every resource/pipeline sample participates. The current UI/source-
-named Combat Benchmark remains the faster bounded one-factor A/B screen. Root
-`benchmark.md` is the shared human/AI contract for pairing match markers,
-calculating exact raw-interval and continuous-60 deficit metrics, processing the
-complete timeline, correlating every legal clock domain, and emitting
-claim/evidence/unknown records. No semantic phase classification is required.
+Complete automatic process/layer runs are the preferred product-performance
+record because every frame and resource/pipeline sample participates. Match,
+combat, and visible-stutter markers are optional annotations only. The current
+UI/source-named Combat Benchmark remains the faster bounded one-factor A/B
+screen. Root `benchmark.md` is the shared human/AI contract for exact
+raw-interval and continuous-60 deficit metrics, complete-timeline processing,
+legal clock-domain correlation, and claim/evidence/unknown records.
 
 ## 8. Performance development history
 
@@ -340,7 +344,7 @@ The user explicitly rejected that experience. Clock RTT and observer-overhead
 gates also made cross-boundary causality invalid. Performance Mode Beta is now
 retired and cannot be selected.
 
-## 9. Build 7 and current live state
+## 9. Build 7 history and current Build 8 state
 
 Build 7 replaces the rejected composite with `Combat Latency A`:
 
@@ -397,29 +401,39 @@ Direct evidence from that capture:
   cause or serve as a formal matched candidate-vs-Control decision.
 
 The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the installed
-`/Applications/TFTMAC.app`. At handoff verification both the native app and its
-owned QEMU process were still running; they were not restarted for documentation
-or Git work.
+`/Applications/TFTMAC.app`. Runtime process state is intentionally not frozen
+as a durable fact; documentation and Git publication do not restart the app or
+its emulator.
 
-What it does **not** prove: a Combat Latency A FPS win. It is one valid full-
-match candidate baseline, not a compatible A/B pair. A matched Control and
-candidate comparison is still required.
+What the Build 7 run does **not** prove: a Combat Latency A FPS win. It is one
+historical candidate baseline, not a compatible A/B pair.
+
+The current Build 8 full-session authority is capture
+`2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200`: a 42m27s
+automatic graphics run with 144,364 exact intervals, 99.629% exact-layer
+coverage, 189 incidents, 56.98 weighted FPS, 21.49 FPS 1% low, 21.510 ms p95,
+and 33.434 ms p99. It observed `combat_latency_a` with High/60/Performance Mode
+OFF; that is an observed active preset, not a performance promotion. The run
+proves degradation and continuous logging but leaves internal root attribution
+`UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE`.
+
+The same 2026-08-31 host audit confirmed that the installed main and emulator-
+host hashes match the historical Build 8 release receipt. It also found zero
+valid local signing identities and a current `CSSMERR_TP_NOT_TRUSTED` result.
+Historical signing acceptance and current-host trust are separate facts.
 
 ## 10. Current repository state and authority map
 
-At the start of this handoff work:
+Current repository observation:
 
 ```text
 branch: codex/native-tftmac-2.0.0
-HEAD:   2123cd0c8f69dc26d3dc5aa476b4b3bc4098a8f6
+HEAD:   2889cf00b54da28ff62e81fd14a6ae892f37d7cf (Build 8)
 remote: github -> https://github.com/flashls1/TFTMAC.git
 ```
 
-Build 7 changes were present as an intentional dirty worktree after the icon
-commit. They touch the runtime host, native profile/runtime, combat comparison,
-settings/app UI, tests, verifier, native knowledge base, troubleshooting, and
-the two active SSOT files. This project record is part of converging that state
-into a durable Git handoff.
+The Build 8 line was committed cleanly. Branch/worktree state is mutable and
+must be re-observed before it is used as a handoff fact.
 
 Current authority roles:
 
@@ -435,10 +449,11 @@ Current authority roles:
 | `docs/TFTMAC_UNREAL_PIPELINE_OBSERVABILITY.md` | graphics ownership and attribution rules |
 | `docs/benchmarks.md` | historical measured campaign results |
 | `docs/research-log.md` | historical R&D chronology and negative results |
-| `TFTMACAPP.md` | broad implementation plan; not automatically current runtime truth |
+| `TFTMACAPP.md` | short current native-app status pointer; historical plan is archived |
 
-Old `TFTMAC.md`, retired Node launch paths, historical source-build directives,
-and historical Medium-profile records must not override the current SSOT.
+The dated archive under `docs/history/2026-08-31-pre-build8/`, retired Node
+launch paths, historical source-build directives, and historical Medium-profile
+records must not override the current SSOT.
 
 ## 11. Decisions that remain locked
 
@@ -453,6 +468,8 @@ and historical Medium-profile records must not override the current SSOT.
 - Never record or automate credentials.
 - Never call SRC/OUT presentation rates Unreal FPS.
 - Never assign a graphics bottleneck without the first valid divergent boundary.
+- Treat the final Mac presenter as hidden correctness context only, never as a
+  user-facing graphics root-cause candidate.
 - Keep base graphics logging automatic from TFT process/layer start through
   process/app close; a controlled Combat Benchmark is optional and never gates
   that logging.
@@ -461,24 +478,24 @@ and historical Medium-profile records must not override the current SSOT.
 
 ## 12. Next decisive work
 
-1. Preserve the installed signed Build 8 automatic-graphics logger, its release
-   hashes, and live acceptance capture
+1. Preserve the installed Build 8 automatic-graphics logger, its historical
+   release hashes, and live acceptance capture
    `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31`.
 2. Treat automatic `graphics_runs`, stack-receipt SHA, direct per-frame stack
-   identity, per-window joins, and conservative `TFT`/`PIPE`/`MAC` views as
-   live-verified Build 8 behavior, not pending source claims.
-3. Preserve the marked Combat Latency A baseline and run a compatible Control;
-   a short bounded Control/Candidate A/B remains optional screening, not base
-   logging admission.
+   identity, and per-window joins as live-verified Build 8 behavior. The Mac
+   presenter is hidden correctness context, not a causal view.
+3. Preserve the automatic latest-run receipt; match markers are optional
+   annotations, not a condition of valid full-run evidence. A short bounded
+   Control/Candidate A/B remains optional screening, not base logging admission.
 4. Compare complete graphics timelines, every sustained under-60 episode,
    receipt completeness, and conservative boundary views using `benchmark.md`.
    CPU/RAM/audio remain correctness context only.
-5. If the automatic evidence still leaves a real guest/host queue gap, implement
-   the allocation-free gfxstream frame-ID/queue-depth correlation ring described
-   in `dev.md` as the gated next layer.
-6. Use that evidence to choose the actual code owner: adaptive ASG, gfxstream
-   scheduling, MoltenVK pipeline cache/submit pacing, or ANGLE capability/shader
-   path.
+5. The latest automatic run confirms an unresolved internal causal gap below
+   the SurfaceFlinger authority. Implement the planned source-level work-ID
+   instrumentation only in the isolated
+   `tftmac-runtime` diagnostic stack at `c8aa26e`; do not replace Build 8.
+6. Use that evidence to choose an owned code target. Current TFT is direct
+   Unreal Vulkan; ANGLE is second-line only if a run receipt proves it is active.
 7. Preserve the recurrent Riot WebView ANR as a separate login reliability issue,
    not as a graphics benchmark result.
 8. Measure startup phases if the user's observed slow startup remains after login

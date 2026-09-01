@@ -2,10 +2,31 @@
 
 Authority date: 2026-08-31
 
-This is a graphics-observability design note. It records what the current
-runtime proves, which observations are conditional, and the smallest path to
-continuous full-game graphics logging. It neither changes the signed TFT APK
-nor treats a requested emulator option as proof that a renderer was selected.
+> **Historical/conditional research; not current root-cause authority.** The
+> GLES/ANGLE and fixed-stage material below remains useful design evidence, but
+> must not override the current Build 8 receipt or the automatic-run analysis
+> contract in `facts.md`, `benchmark.md`, and `dev.md`.
+
+## Current Build 8 status
+
+- The observed TFT path is **direct Unreal Vulkan → guest Vulkan → gfxstream /
+  ASG → host Vulkan → MoltenVK → Metal → SurfaceFlinger**.
+- ANGLE is conditional and must not be treated as TFT's active rendering path
+  without a new per-run receipt.
+- Automatic process/layer logging is verified; Match Entry/End and combat
+  classification are optional annotations, not collection or validity gates.
+- The final native Mac presenter is hidden correctness context only, never a
+  displayed weak link or root-cause candidate.
+- Build 8 proves degradation at exact TFT SurfaceFlinger presentation, but the
+  internal root remains **UNKNOWN**: no shared work ID crosses guest Vulkan,
+  gfxstream, host Vulkan, MoltenVK, and Metal.
+- Advanced source-level work-ID/site instrumentation is **PLANNED** only in the
+  isolated `tftmac-runtime` diagnostic environment; it is not a normal-play
+  Build 8 feature and cannot be claimed from current captures.
+
+This is a graphics-observability design note. It records conditional mechanisms
+and research constraints. It neither changes the signed TFT APK nor treats a
+requested emulator option as proof that a renderer was selected.
 
 ## 1. Pipeline map: proven versus conditional
 
@@ -25,21 +46,22 @@ Metal completion means the GPU finished the app's command buffer; it is not a
 receipt that the guest produced a new frame. Apple's command-buffer API defines
 the completed-handler boundary directly. [Apple: `addCompletedHandler`](https://developer.apple.com/documentation/metal/mtlcommandbuffer/addcompletedhandler(_:))
 
-The currently selected graphics route is **conditional**, not an invariant:
+The following are historical or conditional routes, not the Build 8 active-path
+claim:
 
 ```text
-Candidate A: TFT GLES/EGL -> guest ANGLE -> Vulkan -> gfxstream -> host Vulkan
-             -> MoltenVK -> Metal
-Candidate B: TFT Vulkan -> guest Vulkan -> gfxstream -> host Vulkan
-             -> MoltenVK -> Metal
+Historical Candidate A: TFT GLES/EGL -> guest ANGLE -> Vulkan -> gfxstream -> host Vulkan
+                        -> MoltenVK -> Metal
+Current receipt: TFT Vulkan -> guest Vulkan -> gfxstream -> host Vulkan
+                 -> MoltenVK -> Metal
 Candidate C: TFT GLES/EGL -> native guest GLES -> gfxstream -> host renderer
 ```
 
-The supplied runtime findings establish a successful GLES 3.2/ANGLE/gfxstream/
-MoltenVK-to-Metal session on the recorded target. They do not establish that
-every future TFT, Android Emulator, driver, or guest image selects Candidate A.
-ANGLE is active only when the game chose GLES/EGL *and* Android chose ANGLE for
-that package; MoltenVK is active only when the host backend actually loaded it.
+The supplied historical findings establish a successful GLES 3.2/ANGLE/gfxstream/
+MoltenVK-to-Metal session on an earlier recorded target. They do not establish
+that the current Build 8 TFT run selects Candidate A. ANGLE is active only when
+the game chose GLES/EGL *and* Android chose ANGLE for that package; MoltenVK is
+active only when the host backend actually loaded it.
 The authoritative implementation sources are [Android's ANGLE module](https://android.googlesource.com/platform/packages/modules/ANGLE/+/refs/heads/main/),
 [Google gfxstream](https://github.com/google/gfxstream), and
 [Khronos MoltenVK](https://github.com/KhronosGroup/MoltenVK).
@@ -57,7 +79,7 @@ process start, first exact layer, layer replacement/loss, and app close:
 | gfxstream | host startup/runtime identity line and pipeline log aggregates | The observed host component initialized or emitted a diagnostic | Queue depth or per-frame transfer latency |
 | MoltenVK | host runtime identity line | MoltenVK was observed in this host process | Pipeline-cache hit rate, queue wait, or cause |
 | host renderer | selected Vulkan device/composition/swapchain receipt | Observed host renderer configuration | Metal saturation in the emulator renderer |
-| TFTMAC presenter | command-buffer scheduled/completed timing, drawable/encoder/command errors | Health of TFTMAC's final presenter | TFT actual presentation |
+| TFTMAC presenter | command-buffer scheduled/completed timing, drawable/encoder/command errors | Hidden native correctness receipt | TFT actual presentation or emulator-root ownership |
 
 `dumpsys SurfaceFlinger --latency` is accepted only for the exact selected
 layer. Zero, sentinel, malformed, missing, or ambiguous samples are stored as
@@ -78,7 +100,7 @@ for TFT's SurfaceView. [Perfetto: FrameTimeline](https://perfetto.dev/docs/data-
 | Guest compositor | `adb shell dumpsys SurfaceFlinger --list` and exact-layer `--latency`. | One-second actual-present windows; fail closed on no/ambiguous layer. |
 | Guest trace | `adb shell perfetto --txt -c - -o <session-scoped-path>`. | Bounded incident capture only; configured sources are SurfaceFlinger frame/layers, FrameTimeline, GPU memory, process/system stats, and selected ftrace scheduling events. Availability remains device/build dependent. Perfetto data-source names must match the producing device. [Perfetto GPU sources](https://perfetto.dev/docs/data-sources/gpu) |
 | Host pipeline | session-scoped emulator stdout/stderr and structured startup receipts. | Counts warnings/errors and captures identity; warning counts alone are not latency measurements. |
-| Final presenter | Metal `MTLCommandBuffer` scheduled/completed handlers. | Measure final-presenter submission/completion separately from guest production. [Apple: command structure](https://developer.apple.com/documentation/metal/setting-up-a-command-structure) |
+| Final presenter | Metal `MTLCommandBuffer` scheduled/completed handlers. | Preserve hidden correctness evidence separately from guest production; do not use it for current causal ranking. [Apple: command structure](https://developer.apple.com/documentation/metal/setting-up-a-command-structure) |
 
 Current runtime-only options such as `-feature`, guest properties, ANGLE feature
 overrides, and `MVK_CONFIG_*` environment variables are implementation-specific
@@ -97,8 +119,8 @@ without a version-matched upstream receipt.
   unavailable windows otherwise;
 - host pipeline-log aggregates, graphics pipeline snapshots at lifecycle edges
   and a modest periodic cadence while TFT has a PID;
-- controller ingress/freshness and final Metal presentation windows, separately
-  labeled;
+- controller ingress/freshness and hidden final Metal correctness windows,
+  separately labeled;
 - capture health, layer identity changes, and bounded clock-alignment samples.
 
 This is lightweight evidence collection, not profiling. It must start before
@@ -130,7 +152,7 @@ opt-in A/B validity protocol.
 | gfxstream / ASG | Instrumented queue depth or shared frame correlation crossing guest-to-host boundary | Treating a warning count as queue latency |
 | MoltenVK | Active-path receipt plus its own queue/pipeline-cache timing or a controlled build | Naming MoltenVK because a host Vulkan device exists |
 | Emulator renderer / Metal | Host renderer completion crossing a display deadline with supported counters | Using TFTMAC presenter's GPU time as emulator GPU time |
-| TFTMAC presenter | TFT exact layer remains healthy while final presenter completion/drawable metrics regress | Treating a guest hitch as a Mac copy problem |
+| TFTMAC presenter | Hidden correctness regression only | Treating a guest hitch as a Mac copy problem or selecting it as the current root |
 
 Perfetto GPU data availability is producer and device specific; the documented
 GPU source names can include hardware-specific suffixes and require exact

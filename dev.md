@@ -1,6 +1,6 @@
 # TFTMAC Developer Record
 
-**Development baseline:** signed TFTMAC 2.3.0 build 8 installed and live-verified with automatic PID/layer logging and complete stack receipts
+**Development baseline:** TFTMAC 2.3.0 build 8 installed and live-verified with automatic PID/layer logging and complete stack receipts; historical release hashes match, while current-host signing trust is blocked by the absent local identity
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
 **Active candidate:** `combat_latency_a`  
 **Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
@@ -13,7 +13,7 @@ current findings live in `benchmark.md`.
 
 ## 1. Developer charter
 
-We are not trying to prove that frame loss exists; the complete marked run has
+We are not trying to prove that frame loss exists; the complete automatic run has
 already established it. Development must process all captured data, identify the
 first boundary that becomes late, change an owned boundary, and demonstrate a
 repeatable whole-run gain toward continuous 60 FPS without correctness, login,
@@ -110,18 +110,18 @@ QEMU child-thread inheritance=NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE
 
 The candidate configuration SHA-256 is
 `05039d1fd0987f46fc7da8de5f483d8c7ffaf8f39bd1eaecdd1aee11603bbb07`.
-It has passed launch/readiness and one marked full-run baseline, but it has no
-valid matched Control comparison.
+It has passed launch/readiness and was the active observed preset in the latest
+Build 8 automatic run. That observation is not a performance promotion or a
+controlled comparison.
 
 ## 4. Graphics pipeline and observability
 
 ```text
-Unreal game/render/RHI
-  -> guest GLES/Vulkan API choice
-  -> ANGLE command/shader translation
+Unreal Vulkan render/RHI (current TFT receipt)
+  -> guest Vulkan
   -> gfxstream encoder + ASG guest transport
   -> host gfxstream decode/queues
-  -> Vulkan submit
+  -> host Vulkan submit
   -> MoltenVK translation/pipeline state
   -> Metal command buffer/GPU completion
   -> Android SurfaceFlinger actual-present
@@ -130,14 +130,17 @@ Unreal game/render/RHI
   -> macOS drawable completion
 ```
 
+ANGLE is installed/observable for conditional GLES/EGL paths, but it is not a
+node in the current TFT game route unless a new per-run receipt proves that
+selection.
+
 ### What each signal can and cannot prove
 
 | Signal | Can prove | Cannot prove alone |
 | --- | --- | --- |
 | TFT SurfaceFlinger actual-present timestamps | player-facing guest frame cadence and stalls | which upstream component caused lateness |
 | SRC distinct-image rate | completed images reaching TFTMAC | Unreal simulation/render timing |
-| OUT Metal presentation rate | final Mac presenter cadence | unique useful game frames |
-| final-presenter Metal GPU time | cost of TFTMAC's last Metal pass | MoltenVK/game GPU cost |
+| hidden native-presenter receipt | correctness/regression context only | game-frame or emulator GPU ownership |
 | QEMU CPU/RSS | host emulator load/pressure direction | exact worker or serialized wait owner |
 | guest TFT PID/memory | process lifetime and memory pressure | GPU/transport stall owner |
 | SurfaceFlinger HWC/GPU misses | display-composition pressure | ASG/MoltenVK root cause |
@@ -145,10 +148,9 @@ Unreal game/render/RHI
 | Perfetto scheduler/GPU/process trace | time-correlated execution and waits | valid cross-host cause when clock RTT/observer gate fails |
 | requested emulator/MoltenVK flags | intended configuration | effective internal behavior |
 
-The worst Home Run A windows showed the final TFTMAC presenter completing cleanly
-with roughly sub-millisecond Metal work while it repeated upstream frames. That
-makes final presentation a poor first target for those incidents; it does not by
-itself distinguish Unreal, ANGLE, ASG, gfxstream, or MoltenVK.
+The final presenter is a locked non-bottleneck for current work. Preserve its
+raw correctness receipt, but do not display, rank, or optimize it. It does not
+distinguish Unreal, ASG, gfxstream, or MoltenVK.
 
 ## 5. SQL and capture contract
 
@@ -242,7 +244,8 @@ SELECT * FROM combat_comparisons ORDER BY rowid;
 
 ### Full match
 
-- `MATCH_ENTRY` through `MATCH_END` is the preferred real-product record.
+- Markers are optional user annotations. Automatic `graphics_runs` are the
+  primary full-session record and remain valid without any marker.
 - Full runs process every frame and every resource/pipeline sample and are
   required before normal-play promotion.
 - No semantic phase markers are required. Fixed intervals and
@@ -293,7 +296,7 @@ select Control and restart. A failed active candidate records correctness
 rejection and saves Control automatically.
 
 Relative decisions select the better implementation; they do not lower the
-goal. Report `TARGET_NOT_MET` until a complete marked run holds at least 60
+goal. Report `TARGET_NOT_MET` until a complete automatic run holds at least 60
 useful FPS throughout with no missed-vsync equivalents or severe stalls.
 
 ## 7. Retained results
@@ -417,48 +420,56 @@ QoS class, reducing scheduling delay in critical host work.
 **Implemented:** `RuntimeHost/main.c`, profile/receipt/rollback in native Swift,
 Game Mode eligibility, unit tests.
 
-**Evidence now held:** one marked candidate full run with exact actual-present,
-source, final-presenter, CPU/memory, thermal/power, and audio data.
+**Evidence now held:** historical candidate evidence plus the latest automatic
+Build 8 run with exact actual-present, source, correctness-context presenter,
+and stack receipts.
 
-**Evidence still needed:** a compatible Control full run and valid clock sync
-for cross-boundary ordering.
+**Status:** **DEFERRED / NOT CURRENT ACTION.** The preset is observed but not
+promoted. Do not spend the next development cycle on another broad scheduling
+comparison while the internal path remains uninstrumented.
 
 **Accept:** HOME_RUN/PROMISING plus cold confirmation.  
 **Reject:** no gain, worse tails, or any correctness/login/audio/cleanup issue.  
 **Critical unknown:** QEMU worker inheritance and worker-specific scheduling.
 
-### H2 — allocation-free gfxstream frame correlation ring
+### H2 — advanced causal work-ID instrumentation
 
-**Mechanism:** a 256-frame ring carrying one frame ID through each boundary will
-show the first queue that grows late instead of guessing from unrelated clocks.
+**Mechanism:** an allocation-free, source-instrumented work-ID ring carries
+owned transport work through guest Vulkan encode, ASG/gfxstream receipt,
+decoder, host Vulkan submit, MoltenVK enqueue, Metal completion, and Android
+buffer release. It names the earliest owned divergent site or reports the exact
+unowned/missing boundary as `UNKNOWN`.
 
 **Implementation contract:**
 
 ```text
-fixed 256 entries
+capacity sized from measured submit rate for five seconds of prehistory
 no allocation on render/decoder hot paths
-frame ID + overwrite/loss counter
-guest submit timestamp
-host receive timestamp
-host decode/queue timestamp
-Vulkan submit timestamp
-GPU completion timestamp
-output-present timestamp
+transport work ID + generation + overwrite/loss counter
+guest submit timestamp and ASG write/flush state
+host receipt/decode/queue timestamp
+Vulkan submit, MoltenVK enqueue, and Metal completion timestamp
+QSRI/color-buffer release timestamp
 queue depth at each owned handoff
+static source-site ID mapped to commit/blob/function/line in a sealed manifest
 ```
 
 **Status:** **PLANNED, GATED NEXT LAYER.** The current automatic graphics logger
 adds `graphics_runs`, stack-receipt SHA, per-window joins, and conservative
-`TFT`/`PIPE`/`MAC` weakest-boundary views. Those do not create a shared frame ID.
+`TFT`/`PIPE` views; the presenter remains hidden correctness context. Those do
+not create a shared work ID.
 
-**Gate:** activate only after a fresh automatic graphics run leaves a real
-guest/host queue gap unresolved. Clock mapping and overwrite counts are
-mandatory. Do not log shaders, frame contents, or credentials.
+**Gate:** the 42-minute Build 8 automatic run established an unresolved internal
+causal gap below the SurfaceFlinger authority. Implement only in isolated
+source-built `tftmac-runtime` at
+commit `c8aa26e`, never by replacing normal-play Build 8. Clock mapping,
+source/binary manifest, and overwrite counts are mandatory. Do not log shaders,
+frame contents, or credentials.
 
-**Outcome:** identify the first valid divergent boundary. If lateness begins
-before host receipt, investigate ANGLE/guest/ASG. If after receipt but before
-Vulkan submit, investigate gfxstream decoding/queues. If after submit,
-investigate MoltenVK/Metal/pipeline state.
+**Outcome:** identify the first valid owned divergent boundary. If lateness
+begins before host receipt, report `UNREAL_OR_GUEST_UPSTREAM_UNKNOWN` unless a
+diagnostic guest hook provides evidence. ANGLE is second-line only if a TFT
+receipt proves it is active.
 
 ### H3 — adaptive ASG transport
 
@@ -586,28 +597,24 @@ or weaken AVD rollback merely to report a smaller startup number.
 ## 11. Fastest next development sequence
 
 1. Preserve Build 8 capture
-   `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31`,
-   which proves automatic PID/layer admission, `COMPLETE` stack receipts, and
-   fully resolved frame facts. Preserve the prior clean-shutdown capture too.
-2. Use the live stack receipt SHA, per-window joins, and conservative
-   `TFT`/`PIPE`/`MAC` views; continue treating explicitly incomplete internal
-   frame-ID edges as `UNKNOWN`.
-3. Run a compatible marked Control full run; optionally use a valid short
-   Control/Candidate Combat A/B for a faster one-factor screen. The A/B never
-   gates base logging.
-4. Compare graphics cadence, tails, receipt completeness, and boundary views
-   using `benchmark.md`. CPU/RAM/audio remain health/correctness context only.
-5. If the automatic evidence remains causally unknown at a guest/host queue
-   boundary, implement H2's fixed frame-ID ring.
-6. Use the first divergent boundary to choose exactly one of H3, H4, H5, or H6.
-7. Run a five-to-eight-minute bounded gameplay A/B when screening is faster.
-8. Promote only after repeated gain, one marked full run, and no correctness/
-   user-experience failure.
+   `2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200`
+   by ID, size, hash, and normalized metrics only; keep the raw database private.
+2. Keep stock Build 8 as normal-play authority and keep the final Mac presenter
+   out of displayed/ranked causal views.
+3. Implement H2's work-ID/source-site instrumentation only in isolated
+   `tftmac-runtime@c8aa26e`, with parity, clock, loss, stream-seal, and observer-
+   overhead gates.
+4. Have the diagnostic run identify the first owned divergent boundary or name
+   the exact missing/unowned boundary as `UNKNOWN`.
+5. Use that evidence to choose exactly one owned performance change from H3,
+   H4, H5, or H6.
+6. Screen that one change with a bounded A/B when useful, then require a
+   complete automatic full run and direct player/correctness acceptance before
+   promotion.
 
-This sequence does not mean “test forever.” The first two runs decide whether
-the Build 8 automatic receipt and boundary joins are sufficient. If not, the frame-ID ring is
-the shortest path to writing the correct deeper code instead of another blind
-emulator flag.
+The current run has already shown that Build 8 boundary joins are insufficient
+for internal attribution. The work-ID ring is the shortest path to writing the
+correct deeper code instead of another blind emulator flag.
 
 ## 12. Login reliability track
 
@@ -634,6 +641,7 @@ Authoritative commands:
 scripts/test-native-app.command
 scripts/build-native-app.command
 scripts/verify-tftmac.command
+scripts/verify-installed-runtime.command
 scripts/summarize-native-session.command
 ```
 
@@ -650,7 +658,9 @@ runtime: /Volumes/MAC MINI M4/TFTMAC/Runtime
 Verification claims must be scoped:
 
 - unit tests prove parsers, configuration, comparison logic, and local contracts;
-- build/sign verification proves the bundle, not playability;
+- source verification proves the unsigned Release build and 43 native tests;
+- installed-runtime verification proves current local hashes/runtime/signing and
+  is presently expected to fail on the missing local signing identity;
 - launch receipts prove runtime readiness, not combat gain;
 - SQL combat comparison proves measured change, not internal cause when clock or
   observer gates fail;
@@ -668,13 +678,14 @@ session can seal and restore its AVD transaction.
 
 ## 14. Current gaps to close
 
-- compatible marked Control versus Combat Latency A comparison;
-- actual worker-thread QoS/inheritance evidence;
 - first-boundary frame correlation during the worst sustained under-60 period;
+- source-site receipts and complete work-ID joins across owned diagnostic stages;
 - recurrent Riot WebView/IME reliability;
 - audible-sound user acceptance;
+- repair of the local signing identity for current-host trust verification;
 - public signing/notarization if distribution beyond this Mac becomes a goal;
-- source-level gfxstream/MoltenVK code only after the relevant boundary is named.
+- source-level gfxstream/MoltenVK performance changes only after the diagnostic
+  logger names the relevant owned boundary;
 - measured startup-phase budget if the user's slow-launch observation persists.
 
 The current engineering posture is: preserve the proven app, reject generic

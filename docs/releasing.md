@@ -15,13 +15,22 @@ The working Android SDK/AVD is runtime state outside the application bundle and 
 
 ## Pre-release validation
 
-Run on the exact release commit:
+Run the source/CI contract on the exact release commit:
 
 ```sh
 /bin/zsh scripts/verify-tftmac.command
 ```
 
-Also verify that the frozen EmulatorController protocol still matches the intended stock emulator authority and that no private runtime artifacts are tracked.
+Before any local install or package promotion, separately run:
+
+```sh
+/bin/zsh scripts/verify-installed-runtime.command
+```
+
+The second contract checks private local machine state and must never run in
+GitHub CI. Also verify that the frozen EmulatorController protocol still matches
+the intended stock emulator authority and that no private runtime artifacts are
+tracked.
 
 ## Package authority
 
@@ -35,6 +44,12 @@ updated local builds as the same app and retain removable-volume consent. The
 private key remains in the user's login Keychain and never enters Git. This
 local identity is not a public distribution identity; public distribution still
 requires Developer ID signing, hardened runtime, notarization, and stapling.
+
+Current-host status (2026-08-31): Build 8 executable/host hashes match the
+historical signed release, but the login keychain has zero valid local signing
+identities and deep/strict verification reports `CSSMERR_TP_NOT_TRUSTED`.
+Historical acceptance remains valid as historical evidence; a new release is
+blocked until the identity is repaired and the installed-runtime verifier passes.
 
 ## Release evidence
 

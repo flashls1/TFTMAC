@@ -14,8 +14,9 @@ changed.
 The absence of Riot's signed game source changes the interception point. It
 does not make the graphics pipeline unknowable. TFTMAC can observe and change
 the components it owns: the Android/emulator configuration, AEMU/gfxstream,
-ANGLE when active, MoltenVK when active, the native frame transport, and the
-final Metal presenter. A future source-built gfxstream can add a shared
+ANGLE when active, MoltenVK when active, and the native frame transport. The
+final Metal presenter is hidden correctness context only. A future isolated
+source-built gfxstream runtime can add a shared
 `frame_id` at every guest/host handoff without modifying Riot's APK.
 
 ## Transferable Unreal model
@@ -40,8 +41,8 @@ GPU memory, and what the player actually saw.
 
 Only a per-session pipeline snapshot may promote one of these candidates:
 
-1. Unreal Vulkan -> guest Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
-2. Unreal GLES/EGL -> ANGLE Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
+1. **Current receipt:** Unreal Vulkan -> guest Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
+2. Conditional: Unreal GLES/EGL -> ANGLE Vulkan -> gfxstream -> host Vulkan -> MoltenVK -> Metal.
 3. Unreal GLES/EGL -> native guest GLES -> gfxstream -> host rendering.
 4. Another renderer selected by the installed TFT/emulator build.
 
@@ -50,18 +51,18 @@ ANGLE for that package. MoltenVK applies only when the host Vulkan backend
 actually loaded it. Requested launch flags are hypotheses; normal runtime log
 identity and effective guest properties are evidence.
 
-## Three clocks that must never be merged
+## Causal clocks and hidden correctness context
 
 | Label | Measurement | Valid claim |
 | --- | --- | --- |
 | `TFT` | Exact TFT `GameActivity` BLAST SurfaceView, SurfaceFlinger actual-present timestamps | Frames the guest compositor actually presented for TFT |
 | `PIPE` | Authenticated EmulatorController image arrivals plus sampled content identity | Transport delivery and whether delivered images changed |
-| `MAC` | TFTMAC's final Metal command completion and presentation loop | Health of the native Mac presentation of an already completed Android image |
 
-`PIPE 60` and `MAC 60` can coexist with a frozen or repeatedly presented TFT
-frame. Neither is Unreal FPS. The overlay must show `TFT —` when the exact
-SurfaceView cannot be selected or its timestamps cannot be read; it must never
-substitute another clock.
+The final native Metal loop is retained privately as correctness/regression
+context, not exposed as a causal clock. A healthy PIPE or native-presenter rate
+can coexist with a frozen/repeated TFT frame; neither is Unreal FPS. Reporting
+must show `TFT —` when the exact SurfaceView cannot be selected or read and must
+never substitute another clock.
 
 ## Implemented data contract
 
@@ -107,8 +108,8 @@ normalization output and hashes are written to SQL. Failure deletes the
 unprocessed raw trace and records a trace failure.
 
 `graphics_runs`, stack-receipt SHA-256s, and frame-window joins are implemented
-in the current source worktree but require a new capture to become runtime
-verified. They establish lifecycle and observation integrity, not a causal owner.
+and runtime-verified by Build 8 automatic captures. They establish lifecycle
+and observation integrity, not a causal owner.
 
 ## Attribution gates
 
@@ -121,10 +122,9 @@ verified. They establish lifecycle and observation integrity, not a causal owner
 | PSO/shader hitch | A PSO compile/miss event coincident with the hitch in a controlled UE trace; a fight-only spike is not sufficient |
 | ANGLE mismatch | A session snapshot proves ANGLE is active and a one-factor controlled change improves actual-present percentiles without a correctness regression |
 | MoltenVK behavior | A snapshot proves MoltenVK is active and its own queue/pipeline-cache instrumentation or a controlled build isolates the change |
-| TFTMAC final presenter | Guest `TFT` stays healthy while `MAC` completion, GPU time, drawable misses or repeated presentations regress |
 
 The conservative weakest-boundary view may report only the first observed
-unhealthy/missing receipt among `TFT`, `PIPE`, and `MAC`; it must never turn a
+unhealthy/missing receipt among `TFT` and `PIPE`; it must never turn a
 time-adjacent warning, CPU/RAM/audio health sample, or incomplete stack receipt
 into a graphics causal claim. CPU/RAM/audio remain correctness and health
 context, outside the graphics-only optimization equation.
@@ -133,16 +133,17 @@ context, outside the graphics-only optimization equation.
 
 1. Native logger/controller: markers, clock alignment, capture health, loss
    counters, SurfaceFlinger timing and Perfetto lifecycle. This is implemented.
-2. **Planned, gated next layer:** source-built gfxstream/AEMU may emit one monotonic frame ID and timestamps at
-   guest submit, host receive, host queue, host GPU scheduled/completed and
-   output present. It is eligible only after the automatic graphics runs and
-   conservative joins leave a real guest/host queue gap unresolved.
+2. **Planned, gated next layer:** isolated `tftmac-runtime` (`c8aa26e`) may emit
+   one transport work ID and source-site receipt at guest submit, host receive,
+   host queue, host Vulkan submit, MoltenVK enqueue, Metal completion and
+   Android buffer release. It is diagnostic-only and cannot replace or be
+   performance-compared with normal-play Build 8 until parity gates pass.
 3. ANGLE source/build, only if active: log renderer/feature selection, shader
    translation/cache time, queue waits and relevant extension negotiation.
 4. MoltenVK source/build, only if active: log pipeline creation/cache hits,
    queue submit, command-buffer scheduling/completion and swapchain behavior.
-5. TFTMAC's final Metal presenter: change copy/storage/scheduling only when the
-   `MAC` layer, not the guest layer, is the first failing boundary.
+5. TFTMAC's final Metal presenter: preserve only as a hidden correctness receipt;
+   it is not a current graphics optimization or root-cause target.
 6. A controlled Unreal Android reference app on the identical emulator stack:
    expose Unreal Insights and systematic PSO/frame-pacing experiments. It
    proves stack capability and causal signatures, not TFT internals by proxy.
@@ -153,15 +154,14 @@ practices remain valuable as test hypotheses: PSO precaching, work off the
 interactive frame, stable Android frame pacing, device-profile quality tiers,
 and one-factor RHI experiments.
 
-## Combat experiment protocol
+## Automatic full-run and bounded A/B protocol
 
-1. Run the locked `control` preset at High / 60 FPS / Performance Mode OFF for a representative 5-8 minute heavy-combat window.
-2. Restart with `combat_latency_a`, keep the same TFT settings, and repeat a comparable window.
-3. Mark every visible stutter; the run ends manually after five minutes or automatically at eight minutes.
-4. Compare the 5 seconds before and after each marker: TFT actual-present p95,
-   p99, max, 1% low, consecutive misses, stream freshness, Mac presenter, CPU,
-   memory, thermal/frequency evidence available in the trace, and pipeline
-   errors.
+1. Let automatic process/layer logging run for the full TFT session. Markers and
+   classifiers are optional context, not causal gates.
+2. Compare complete timelines and automatic degradation episodes using TFT
+   actual-present, source freshness, stack receipts, and valid diagnostic spans.
+3. Use a bounded A/B only when it screens one named configuration factor.
+4. Do not include the Mac presenter in causal ranking.
 5. Classify the first divergent boundary; leave later boundaries as effects.
 6. If Combat Latency A wins, run the five-minute cold confirmation before promotion.
 7. Repeat a comparable fight and a cold-start confirmation. Reject correctness,
@@ -176,9 +176,9 @@ and one-factor RHI experiments.
 - TFT shader/PSO keys, cache hit rate and compile timing.
 - gfxstream queue depth and per-frame guest-submit-to-host-receive latency.
 - MoltenVK pipeline-cache and queue timing inside the emulator process.
-- Host Metal saturation counters for the emulator renderer, distinct from the
-  final TFTMAC presenter.
-- Observer overhead during a comparable major fight.
+- Host Metal saturation counters for the emulator renderer, independent of the
+  hidden final-presenter correctness receipt.
+- Observer overhead during a comparable automatic run.
 
 An unknown is not filled by a Fortnite assumption. Fortnite/Unreal tells us
 which mechanism and signature to test; the correlated TFT run tells us whether

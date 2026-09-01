@@ -1,5 +1,9 @@
 # Benchmarks
 
+> **Historical evidence only.** This is the M1 Max/API36 userdebug fixed-stage
+> campaign. It is not authority for the M4 Build 8 stock runtime, its current
+> direct Unreal Vulkan receipt, or current automatic full-session analysis.
+
 This document summarizes the retained performance evidence without promoting
 single runs or comparisons from different scenes.
 

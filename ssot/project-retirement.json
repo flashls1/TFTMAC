@@ -11,13 +11,12 @@
       "evidence": "Only Clara foundation files existed; no active changes, operations, release, or unique implementation."
     },
     "tftmac-runtime": {
-      "state": "RETIRED",
-      "catalogName": "RETIRED - TFTMAC Runtime",
-      "publishedHeadReviewed": "994cf8d8524b87cc03c7decb4b253fc7be2253c7",
-      "publishedChange": "7c24d6df-bb78-4a4d-9c8f-1b4028871f60",
+      "state": "ISOLATED_DIAGNOSTIC_ELIGIBILITY",
+      "catalogName": "TFTMAC Runtime - isolated diagnostic source authority",
+      "publishedHeadReviewed": "c8aa26ebaa5b977965eb165ad8aac5c98408469f",
       "publishedChangeClosed": true,
-      "classification": "REJECTED_OBSOLETE",
-      "evidence": "Unique Phase-2 work belonged to the retired source-built AEMU/Android-17 compatibility route (MoltenVK provoking-vertex investigation). Current TFTMAC independently proves the stock Android Emulator 37.1.11 runtime and official Google Play TFT path without that source-build dependency, so no old compatibility code is migrated."
+      "classification": "NON_COMPARABLE_DIAGNOSTIC_ONLY",
+      "evidence": "Stock Build 8 remains the only normal-play authority. The separate runtime repository is eligible only for the planned source-instrumented causal logger; any diagnostic result is non-comparable to stock performance until an explicit parity gate passes."
     }
   },
   "claraCatalogResult": "TFTMAC is the only non-retired TFT project identity."
