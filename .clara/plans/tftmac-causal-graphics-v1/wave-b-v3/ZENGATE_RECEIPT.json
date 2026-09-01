@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "gate": "TARGETED_WAVE_B_V3_ZENGATE",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-01T22:47:27.564Z",
+  "original_plan_sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "amendment_sha256": "df9d3a537d94d4f32337c2658168714925c1f3206775964069ea135a27cbdc4a",
+  "preflight_sha256": "bec3a488d3386966cb3f98cdf1b5f35a083519d1dfb873260db4d63576b19247",
+  "score_preserved": true,
+  "production_requirement": "MANDATORY",
+  "risks": [
+    {
+      "risk": "unreceipted diagnostic launch",
+      "mitigation": "diagnostics remains blocked pending a later controller-port receipt"
+    },
+    {
+      "risk": "control-path regression",
+      "mitigation": "control remains default and exact control identity is asserted in registry and tests"
+    },
+    {
+      "risk": "cross-mode collision",
+      "mitigation": "lease persists registry/configuration/AVD/port/serial identity and rejects concurrent ownership"
+    },
+    {
+      "risk": "receipt or binary drift",
+      "mitigation": "SHA-256, state, identity, and pre-launch binary checks fail closed"
+    },
+    {
+      "risk": "scope expansion",
+      "mitigation": "no runtime launch, installed-app replacement, broad refactor, dependency update, or later phase work in this wave"
+    }
+  ],
+  "execution_scope_lock": "Implement only this amendment and the minimum source/test/project-file changes required for its acceptance. No unsolicited refactor, cleanup, rename, generalization, optimization, dependency upgrade, reformatting, future-proofing, or unrelated behavior change."
+}

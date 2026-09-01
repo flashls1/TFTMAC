@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "state": "UNACCEPTED_WAVE_B_DRAFT_PRESERVED",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-01T22:47:27.564Z",
+  "rejected_registry_sha256": "457ca5865f1bfcfaca16bd1eee1f32db15f90bd9c8764706ba64db56b7a9e518",
+  "accepted_registry_restored_sha256": "81086498d8a16f2096f8461922731d7cf5c027cf6163d874452c16ffa543fdb2",
+  "preserved": [
+    {
+      "source": "ssot/runtime-modes.json",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/runtime-modes.unaccepted.json",
+      "sha256": "457ca5865f1bfcfaca16bd1eee1f32db15f90bd9c8764706ba64db56b7a9e518",
+      "bytes": 9665
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/AppCoordinator.swift.template",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/AppCoordinator.swift.template",
+      "sha256": "5e95ff55b865d217e058ce252e8052eaba79a47bfd860c43cc9740e126ee35f6",
+      "bytes": 5567
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/RuntimeLease.swift.template",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/RuntimeLease.swift.template",
+      "sha256": "de774fd9bd59020093ec35736374f0dfc6013831132ba42c386c6188a4bbe72e",
+      "bytes": 5137
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/RuntimeMode.swift.template",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/RuntimeMode.swift.template",
+      "sha256": "2e105ff01b778e98a4a6ef33e0c02972102b4b73aa0c8cd2250eafb2bac6b113",
+      "bytes": 23127
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/apply-waveb-source.mjs",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/apply-waveb-source.mjs",
+      "sha256": "1f07d2f828db3ada7a5e91502610a8c473a25ffffb546d9a99749484c34337de",
+      "bytes": 32420
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/preserve-unaccepted-waveb-partial.mjs",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/preserve-unaccepted-waveb-partial.mjs",
+      "sha256": "3147b1ccd63acb2d373d54ccbe137d494bd2063fddf809656479a8d9ec20fadc",
+      "bytes": 8360
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/validate-waveb.mjs",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/validate-waveb.mjs",
+      "sha256": "b78d9ad64882a7ad7e154e013dee3207dff2f83559f4570e6da5a7494c0d719c",
+      "bytes": 6605
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v2/RuntimeLease.swift.template",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/RuntimeLease.swift.template",
+      "sha256": "f3b4db12f4e8c085343d87813ab026ff6045ec679cb8afea48dd87bf8f04c0f9",
+      "bytes": 5159
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v2/RuntimeMode.swift.template",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/RuntimeMode.swift.template",
+      "sha256": "cb8e62545832e457e12046bed5eb8dcd72a17feb090ce3dad3e15b6cfad7f60f",
+      "bytes": 23785
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v2/apply-waveb-v2.mjs",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/apply-waveb-v2.mjs",
+      "sha256": "07bcf67d0b3d6b549334b2b5636fb92af801d4d2c6f09958fa94b7c0e8556865",
+      "bytes": 39261
+    },
+    {
+      "source": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v2/gate-waveb-candidate.mjs",
+      "preserved_path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/gate-waveb-candidate.mjs",
+      "sha256": "1d661898f48386ab91519ad1ca6c1653e335eb8c1dcc24a96547c8c07f0a3330",
+      "bytes": 8629
+    }
+  ]
+}

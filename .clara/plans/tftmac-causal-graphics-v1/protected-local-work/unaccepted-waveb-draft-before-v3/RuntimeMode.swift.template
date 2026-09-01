@@ -1,0 +1,541 @@
+import CryptoKit
+import Foundation
+
+enum TFTMACRuntimeMode: String, Codable, CaseIterable, Sendable {
+    case control
+    case advancedDiagnostics = "advanced_diagnostics"
+    case candidate
+}
+
+enum TFTMACRuntimeModeLaunchState: String, Codable, Sendable {
+    case enabled
+    case blockedPendingControllerLease = "blocked_pending_controller_lease"
+    case blockedNotBuilt = "blocked_not_built"
+}
+
+struct TFTMACRuntimeModeError: LocalizedError, Sendable {
+    let message: String
+
+    var errorDescription: String? { message }
+}
+
+struct TFTMACRuntimeModeManifest: Codable, Equatable, Sendable {
+    let kind: String
+    let path: String
+    let sha256: String?
+}
+
+struct TFTMACRuntimeModeDefinition: Codable, Equatable, Sendable {
+    let mode: TFTMACRuntimeMode
+    let launchState: TFTMACRuntimeModeLaunchState
+    let runtimeRoot: String
+    let sdkRoot: String
+    let libraryRoot: String
+    let emulatorPath: String
+    let emulatorSha256: String?
+    let gfxstreamBackendPath: String
+    let gfxstreamBackendSha256: String?
+    let adbPath: String
+    let avdHome: String
+    let avdName: String
+    let avdDirectory: String
+    let avdConfigPath: String
+    let avdConfigSha256: String?
+    let avdIniPath: String
+    let avdIniSha256: String?
+    let adbServerPort: Int
+    let consolePort: Int
+    let controllerPort: Int?
+    let serial: String
+    let authorityManifest: TFTMACRuntimeModeManifest
+    let applicationBundleId: String
+    let applicationVersion: String
+    let applicationBuild: String
+    let allowedPurpose: String
+    let comparabilityClass: String
+    let rollbackTarget: TFTMACRuntimeMode
+    let requiresControlStopped: Bool
+    let configurationSha256: String
+
+    var computedConfigurationSha256: String {
+        let fields = [
+            "mode=\(mode.rawValue)",
+            "launch_state=\(launchState.rawValue)",
+            "runtime_root=\(runtimeRoot)",
+            "sdk_root=\(sdkRoot)",
+            "library_root=\(libraryRoot)",
+            "emulator_path=\(emulatorPath)",
+            "emulator_sha256=\(emulatorSha256 ?? \"\")",
+            "gfxstream_backend_path=\(gfxstreamBackendPath)",
+            "gfxstream_backend_sha256=\(gfxstreamBackendSha256 ?? \"\")",
+            "adb_path=\(adbPath)",
+            "avd_home=\(avdHome)",
+            "avd_name=\(avdName)",
+            "avd_directory=\(avdDirectory)",
+            "avd_config_path=\(avdConfigPath)",
+            "avd_config_sha256=\(avdConfigSha256 ?? \"\")",
+            "avd_ini_path=\(avdIniPath)",
+            "avd_ini_sha256=\(avdIniSha256 ?? \"\")",
+            "adb_server_port=\(adbServerPort)",
+            "console_port=\(consolePort)",
+            "controller_port=\(controllerPort.map(String.init) ?? \"\")",
+            "serial=\(serial)",
+            "authority_manifest_kind=\(authorityManifest.kind)",
+            "authority_manifest_path=\(authorityManifest.path)",
+            "authority_manifest_sha256=\(authorityManifest.sha256 ?? \"\")",
+            "application_bundle_id=\(applicationBundleId)",
+            "application_version=\(applicationVersion)",
+            "application_build=\(applicationBuild)",
+            "allowed_purpose=\(allowedPurpose)",
+            "comparability_class=\(comparabilityClass)",
+            "rollback_target=\(rollbackTarget.rawValue)",
+            "requires_control_stopped=\(requiresControlStopped ? \"true\" : \"false\")"
+        ]
+        return Self.sha256Hex(Data(fields.joined(separator: "\n").utf8))
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct TFTMACRuntimeModeRegistryDocument: Codable, Equatable, Sendable {
+    let schema: Int
+    let defaultMode: TFTMACRuntimeMode
+    let activeLeaseRelativePath: String
+    let modes: [String: TFTMACRuntimeModeDefinition]
+}
+
+struct TFTMACRuntimeLeaseIdentity: Codable, Equatable, Sendable {
+    let mode: TFTMACRuntimeMode
+    let avdName: String
+    let adbServerPort: Int
+    let consolePort: Int
+    let controllerPort: Int
+    let serial: String
+    let configurationSha256: String
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case avdName = "avd_name"
+        case adbServerPort = "adb_server_port"
+        case consolePort = "console_port"
+        case controllerPort = "controller_port"
+        case serial
+        case configurationSha256 = "configuration_sha256"
+    }
+}
+
+struct TFTMACRuntimeSelection: Equatable, Sendable {
+    let registrySha256: String
+    let activeLeaseRelativePath: String
+    let definition: TFTMACRuntimeModeDefinition
+
+    var mode: TFTMACRuntimeMode { definition.mode }
+
+    func leaseIdentity() throws -> TFTMACRuntimeLeaseIdentity {
+        guard let controllerPort = definition.controllerPort else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) has no accepted EmulatorController port receipt."
+            )
+        }
+        return TFTMACRuntimeLeaseIdentity(
+            mode: mode,
+            avdName: definition.avdName,
+            adbServerPort: definition.adbServerPort,
+            consolePort: definition.consolePort,
+            controllerPort: controllerPort,
+            serial: definition.serial,
+            configurationSha256: definition.configurationSha256
+        )
+    }
+
+    func validateForLaunch(
+        bundle: Bundle = .main,
+        fileManager: FileManager = .default
+    ) throws {
+        guard definition.launchState == .enabled else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) is \(definition.launchState.rawValue) and remains fail-closed."
+            )
+        }
+        _ = try leaseIdentity()
+
+        guard bundle.bundleIdentifier == definition.applicationBundleId else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) rejected the application bundle identity."
+            )
+        }
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        guard version == definition.applicationVersion, build == definition.applicationBuild else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) rejected application version/build \(version ?? \"unknown\")/\(build ?? \"unknown\")."
+            )
+        }
+
+        try requireDirectory(definition.runtimeRoot, label: "runtime root", fileManager: fileManager)
+        try requireDirectory(definition.sdkRoot, label: "SDK root", fileManager: fileManager)
+        try requireDirectory(definition.libraryRoot, label: "library root", fileManager: fileManager)
+        try requireDirectory(definition.avdHome, label: "AVD home", fileManager: fileManager)
+        try requireDirectory(definition.avdDirectory, label: "AVD directory", fileManager: fileManager)
+        try requireExecutable(definition.emulatorPath, label: "emulator", fileManager: fileManager)
+        try requireExecutable(definition.adbPath, label: "ADB", fileManager: fileManager)
+        try requireFile(definition.gfxstreamBackendPath, label: "gfxstream backend", fileManager: fileManager)
+        try requireFile(definition.avdConfigPath, label: "AVD config", fileManager: fileManager)
+        try requireFile(definition.avdIniPath, label: "AVD ini", fileManager: fileManager)
+
+        let manifestURL: URL
+        switch definition.authorityManifest.kind {
+        case "bundled_resource":
+            guard let resourceURL = bundle.resourceURL else {
+                throw TFTMACRuntimeModeError(message: "TFTMAC.app has no Resources directory.")
+            }
+            manifestURL = resourceURL.appendingPathComponent(definition.authorityManifest.path)
+        case "external_sealed_manifest":
+            manifestURL = URL(fileURLWithPath: definition.authorityManifest.path)
+        default:
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) has unsupported manifest authority \(definition.authorityManifest.kind)."
+            )
+        }
+        guard let expectedManifestSha256 = definition.authorityManifest.sha256 else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) has no accepted manifest SHA-256."
+            )
+        }
+        try validateSHA256(at: manifestURL, expected: expectedManifestSha256, label: "authority manifest")
+        try validateOptionalSHA256(path: definition.emulatorPath, expected: definition.emulatorSha256, label: "emulator")
+        try validateOptionalSHA256(
+            path: definition.gfxstreamBackendPath,
+            expected: definition.gfxstreamBackendSha256,
+            label: "gfxstream backend"
+        )
+        try validateOptionalSHA256(path: definition.avdConfigPath, expected: definition.avdConfigSha256, label: "AVD config")
+        try validateOptionalSHA256(path: definition.avdIniPath, expected: definition.avdIniSha256, label: "AVD ini")
+    }
+
+    private func requireDirectory(_ path: String, label: String, fileManager: FileManager) throws {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) is missing its \(label) at \(path)."
+            )
+        }
+    }
+
+    private func requireFile(_ path: String, label: String, fileManager: FileManager) throws {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) is missing its \(label) at \(path)."
+            )
+        }
+    }
+
+    private func requireExecutable(_ path: String, label: String, fileManager: FileManager) throws {
+        guard fileManager.isExecutableFile(atPath: path) else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) has no executable \(label) at \(path)."
+            )
+        }
+    }
+
+    private func validateOptionalSHA256(path: String, expected: String?, label: String) throws {
+        guard let expected else { return }
+        try validateSHA256(at: URL(fileURLWithPath: path), expected: expected, label: label)
+    }
+
+    private func validateSHA256(at url: URL, expected: String, label: String) throws {
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: url)
+        } catch {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) could not open its \(label) at \(url.path): \(error.localizedDescription)"
+            )
+        }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        do {
+            while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+                hasher.update(data: chunk)
+            }
+        } catch {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) could not hash its \(label): \(error.localizedDescription)"
+            )
+        }
+        let observed = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        guard observed == expected.lowercased() else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) rejected \(label) SHA-256 \(observed)."
+            )
+        }
+    }
+}
+
+struct TFTMACRuntimeModeRegistry: Sendable {
+    static let environmentKey = "TFTMAC_RUNTIME_MODE"
+
+    let document: TFTMACRuntimeModeRegistryDocument
+    let registrySha256: String
+
+    init(data: Data) throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        do {
+            document = try decoder.decode(TFTMACRuntimeModeRegistryDocument.self, from: data)
+        } catch {
+            throw TFTMACRuntimeModeError(
+                message: "TFTMAC runtime-mode registry could not be decoded: \(error.localizedDescription)"
+            )
+        }
+        registrySha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        try Self.validate(document)
+    }
+
+    static func loadBundled(bundle: Bundle = .main) throws -> Self {
+        guard let url = bundle.url(forResource: "runtime-modes", withExtension: "json") else {
+            throw TFTMACRuntimeModeError(message: "TFTMAC.app is missing runtime-modes.json.")
+        }
+        do {
+            return try Self(data: Data(contentsOf: url))
+        } catch let error as TFTMACRuntimeModeError {
+            throw error
+        } catch {
+            throw TFTMACRuntimeModeError(
+                message: "TFTMAC could not read runtime-modes.json: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    var defaultMode: TFTMACRuntimeMode { document.defaultMode }
+
+    var registeredModes: Set<TFTMACRuntimeMode> {
+        Set(document.modes.values.map(\.mode))
+    }
+
+    func definition(for mode: TFTMACRuntimeMode) throws -> TFTMACRuntimeModeDefinition {
+        guard let definition = document.modes[mode.rawValue] else {
+            throw TFTMACRuntimeModeError(message: "Runtime mode \(mode.rawValue) is not registered.")
+        }
+        return definition
+    }
+
+    func selection(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> TFTMACRuntimeSelection {
+        let requested = environment[Self.environmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mode: TFTMACRuntimeMode
+        if let requested, !requested.isEmpty {
+            guard let parsed = TFTMACRuntimeMode(rawValue: requested) else {
+                throw TFTMACRuntimeModeError(message: "Unknown TFTMAC runtime mode \(requested).")
+            }
+            mode = parsed
+        } else {
+            mode = document.defaultMode
+        }
+        let definition = try definition(for: mode)
+        guard definition.launchState == .enabled else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(mode.rawValue) is \(definition.launchState.rawValue) and remains fail-closed."
+            )
+        }
+        return TFTMACRuntimeSelection(
+            registrySha256: registrySha256,
+            activeLeaseRelativePath: document.activeLeaseRelativePath,
+            definition: definition
+        )
+    }
+
+    private static func validate(_ document: TFTMACRuntimeModeRegistryDocument) throws {
+        guard document.schema == 1 else {
+            throw TFTMACRuntimeModeError(message: "Unsupported runtime-mode registry schema \(document.schema).")
+        }
+        guard document.defaultMode == .control else {
+            throw TFTMACRuntimeModeError(message: "The default TFTMAC runtime mode must remain control.")
+        }
+        guard document.activeLeaseRelativePath == "State/native-runtime.lease" else {
+            throw TFTMACRuntimeModeError(message: "The runtime-mode registry changed the protected lease path.")
+        }
+
+        let expectedKeys = Set(TFTMACRuntimeMode.allCases.map(\.rawValue))
+        guard Set(document.modes.keys) == expectedKeys else {
+            throw TFTMACRuntimeModeError(
+                message: "The runtime-mode registry must contain exactly control, advanced_diagnostics, and candidate."
+            )
+        }
+
+        var occupiedPorts: [Int: String] = [:]
+        for (key, definition) in document.modes {
+            guard key == definition.mode.rawValue else {
+                throw TFTMACRuntimeModeError(
+                    message: "Runtime-mode registry key \(key) does not match \(definition.mode.rawValue)."
+                )
+            }
+            try validate(definition)
+            for (kind, port) in [
+                ("adb", Optional(definition.adbServerPort)),
+                ("console", Optional(definition.consolePort)),
+                ("controller", definition.controllerPort)
+            ] {
+                guard let port else { continue }
+                if let existing = occupiedPorts[port] {
+                    throw TFTMACRuntimeModeError(
+                        message: "Runtime lease port \(port) is shared by \(existing) and \(definition.mode.rawValue).\(kind)."
+                    )
+                }
+                occupiedPorts[port] = "\(definition.mode.rawValue).\(kind)"
+            }
+        }
+
+        let control = try required(.control, from: document)
+        guard control.launchState == .enabled,
+              control.runtimeRoot == "/Volumes/MAC MINI M4/TFTMAC/Runtime",
+              control.sdkRoot == "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK",
+              control.avdHome == "/Volumes/MAC MINI M4/TFTMAC/Runtime/AVD",
+              control.avdName == "TFT_Ultra_Tablet",
+              control.adbServerPort == 5038,
+              control.consolePort == 5582,
+              control.controllerPort == 8554,
+              control.serial == "emulator-5582",
+              control.authorityManifest.kind == "bundled_resource",
+              control.authorityManifest.path == "runtime-authority.json",
+              control.authorityManifest.sha256 != nil,
+              control.emulatorSha256 != nil,
+              control.gfxstreamBackendSha256 != nil,
+              control.rollbackTarget == .control,
+              !control.requiresControlStopped else {
+            throw TFTMACRuntimeModeError(
+                message: "The control mode no longer matches the accepted stock Build 8 authority."
+            )
+        }
+
+        let diagnostics = try required(.advancedDiagnostics, from: document)
+        guard diagnostics.launchState == .blockedPendingControllerLease,
+              diagnostics.controllerPort == nil,
+              diagnostics.avdName == "TFTMAC_Diagnostic_API37_R9",
+              diagnostics.adbServerPort == 5041,
+              diagnostics.consolePort == 5586,
+              diagnostics.serial == "emulator-5586",
+              diagnostics.emulatorSha256 != nil,
+              diagnostics.gfxstreamBackendSha256 != nil,
+              diagnostics.avdConfigSha256 != nil,
+              diagnostics.avdIniSha256 != nil,
+              diagnostics.requiresControlStopped,
+              diagnostics.rollbackTarget == .control else {
+            throw TFTMACRuntimeModeError(
+                message: "Advanced diagnostics must remain isolated and blocked pending its controller-port receipt."
+            )
+        }
+
+        let candidate = try required(.candidate, from: document)
+        guard candidate.launchState == .blockedNotBuilt,
+              candidate.controllerPort == nil,
+              candidate.requiresControlStopped,
+              candidate.rollbackTarget == .control else {
+            throw TFTMACRuntimeModeError(
+                message: "Candidate mode must remain blocked until a separately accepted candidate exists."
+            )
+        }
+    }
+
+    private static func validate(_ definition: TFTMACRuntimeModeDefinition) throws {
+        let requiredStrings = [
+            definition.runtimeRoot,
+            definition.sdkRoot,
+            definition.libraryRoot,
+            definition.emulatorPath,
+            definition.gfxstreamBackendPath,
+            definition.adbPath,
+            definition.avdHome,
+            definition.avdName,
+            definition.avdDirectory,
+            definition.avdConfigPath,
+            definition.avdIniPath,
+            definition.serial,
+            definition.authorityManifest.kind,
+            definition.authorityManifest.path,
+            definition.applicationBundleId,
+            definition.applicationVersion,
+            definition.applicationBuild,
+            definition.allowedPurpose,
+            definition.comparabilityClass
+        ]
+        guard requiredStrings.allSatisfy({ !$0.isEmpty }) else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(definition.mode.rawValue) has an empty required field."
+            )
+        }
+        for path in [
+            definition.runtimeRoot,
+            definition.sdkRoot,
+            definition.libraryRoot,
+            definition.emulatorPath,
+            definition.gfxstreamBackendPath,
+            definition.adbPath,
+            definition.avdHome,
+            definition.avdDirectory,
+            definition.avdConfigPath,
+            definition.avdIniPath
+        ] {
+            guard path.hasPrefix("/") else {
+                throw TFTMACRuntimeModeError(
+                    message: "Runtime mode \(definition.mode.rawValue) contains a non-absolute path."
+                )
+            }
+        }
+        guard (1...65535).contains(definition.adbServerPort),
+              (1...65535).contains(definition.consolePort),
+              definition.controllerPort.map({ (1...65535).contains($0) }) ?? true else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(definition.mode.rawValue) contains an invalid lease port."
+            )
+        }
+        guard definition.serial == "emulator-\(definition.consolePort)" else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(definition.mode.rawValue) serial does not match its console lease."
+            )
+        }
+        if definition.launchState == .enabled, definition.controllerPort == nil {
+            throw TFTMACRuntimeModeError(
+                message: "Launch-ready mode \(definition.mode.rawValue) has no controller-port receipt."
+            )
+        }
+        for digest in [
+            Optional(definition.configurationSha256),
+            definition.emulatorSha256,
+            definition.gfxstreamBackendSha256,
+            definition.avdConfigSha256,
+            definition.avdIniSha256,
+            definition.authorityManifest.sha256
+        ].compactMap({ $0 }) {
+            guard isSHA256(digest) else {
+                throw TFTMACRuntimeModeError(
+                    message: "Runtime mode \(definition.mode.rawValue) contains an invalid SHA-256 value."
+                )
+            }
+        }
+        guard definition.computedConfigurationSha256 == definition.configurationSha256.lowercased() else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(definition.mode.rawValue) configuration SHA-256 does not match its fields."
+            )
+        }
+    }
+
+    private static func required(
+        _ mode: TFTMACRuntimeMode,
+        from document: TFTMACRuntimeModeRegistryDocument
+    ) throws -> TFTMACRuntimeModeDefinition {
+        guard let definition = document.modes[mode.rawValue] else {
+            throw TFTMACRuntimeModeError(message: "Runtime mode \(mode.rawValue) is missing.")
+        }
+        return definition
+    }
+
+    private static func isSHA256(_ value: String) -> Bool {
+        guard value.count == 64 else { return false }
+        return value.unicodeScalars.allSatisfy {
+            (48...57).contains($0.value) || (97...102).contains($0.value)
+        }
+    }
+}

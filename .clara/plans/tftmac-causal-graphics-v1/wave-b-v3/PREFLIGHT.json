@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "state": "READY_FOR_WAVE_B_V3_SOURCE_ONLY",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-01T22:47:27.564Z",
+  "base_head_sha": "d96a1caf68b807bbae1a03246666da7eea4df620",
+  "original_plan": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/IMPLEMENTATION_PLAN.md",
+    "sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b"
+  },
+  "scope_lock": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/SCOPE_LOCK.txt",
+    "sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+    "unchanged": true
+  },
+  "amendment": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/CONTINUATION_AMENDMENT.md",
+    "sha256": "df9d3a537d94d4f32337c2658168714925c1f3206775964069ea135a27cbdc4a"
+  },
+  "accepted_registry_sha256": "81086498d8a16f2096f8461922731d7cf5c027cf6163d874452c16ffa543fdb2",
+  "rejected_draft": {
+    "sha256": "457ca5865f1bfcfaca16bd1eee1f32db15f90bd9c8764706ba64db56b7a9e518",
+    "reason": "advanced_diagnostics enabled on controller port 8556 without durable allocation receipt",
+    "preserved_root": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3"
+  },
+  "accepted_external_receipts": {
+    "diagnostic_build": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d",
+    "diagnostic_avd_clone": "09e4b2d21290de582320cb0aee3148af25f5e2e59199e225e604afbb6cb19648",
+    "diagnostic_native_host": "a72d10106acb83444a38027ed3978b6ef3bc60e7ec0ae0ba9439f67eb57f6067"
+  },
+  "verified": [
+    "Original v1.1 plan and execution-scope lock are intact.",
+    "Current managed change is based on the accepted published Wave B registry head.",
+    "Rejected draft is preserved before restoration.",
+    "Stock Build 8 is not modified or stopped by this source wave.",
+    "No diagnostic first boot, TFT launch, runtime rebuild, clone replay, or installed-app replacement is authorized.",
+    "Changed-head production validation subsumes a separate unchanged-baseline rerun."
+  ],
+  "next_safe_action": "Apply the bounded mode-aware source integration, then run one changed-head production validation."
+}
