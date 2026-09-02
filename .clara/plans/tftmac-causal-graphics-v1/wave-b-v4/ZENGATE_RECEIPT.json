@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "gate": "TARGETED_WAVE_B_V4_CORRECTION_ZENGATE",
+  "version": "2.3",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-02T02:00:39Z",
+  "applicability": "APPLICABLE",
+  "hard_gates": {
+    "win_condition": "PASS",
+    "source_of_truth": "PASS",
+    "material_ambiguity": "PASS",
+    "safety_reversibility": "PASS",
+    "validation_integrity": "PASS",
+    "project_constraints": "PASS"
+  },
+  "weighted_quality": 95.0,
+  "risk_penalty": 1.0,
+  "final_score": 94.0,
+  "decision": "PROCEED",
+  "remediation_mode": "NONE",
+  "original_plan_sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "correction_amendment_sha256": "18e85884498c52144f3e56217eb372b78289b6d938c5c92c0459a35882296b15",
+  "preflight_sha256": "6e8e415d921d0517d00a82101125340f109f9ca8bd3824b9ab9a130939054cfe",
+  "win_condition": "The exact recorded head accepts the bounded Wave B source integration, builds unsigned Release, passes all 49 native tests, and produces zero runtime effects.",
+  "residual_accepted_risks": [
+    "The source-only verifier does not authorize diagnostic first boot.",
+    "Final signed installation remains a later operational gate and does not affect this source wave."
+  ],
+  "execution_scope_lock": "Implement only the proven Wave B continuation corrections and minimum generated source/test/project changes. Preserve v3 and protected work. Do not launch, install, sign, refactor, optimize, or begin Wave C."
+}

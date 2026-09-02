@@ -36,7 +36,75 @@
       "rollback_target": "control",
       "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1",
       "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901",
-      "serial": "emulator-5586"
+      "serial": "emulator-5586",
+      "state_namespace": "advanced_diagnostics",
+      "uses_legacy_application_support_root": false,
+      "emulator_identifier": "TFTMAC-DIAGNOSTIC",
+      "launch_strategy": "external_native_host",
+      "profile_policy": "fixed_registry_profile",
+      "locked_profile": {
+        "identifier": "tftmac_diagnostic_r9",
+        "width": 1920,
+        "height": 1080,
+        "density_dpi": 280,
+        "refresh_hz": 60,
+        "vcpu": 6,
+        "ram_mib": 6144,
+        "gpu_mode": "host",
+        "audio_backend": "coreaudio",
+        "graphics_transport": "pipe",
+        "asg_write_buffer_size": 1048576,
+        "asg_write_step_size": 4096,
+        "asg_data_ring_size": 32768,
+        "asg_draw_flush_interval": 800,
+        "angle_enabled_features": "exposeNonConformantExtensionsAndVersions:exposeES32ForTesting",
+        "angle_disabled_features": "preferSubmitAtFBOBoundary"
+      },
+      "adb_sha256": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
+      "adb_vendor_keys_policy": "USER_DEFAULT_KEY",
+      "expected_emulator_version_contains": "35.6.3",
+      "emulator_uuids": [
+        "4C4C4436-5555-3144-A1EE-05B0F446F580:arm64"
+      ],
+      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
+      "qemu_sha256": "042c4932b17fd09ff056ecc2dd21084e08e1110b774c594bbcaf1e4d1ceac608",
+      "qemu_uuids": [
+        "4C4C447F-5555-3144-A16C-0DB6C4482B7A:arm64"
+      ],
+      "gfxstream_backend_uuids": [
+        "4C4C4449-5555-3144-A1FC-F6DFE0021481:arm64"
+      ],
+      "host_application": {
+        "kind": "external_application",
+        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/TFTMAC Diagnostic Host.app",
+        "bundle_identifier": "com.flashls1.tftmac.runtime.diagnostics",
+        "executable_relative_path": "Contents/MacOS/TFTMACApp",
+        "executable_sha256": "d335a23d710956f96a4c01f977d49437424c9fd52ccc20ed872e5786d206eef2",
+        "source_path": null,
+        "source_sha256": null,
+        "info_plist_path": null,
+        "info_plist_sha256": "4e15592461ce8a50f17ccd6285fd12fcd84dd407eba86919f90c8c0026b5ca61",
+        "build_receipt_resource": null
+      },
+      "diagnostic_receipts": {
+        "build_id": "gate4-r9-20260901",
+        "runtime_configuration_sha256": "005c85a2a7ffe86e7626c871fd3dd23f42c5d3ce994162d17b032e69cfc4d4f3",
+        "build": {
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-build.json",
+          "sha256": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d",
+          "required_state": "DIAGNOSTIC_BUILD_IDENTITY_PASS"
+        },
+        "clone": {
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-avd-clone.json",
+          "sha256": "09e4b2d21290de582320cb0aee3148af25f5e2e59199e225e604afbb6cb19648",
+          "required_state": "DIAGNOSTIC_AVD_CLONE_RECEIPT_PASS"
+        },
+        "native_host": {
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-host-r1-native-host-build.json",
+          "sha256": "a72d10106acb83444a38027ed3978b6ef3bc60e7ec0ae0ba9439f67eb57f6067",
+          "required_state": "DIAGNOSTIC_NATIVE_HOST_BUILD_PASS"
+        }
+      }
     },
     "candidate": {
       "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Candidate/SDK/platform-tools/adb",
@@ -72,7 +140,23 @@
       "rollback_target": "control",
       "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Candidate",
       "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Candidate/SDK",
-      "serial": "emulator-5590"
+      "serial": "emulator-5590",
+      "state_namespace": "candidate",
+      "uses_legacy_application_support_root": false,
+      "emulator_identifier": "TFTMAC-CANDIDATE",
+      "launch_strategy": "blocked",
+      "profile_policy": "blocked",
+      "locked_profile": null,
+      "adb_sha256": null,
+      "adb_vendor_keys_policy": "UNRESOLVED",
+      "expected_emulator_version_contains": null,
+      "emulator_uuids": null,
+      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Candidate/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
+      "qemu_sha256": null,
+      "qemu_uuids": null,
+      "gfxstream_backend_uuids": null,
+      "host_application": null,
+      "diagnostic_receipts": null
     },
     "control": {
       "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/platform-tools/adb",
@@ -94,13 +178,13 @@
       "avd_ini_sha256": null,
       "avd_name": "TFT_Ultra_Tablet",
       "comparability_class": "STOCK_BUILD8_CONTROL",
-      "configuration_sha256": "bc8408b26402bf53011003afd83944a5fc85f70c4fe1e48909dd2882f8a19633",
+      "configuration_sha256": "b74eb944b70af29b73ab9cfa3a5bcb522e728a66f1c89ec2b767c36dc90dfc38",
       "console_port": 5582,
       "controller_port": 8554,
       "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/emulator",
-      "emulator_sha256": null,
+      "emulator_sha256": "b3b8fc0dcedcf6e15b54b41f3e5156319029aa00b88a59fd489f80abdd8fc133",
       "gfxstream_backend_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/lib64/libgfxstream_backend.dylib",
-      "gfxstream_backend_sha256": null,
+      "gfxstream_backend_sha256": "3772fef215058831ea419c9281fd203d010003d5defdc195dd120bc7748e4093",
       "launch_state": "enabled",
       "library_root": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/lib64",
       "mode": "control",
@@ -108,8 +192,43 @@
       "rollback_target": "control",
       "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Runtime",
       "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK",
-      "serial": "emulator-5582"
+      "serial": "emulator-5582",
+      "state_namespace": "control",
+      "uses_legacy_application_support_root": true,
+      "emulator_identifier": "TFTMAC",
+      "launch_strategy": "bundled_forwarder",
+      "profile_policy": "validated_native_preferences",
+      "locked_profile": null,
+      "adb_sha256": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
+      "adb_vendor_keys_policy": "ABSENT",
+      "expected_emulator_version_contains": "37.1.11",
+      "emulator_uuids": [
+        "4C4C449E-5555-3144-A182-644CCB895091:arm64"
+      ],
+      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
+      "qemu_sha256": "eaa97a970b81f81640db73ed79e19ee173323653a0a1203217e1199d078011f3",
+      "qemu_uuids": [
+        "4C4C4467-5555-3144-A10A-A9E5A99446F1:arm64"
+      ],
+      "gfxstream_backend_uuids": [
+        "4C4C4406-5555-3144-A122-8AC522465662:arm64"
+      ],
+      "host_application": {
+        "kind": "bundled_resource",
+        "path": "TFTMAC Emulator Host.app",
+        "bundle_identifier": "com.flashls1.tftmac.emulator-host",
+        "executable_relative_path": "Contents/MacOS/TFTMACEmulatorHost",
+        "executable_sha256": null,
+        "source_path": "RuntimeHost/main.c",
+        "source_sha256": "c749cd998a6f066e2f7a6ef818eecf05b90d1a8808f6c9966e0b5fc21affeeed",
+        "info_plist_path": "RuntimeHost/Info.plist",
+        "info_plist_sha256": "cab05fb3b54fb76c9b1b85e9f6a66aebcc5b91bed98c757b603db89e2b7939ca",
+        "build_receipt_resource": "control-host-build.json"
+      },
+      "diagnostic_receipts": null
     }
   },
-  "schema": 1
+  "schema": 1,
+  "contract": "TFTMAC_RUNTIME_MODES_V1",
+  "selection_environment_variable": "TFTMAC_RUNTIME_MODE"
 }

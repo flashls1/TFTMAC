@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "state": "WAVE_B_V4_SOURCE_VALIDATION_PASS",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "verified_at": "2026-09-02T02:07:03Z",
+  "base_head_sha": "3326792efc694e853312aa7347abcb1edd96575a",
+  "verifier": {
+    "path": "scripts/verify-tftmac.command",
+    "sha256": "e63c9a767e7d71dde4f75711f3e08a04e88cad9f6e0efb6638e7e3c8a67ad3d4",
+    "exit_code": 0,
+    "result": "TFTMAC source validation: OK (unsigned Release build; 49 native tests; Wave B mode authority PASS)"
+  },
+  "implementation_receipt_sha256": "af9e9c1c5612f9fb085fbd653dced0d3f8b0cfdf281bd2d5417b5a5ca297aab5",
+  "runtime_modes_sha256": "136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479",
+  "unsigned_release_build": "PASS",
+  "native_tests": {
+    "executed": 49,
+    "failures": 0,
+    "unexpected_failures": 0
+  },
+  "runtime_effects": {
+    "emulator_process_active_after_validation": false,
+    "tftmac_process_active_after_validation": false,
+    "emulator_launch_attempted": false,
+    "runtime_replacement_attempted": false,
+    "control_stop_attempted": false,
+    "installed_app_replacement_attempted": false,
+    "package_launch_attempted": false
+  },
+  "nonblocking_warning": "RuntimeModeAuthority.swift uses deprecated String(cString:); it does not fail the build or tests and is outside this correction scope.",
+  "next_safe_action": "Allocate and seal a collision-free diagnostic EmulatorController port, then run the separately guarded diagnostic first-boot gate."
+}

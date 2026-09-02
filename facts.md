@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
-**Authority date:** 2026-08-31 America/Chicago
-**Observed runtime evidence through:** 2026-08-31T23:13:30Z
+**Authority date:** 2026-09-01 America/Chicago
+**Observed runtime/source evidence through:** 2026-09-02T02:07:03Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -79,8 +79,10 @@ must never be presented as measurements of this M4 Mac mini.
   login keychain now exposes zero valid code-signing identities and
   `codesign --verify --deep --strict` fails with `CSSMERR_TP_NOT_TRUSTED`.
   Current-host installed-runtime verification is therefore blocked until the
-  local identity is repaired in a separate operational task. This does not
-  rewrite the historical acceptance result.
+  local identity is repaired. This does not block unsigned source builds,
+  diagnostic-runtime work, or causal instrumentation; it must be repaired
+  before a final signed candidate installation/cutover. This does not rewrite
+  the historical acceptance result.
 
 ## 3. Launch and ADB architecture
 
@@ -525,7 +527,28 @@ campaign, useful for candidate selection but not current M4 runtime performance:
   measured, but no matched valid Control/Combat Latency A pair exists. Never
   call it faster until a compatible comparison exists.
 
-## 13. Explicit unknowns and open acceptance
+## 13. Causal graphics implementation state
+
+- **VERIFIED CURRENT (2026-09-02T02:07:03Z):** Wave B source integration is
+  complete under the append-only Wave B v4 correction authority. The default
+  and only launch-ready mode is `control`; `advanced_diagnostics` remains
+  blocked pending a separately receipted EmulatorController port, and
+  `candidate` remains blocked.
+- **VERIFIED CURRENT:** runtime-mode registry SHA-256 is
+  `136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479`.
+  Runtime identity, registry/configuration hashes, AVD identity, ADB/console/
+  controller ports, and serial are persisted in the exclusive lease contract.
+- **VERIFIED CURRENT:** `scripts/verify-tftmac.command` completed with exit code
+  0, produced an unsigned Release build, and passed all 49 native tests with
+  zero failures. The post-verification process audit found no active TFTMAC,
+  emulator, or `qemu-system-aarch64` process; no runtime, AVD, installed app, or
+  official TFT package was changed or launched by Wave B.
+- **LOCKED NEXT GATE:** diagnostic first boot may occur only after a
+  collision-free controller port is allocated and sealed. Wave C causal-event
+  instrumentation remains closed until diagnostic AVD/runtime acceptance
+  passes.
+
+## 14. Explicit unknowns and open acceptance
 
 1. Combat Latency A's effect on continuous whole-run FPS, 1% low, p95/p99,
    frame-budget misses, and visible stutter versus Control.
@@ -546,7 +569,7 @@ campaign, useful for candidate selection but not current M4 runtime performance:
 10. Whether any owned candidate can hold the complete automatic run at the 60 FPS
     target without correctness, audio, login, memory, or cleanup regression.
 
-## 14. Authority and update rule
+## 15. Authority and update rule
 
 Use this precedence for current truth:
 

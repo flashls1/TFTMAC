@@ -264,4 +264,97 @@ final class TFTMACGate1Tests: XCTestCase {
             PipelineLogSignals(vulkanErrorCount: 1, moltenVKWarningCount: 1, shaderErrorCount: 1)
         )
     }
+
+    private func runtimeModeRegistryData() throws -> Data {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try Data(contentsOf: repositoryRoot.appendingPathComponent("ssot/runtime-modes.json"))
+    }
+
+    func testRuntimeModeRegistryDefinesExactControlIdentity() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        XCTAssertEqual(Set(registry.document.modes.keys), Set(TFTMACRuntimeMode.allCases.map(\.rawValue)))
+        XCTAssertEqual(registry.document.defaultMode, .control)
+        let selection = try registry.selection(environment: [:])
+        XCTAssertEqual(selection.mode, .control)
+        XCTAssertEqual(selection.definition.avdName, "TFT_Ultra_Tablet")
+        XCTAssertEqual(selection.definition.adbServerPort, 5038)
+        XCTAssertEqual(selection.definition.consolePort, 5582)
+        XCTAssertEqual(selection.definition.controllerPort, 8554)
+        XCTAssertEqual(selection.definition.serial, "emulator-5582")
+    }
+
+    func testRuntimeModeRegistryFailsClosedForUnacceptedModes() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        for requested in ["advanced_diagnostics", "candidate", "unknown"] {
+            XCTAssertThrowsError(try registry.selection(environment: [
+                TFTMACRuntimeModeRegistry.environmentKey: requested
+            ]), requested)
+        }
+    }
+
+    func testRuntimeModeRegistryRejectsTamperedBytes() throws {
+        var data = try runtimeModeRegistryData()
+        data.append(Data(" ".utf8))
+        XCTAssertThrowsError(try TFTMACRuntimeModeRegistry(data: data))
+        XCTAssertThrowsError(try TFTMACRuntimeModeAuthority(data: data))
+    }
+
+    func testSupplementalRuntimeAuthoritySeparatesStateAndLaunchStrategies() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        XCTAssertNoThrow(try authority.validateConsistency(with: registry))
+        let control = try authority.definition(for: .control)
+        let diagnostics = try authority.definition(for: .advancedDiagnostics)
+        let candidate = try authority.definition(for: .candidate)
+        XCTAssertEqual(control.launchStrategy, .bundledForwarder)
+        XCTAssertEqual(diagnostics.launchStrategy, .externalNativeHost)
+        XCTAssertEqual(candidate.launchStrategy, .blocked)
+        XCTAssertNotEqual(control.stateNamespace, diagnostics.stateNamespace)
+        XCTAssertNotEqual(diagnostics.stateNamespace, candidate.stateNamespace)
+        XCTAssertNotNil(diagnostics.diagnosticReceipts)
+        XCTAssertNil(candidate.hostApplication)
+        XCTAssertNotEqual(
+            authority.applicationSupportURL(for: .control),
+            authority.applicationSupportURL(for: .advancedDiagnostics)
+        )
+    }
+
+    func testControlModePreservesValidatedNativeProfile() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        let selection = try registry.selection(environment: [:])
+        let effective = try authority.effectiveProfile(savedProfile: .playable, selection: selection)
+        XCTAssertEqual(effective, .playable)
+        XCTAssertEqual(effective.controllerPort, selection.definition.controllerPort)
+    }
+
+    func testRuntimeLeasePersistsExactModeIdentityAndRejectsSecondOwner() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        let selection = try registry.selection(environment: [:])
+        let identity = try selection.leaseIdentity()
+        let stateRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tftmac-mode-lease-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: stateRoot) }
+        let first = try TFTMACRuntimeLease.acquire(stateRoot: stateRoot, identity: identity)
+        defer { first.release() }
+        let leaseURL = stateRoot.appendingPathComponent("native-runtime.lease")
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: leaseURL)) as? [String: Any]
+        )
+        XCTAssertEqual((object["schema"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual(object["mode"] as? String, "control")
+        XCTAssertEqual(object["registry_sha256"] as? String, registry.registrySha256)
+        XCTAssertEqual(object["configuration_sha256"] as? String, selection.definition.configurationSha256)
+        XCTAssertEqual(object["avd_name"] as? String, "TFT_Ultra_Tablet")
+        XCTAssertEqual((object["adb_server_port"] as? NSNumber)?.intValue, 5038)
+        XCTAssertEqual((object["console_port"] as? NSNumber)?.intValue, 5582)
+        XCTAssertEqual((object["controller_port"] as? NSNumber)?.intValue, 8554)
+        XCTAssertEqual(object["serial"] as? String, "emulator-5582")
+        XCTAssertThrowsError(try TFTMACRuntimeLease.acquire(stateRoot: stateRoot, identity: identity))
+    }
 }

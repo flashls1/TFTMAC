@@ -47,6 +47,10 @@ for required in \
   ssot/AUTHORITY_INPUTS.sha256 \
   ssot/STACK.lock.yaml \
   ssot/runtime-authority.json \
+  ssot/runtime-modes.json \
+  tftmac/Runtime/RuntimeMode.swift \
+  tftmac/Runtime/RuntimeModeAuthority.swift \
+  .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs \
   ssot/retained-evidence-index.json \
   ssot/TFTMAC_ENGINEERING_MAP.sql \
   ssot/TFTMAC_PERFORMANCE_LAB.sql; do
@@ -201,7 +205,7 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "43" ]] || fail "native test inventory drifted: expected 43, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "49" ]] || fail "native test inventory drifted: expected 49, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
@@ -233,6 +237,7 @@ while IFS= read -r script; do
 done < <(find scripts -type f \( -name '*.command' -o -name '*.sh' \) | LC_ALL=C sort)
 
 node --check tools/tftmac-direct-control.mjs >/dev/null
+node --check .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs >/dev/null
 [[ ! -f tools/tftmac-v2.mjs ]] || node --check tools/tftmac-v2.mjs >/dev/null
 node tools/tftmac-direct-control.mjs engineering-map-selftest >/dev/null
 node tools/tftmac-direct-control.mjs lab-selftest >/dev/null
@@ -282,8 +287,14 @@ readonly RELEASE_DERIVED="${ROOT}/.build/native-ci-release"
   -derivedDataPath "$RELEASE_DERIVED" \
   CODE_SIGNING_ALLOWED=NO \
   build
-[[ -x "${RELEASE_DERIVED}/Build/Products/Release/TFTMAC.app/Contents/MacOS/TFTMAC" ]] \
+readonly RELEASE_APP="${RELEASE_DERIVED}/Build/Products/Release/TFTMAC.app"
+[[ -x "${RELEASE_APP}/Contents/MacOS/TFTMAC" ]] \
   || fail "unsigned Release build did not produce the TFTMAC executable"
+cmp -s ssot/runtime-modes.json "${RELEASE_APP}/Contents/Resources/runtime-modes.json" \
+  || fail "unsigned Release app did not package the exact runtime-mode registry"
+cmp -s ssot/runtime-authority.json "${RELEASE_APP}/Contents/Resources/runtime-authority.json" \
+  || fail "unsigned Release app did not package the exact control authority"
+node .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs >/dev/null
 
 /bin/zsh scripts/test-native-app.command
 
@@ -293,4 +304,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 43 native tests)"
+print "TFTMAC source validation: OK (unsigned Release build; 49 native tests; Wave B mode authority PASS)"
