@@ -22,14 +22,14 @@
       "avd_ini_sha256": "30d4ed7ebc20fb3415461fa48f6d91654955e04825de84176bd21a4adad9b98d",
       "avd_name": "TFTMAC_Diagnostic_API37_R9",
       "comparability_class": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
-      "configuration_sha256": "e689fe5c46587b019a5480eabfe32453fa4986a9f6682063d53bb56d2e6aaea6",
+      "configuration_sha256": "08ced04cb1cd2e6ecf2880c66c5f6e45e3af64449d265d8c7e2d736aeda04009",
       "console_port": 5586,
-      "controller_port": null,
+      "controller_port": 8556,
       "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/emulator",
       "emulator_sha256": "fb7782eb3abd7c5b4cb000e68f0c296fed1098f9581aacb01971a45f6b6836aa",
       "gfxstream_backend_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/lib64/libgfxstream_backend.dylib",
       "gfxstream_backend_sha256": "23d54a05a3b73704a7f7d0394f40e04f21bd7e546b1982911a681ae0fe375c9d",
-      "launch_state": "blocked_pending_controller_lease",
+      "launch_state": "enabled",
       "library_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/lib64",
       "mode": "advanced_diagnostics",
       "requires_control_stopped": true,
@@ -76,14 +76,14 @@
       ],
       "host_application": {
         "kind": "external_application",
-        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/TFTMAC Diagnostic Host.app",
-        "bundle_identifier": "com.flashls1.tftmac.runtime.diagnostics",
-        "executable_relative_path": "Contents/MacOS/TFTMACApp",
-        "executable_sha256": "d335a23d710956f96a4c01f977d49437424c9fd52ccc20ed872e5786d206eef2",
+        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-forwarder-r1/TFTMAC Diagnostic Forwarder.app",
+        "bundle_identifier": "com.flashls1.tftmac.runtime.diagnostic-forwarder",
+        "executable_relative_path": "Contents/MacOS/TFTMACDiagnosticForwarder",
+        "executable_sha256": "128239b2cf3ddb04669c4fda97e895e1a4a800dcf2c2144066979427d92af5b6",
         "source_path": null,
         "source_sha256": null,
         "info_plist_path": null,
-        "info_plist_sha256": "4e15592461ce8a50f17ccd6285fd12fcd84dd407eba86919f90c8c0026b5ca61",
+        "info_plist_sha256": "91306c277a84a800617b2b5f20e5614795f183e2373f19309d9033530869e483",
         "build_receipt_resource": null
       },
       "diagnostic_receipts": {
@@ -100,8 +100,8 @@
           "required_state": "DIAGNOSTIC_AVD_CLONE_RECEIPT_PASS"
         },
         "native_host": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-host-r1-native-host-build.json",
-          "sha256": "a72d10106acb83444a38027ed3978b6ef3bc60e7ec0ae0ba9439f67eb57f6067",
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-forwarder-r1-native-host-build.json",
+          "sha256": "3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f",
           "required_state": "DIAGNOSTIC_NATIVE_HOST_BUILD_PASS"
         }
       }

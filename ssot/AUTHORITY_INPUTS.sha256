@@ -1,7 +1,7 @@
 # TFTMAC Build 8 documentation and machine-readable authority inputs
 # Regenerate only after reviewing the complete authority change set.
 
-78016e5e3c7c08e263e2d8aba435f8519ae199cadc18ea74d6c39634cd0fff18  facts.md
+d249f848a10b775676dd64fae68721f2c265b1d570d9557dda52c37fee0fc8ec  facts.md
 273307f655f0749a12a0a3e48f421f5e61bc6bd40f00b1afb7040c0b2fd15adb  project.md
 a40e186e4d37a4e7d6024bd069a69509729eb9e6efda36a0fab12162ecf60f7e  dev.md
 15a33754add669bdfea2001053cbfb47df1120658be7f10022a50656fb4069c6  benchmark.md

@@ -2767,9 +2767,9 @@ actor TFTMACRuntimeService {
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) throws {
-        guard paths.launchStrategy == .bundledForwarder else {
+        guard paths.launchStrategy == .bundledForwarder || paths.launchStrategy == .externalNativeHost else {
             throw TFTMACRuntimeModeError(
-                message: "Runtime mode \(paths.mode.rawValue) requires its separately receipted native-host acceptance operation."
+                message: "Runtime mode \(paths.mode.rawValue) has no accepted native forwarder launch strategy."
             )
         }
         let stdout = telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log")

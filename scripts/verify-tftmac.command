@@ -51,6 +51,7 @@ for required in \
   tftmac/Runtime/RuntimeMode.swift \
   tftmac/Runtime/RuntimeModeAuthority.swift \
   .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs \
+  .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs \
   ssot/retained-evidence-index.json \
   ssot/TFTMAC_ENGINEERING_MAP.sql \
   ssot/TFTMAC_PERFORMANCE_LAB.sql; do
@@ -238,6 +239,7 @@ done < <(find scripts -type f \( -name '*.command' -o -name '*.sh' \) | LC_ALL=C
 
 node --check tools/tftmac-direct-control.mjs >/dev/null
 node --check .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs >/dev/null
+node --check .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 [[ ! -f tools/tftmac-v2.mjs ]] || node --check tools/tftmac-v2.mjs >/dev/null
 node tools/tftmac-direct-control.mjs engineering-map-selftest >/dev/null
 node tools/tftmac-direct-control.mjs lab-selftest >/dev/null
@@ -294,7 +296,7 @@ cmp -s ssot/runtime-modes.json "${RELEASE_APP}/Contents/Resources/runtime-modes.
   || fail "unsigned Release app did not package the exact runtime-mode registry"
 cmp -s ssot/runtime-authority.json "${RELEASE_APP}/Contents/Resources/runtime-authority.json" \
   || fail "unsigned Release app did not package the exact control authority"
-node .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs >/dev/null
+node .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 
 /bin/zsh scripts/test-native-app.command
 
@@ -304,4 +306,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 49 native tests; Wave B mode authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; 49 native tests; diagnostic mode source authority PASS)"

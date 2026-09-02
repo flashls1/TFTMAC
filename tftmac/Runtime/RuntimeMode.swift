@@ -280,7 +280,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479"
+    static let expectedRegistrySha256 = "6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String
@@ -421,8 +421,8 @@ struct TFTMACRuntimeModeRegistry: Sendable {
         }
 
         let diagnostics = try required(.advancedDiagnostics, from: document)
-        guard diagnostics.launchState == .blockedPendingControllerLease,
-              diagnostics.controllerPort == nil,
+        guard diagnostics.launchState == .enabled,
+              diagnostics.controllerPort == 8556,
               diagnostics.avdName == "TFTMAC_Diagnostic_API37_R9",
               diagnostics.adbServerPort == 5041,
               diagnostics.consolePort == 5586,
@@ -434,7 +434,7 @@ struct TFTMACRuntimeModeRegistry: Sendable {
               diagnostics.requiresControlStopped,
               diagnostics.rollbackTarget == .control else {
             throw TFTMACRuntimeModeError(
-                message: "Advanced diagnostics must remain isolated and blocked pending its controller-port receipt."
+                message: "Advanced diagnostics no longer matches its isolated receipted R9 authority."
             )
         }
 

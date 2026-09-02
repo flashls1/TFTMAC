@@ -286,9 +286,19 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(selection.definition.serial, "emulator-5582")
     }
 
-    func testRuntimeModeRegistryFailsClosedForUnacceptedModes() throws {
+    func testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndRejectsUnacceptedModes() throws {
         let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
-        for requested in ["advanced_diagnostics", "candidate", "unknown"] {
+        let diagnostics = try registry.selection(environment: [
+            TFTMACRuntimeModeRegistry.environmentKey: "advanced_diagnostics"
+        ])
+        XCTAssertEqual(diagnostics.mode, .advancedDiagnostics)
+        XCTAssertEqual(diagnostics.definition.avdName, "TFTMAC_Diagnostic_API37_R9")
+        XCTAssertEqual(diagnostics.definition.adbServerPort, 5041)
+        XCTAssertEqual(diagnostics.definition.consolePort, 5586)
+        XCTAssertEqual(diagnostics.definition.controllerPort, 8556)
+        XCTAssertEqual(diagnostics.definition.serial, "emulator-5586")
+        XCTAssertTrue(diagnostics.definition.requiresControlStopped)
+        for requested in ["candidate", "unknown"] {
             XCTAssertThrowsError(try registry.selection(environment: [
                 TFTMACRuntimeModeRegistry.environmentKey: requested
             ]), requested)

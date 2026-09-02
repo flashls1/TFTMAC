@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "gate": "TARGETED_DIAGNOSTIC_FIRST_BOOT_V1_ZENGATE",
+  "version": "2.3",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-02T02:12:04Z",
+  "base_head_sha": "a84aaa7",
+  "hard_gates": {
+    "win_condition": "PASS",
+    "source_of_truth": "PASS",
+    "material_ambiguity": "PASS",
+    "safety_reversibility": "PASS",
+    "validation_integrity": "PASS",
+    "project_constraints": "PASS"
+  },
+  "weighted_quality": 94.5,
+  "risk_penalty": 3.0,
+  "final_score": 91.5,
+  "decision": "PROCEED",
+  "remediation_mode": "NONE",
+  "execution_scope_lock": "Build one new R9 native forwarder, seal one port allocation, enable only advanced_diagnostics, verify source, then perform the guarded identity boot. Preserve control, candidate, stale host, accepted artifacts, and later-wave boundaries."
+}

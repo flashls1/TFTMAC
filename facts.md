@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
 **Authority date:** 2026-09-01 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-02T02:07:03Z
+**Observed runtime/source evidence through:** 2026-09-02T02:20:37Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -531,9 +531,7 @@ campaign, useful for candidate selection but not current M4 runtime performance:
 
 - **VERIFIED CURRENT (2026-09-02T02:07:03Z):** Wave B source integration is
   complete under the append-only Wave B v4 correction authority. The default
-  and only launch-ready mode is `control`; `advanced_diagnostics` remains
-  blocked pending a separately receipted EmulatorController port, and
-  `candidate` remains blocked.
+  mode remains `control`, and `candidate` remains blocked.
 - **VERIFIED CURRENT:** runtime-mode registry SHA-256 is
   `136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479`.
   Runtime identity, registry/configuration hashes, AVD identity, ADB/console/
@@ -543,10 +541,21 @@ campaign, useful for candidate selection but not current M4 runtime performance:
   zero failures. The post-verification process audit found no active TFTMAC,
   emulator, or `qemu-system-aarch64` process; no runtime, AVD, installed app, or
   official TFT package was changed or launched by Wave B.
-- **LOCKED NEXT GATE:** diagnostic first boot may occur only after a
-  collision-free controller port is allocated and sealed. Wave C causal-event
-  instrumentation remains closed until diagnostic AVD/runtime acceptance
-  passes.
+- **VERIFIED CURRENT (2026-09-02T02:20:37Z):** diagnostic ADB `5041`, console
+  `5586`, and controller `8556` passed listener and exclusive-bind checks with
+  control stopped. A new R9 diagnostic forwarder was built from the proven
+  native `RuntimeHost/main.c` chain, ad-hoc signed, deep/strict verified, and
+  sealed under receipt SHA-256
+  `3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f`.
+  The stale first-load host remains preserved but is not R9 launch authority.
+- **VERIFIED CURRENT:** `advanced_diagnostics` is selectable only through the
+  explicit `TFTMAC_RUNTIME_MODE=advanced_diagnostics` environment request. Its
+  R9 registry SHA-256 is
+  `6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d`;
+  unsigned Release and all 49 native tests pass. Control remains the default.
+- **LOCKED NEXT GATE:** guarded diagnostic first boot must prove loaded R9 QEMU
+  and gfxstream identities before TFT launch. Wave C causal-event
+  instrumentation remains closed until diagnostic AVD/runtime acceptance passes.
 
 ## 14. Explicit unknowns and open acceptance
 
