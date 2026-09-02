@@ -67,6 +67,7 @@ struct TFTMACDiagnosticReceiptAuthority: Codable, Equatable, Sendable {
 
 struct TFTMACRuntimeModeSupplementalDefinition: Codable, Equatable, Sendable {
     let mode: TFTMACRuntimeMode
+    let runtimeVariant: String?
     let stateNamespace: String
     let usesLegacyApplicationSupportRoot: Bool
     let emulatorIdentifier: String
@@ -115,6 +116,8 @@ struct TFTMACSelectedRuntimeConfiguration: Sendable {
     let authority: TFTMACRuntimeModeAuthority
     let profile: TFTMACRuntimeProfile
     let applicationSupport: URL
+    let workload: TFTMACRuntimeWorkload
+    let devExperimentProfile: DevExperimentProfile?
 
     static func load(
         savedProfile: TFTMACRuntimeProfile,
@@ -125,13 +128,26 @@ struct TFTMACSelectedRuntimeConfiguration: Sendable {
         let authority = try TFTMACRuntimeModeAuthority.loadBundled(bundle: bundle)
         try authority.validateConsistency(with: registry)
         let selection = try registry.selection(environment: environment)
-        let profile = try authority.effectiveProfile(savedProfile: savedProfile, selection: selection)
+        let baseProfile = try authority.effectiveProfile(savedProfile: savedProfile, selection: selection)
+        let workload = try TFTMACRuntimeWorkload.load(mode: selection.mode, environment: environment)
+        let devExperimentProfile = try DevExperimentProfile.load(
+            mode: selection.mode,
+            environment: environment,
+            baseProfile: baseProfile,
+            bundle: bundle
+        )
+        if workload == .ownedVulkanProbe, devExperimentProfile == nil {
+            throw TFTMACRuntimeModeError(message: "The owned Vulkan probe requires a sealed DEV experiment profile.")
+        }
+        let profile = devExperimentProfile.map { baseProfile.with(experimentPreset: $0.id) } ?? baseProfile
         return Self(
             registry: registry,
             selection: selection,
             authority: authority,
             profile: profile,
-            applicationSupport: authority.applicationSupportURL(for: selection.mode)
+            applicationSupport: authority.applicationSupportURL(for: selection.mode),
+            workload: workload,
+            devExperimentProfile: devExperimentProfile
         )
     }
 }
@@ -424,11 +440,12 @@ struct TFTMACRuntimeModeAuthority: Sendable {
               diagnostics.hostApplication?.infoPlistSha256.map(Self.isSHA256) == true,
               diagnostics.hostApplication?.buildReceiptResource == nil,
               let receipts = diagnostics.diagnosticReceipts,
-              receipts.buildId == "gate4-r9-20260901",
+              diagnostics.runtimeVariant == "stock_shadow",
+              receipts.buildId == "stock-shadow-r1-20260902",
               Self.isSHA256(receipts.runtimeConfigurationSha256),
-              receipts.build.requiredState == "DIAGNOSTIC_BUILD_IDENTITY_PASS",
-              receipts.clone.requiredState == "DIAGNOSTIC_AVD_CLONE_RECEIPT_PASS",
-              receipts.nativeHost.requiredState == "DIAGNOSTIC_NATIVE_HOST_BUILD_PASS" else {
+              receipts.build.requiredState == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS",
+              receipts.clone.requiredState == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS",
+              receipts.nativeHost.requiredState == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS" else {
             throw TFTMACRuntimeModeError(message: "Supplemental diagnostic authority is incomplete.")
         }
 
@@ -602,6 +619,38 @@ struct TFTMACRuntimeModeAuthority: Sendable {
               let emulatorUuids = supplemental.emulatorUuids,
               let gfxstreamUuids = supplemental.gfxstreamBackendUuids else {
             throw TFTMACRuntimeModeError(message: "Diagnostic receipt authority is missing.")
+        }
+        if supplemental.runtimeVariant == "stock_shadow" {
+            let receipt = try Self.readSealedReceipt(authority.build)
+            guard authority.build.path == authority.clone.path,
+                  authority.build.path == authority.nativeHost.path,
+                  authority.build.sha256 == authority.clone.sha256,
+                  authority.build.sha256 == authority.nativeHost.sha256,
+                  Self.string(receipt, ["state"]) == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS",
+                  Self.string(receipt, ["build_id"]) == authority.buildId,
+                  Self.string(receipt, ["runtime_variant"]) == "stock_shadow",
+                  Self.string(receipt, ["comparison_class"]) == base.comparabilityClass,
+                  Self.bool(receipt, ["control_runtime_touched"]) == false,
+                  Self.bool(receipt, ["control_avd_touched"]) == false,
+                  Self.bool(receipt, ["control_noninterference", "matched"]) == true,
+                  Self.string(receipt, ["runtime", "emulator", "path"]) == base.emulatorPath,
+                  Self.string(receipt, ["runtime", "emulator", "sha256"]) == base.emulatorSha256,
+                  Self.string(receipt, ["runtime", "emulator", "uuid"]).map({ [$0] }) == emulatorUuids,
+                  Self.string(receipt, ["runtime", "gfxstream", "path"]) == base.gfxstreamBackendPath,
+                  Self.string(receipt, ["runtime", "gfxstream", "sha256"]) == base.gfxstreamBackendSha256,
+                  Self.string(receipt, ["runtime", "gfxstream", "uuid"]).map({ [$0] }) == gfxstreamUuids,
+                  Self.string(receipt, ["avd", "name"]) == base.avdName,
+                  Self.string(receipt, ["avd", "path"]) == base.avdDirectory,
+                  Self.string(receipt, ["avd", "ini_path"]) == base.avdIniPath,
+                  Self.string(receipt, ["avd", "config_sha256"]) == base.avdConfigSha256,
+                  Self.string(receipt, ["avd", "ini_sha256"]) == base.avdIniSha256,
+                  Self.int(receipt, ["lease", "adb_server_port"]) == base.adbServerPort,
+                  Self.int(receipt, ["lease", "console_port"]) == base.consolePort,
+                  Self.int(receipt, ["lease", "controller_port"]) == base.controllerPort,
+                  Self.string(receipt, ["lease", "serial"]) == base.serial else {
+                throw TFTMACRuntimeModeError(message: "Stock-shadow runtime receipt structure drifted.")
+            }
+            return
         }
         let build = try Self.readSealedReceipt(authority.build)
         guard Self.string(build, ["state"]) == authority.build.requiredState,

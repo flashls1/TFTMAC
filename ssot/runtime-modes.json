@@ -3,58 +3,59 @@
   "default_mode": "control",
   "modes": {
     "advanced_diagnostics": {
-      "adb_path": "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb",
+      "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb",
       "adb_server_port": 5041,
-      "allowed_purpose": "ISOLATED_SOURCE_INSTRUMENTATION_AND_ELIGIBILITY",
+      "allowed_purpose": "ISOLATED_STOCK_SHADOW_SCREENING_AND_DIAGNOSTIC_BASELINE",
       "application_build": "8",
-      "application_bundle_id": "com.flashls1.tftmac",
+      "application_bundle_id": "com.flashls1.tftmac.dev",
       "application_version": "2.3.0",
       "authority_manifest": {
         "kind": "external_sealed_manifest",
-        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-build.json",
-        "sha256": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d"
+        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+        "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285"
       },
-      "avd_config_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD/TFTMAC_Diagnostic_API37_R9.avd/config.ini",
-      "avd_config_sha256": "090fe426402562e227a3a1a6bd6eab9f9572cd48fbe3d467c276d419860caf90",
-      "avd_directory": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD/TFTMAC_Diagnostic_API37_R9.avd",
-      "avd_home": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD",
-      "avd_ini_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD/TFTMAC_Diagnostic_API37_R9.ini",
-      "avd_ini_sha256": "30d4ed7ebc20fb3415461fa48f6d91654955e04825de84176bd21a4adad9b98d",
-      "avd_name": "TFTMAC_Diagnostic_API37_R9",
-      "comparability_class": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
-      "configuration_sha256": "1c7b33f3b32a530fff0ba79aedeb82001f392295ebd538a516374fff5db7f903",
+      "avd_config_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd/config.ini",
+      "avd_config_sha256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125",
+      "avd_directory": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd",
+      "avd_home": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD",
+      "avd_ini_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.ini",
+      "avd_ini_sha256": "85a50d6174c22d815ccb7c8ebeae13342922c2904f24e461fac47f953fb1a587",
+      "avd_name": "TFTMAC_Diagnostic_StockShadow_R1",
+      "comparability_class": "STOCK_BUILD8_CONTROL_SHADOW",
+      "configuration_sha256": "3321a0246409313194cbe120a90c7d16b32f34c2ff550632554c8912ed69b4a0",
       "console_port": 5586,
       "controller_port": 8556,
-      "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/emulator",
-      "emulator_sha256": "fb7782eb3abd7c5b4cb000e68f0c296fed1098f9581aacb01971a45f6b6836aa",
-      "gfxstream_backend_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/lib64/libgfxstream_backend.dylib",
-      "gfxstream_backend_sha256": "23d54a05a3b73704a7f7d0394f40e04f21bd7e546b1982911a681ae0fe375c9d",
+      "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/emulator",
+      "emulator_sha256": "b3b8fc0dcedcf6e15b54b41f3e5156319029aa00b88a59fd489f80abdd8fc133",
+      "gfxstream_backend_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/lib64/libgfxstream_backend.dylib",
+      "gfxstream_backend_sha256": "3772fef215058831ea419c9281fd203d010003d5defdc195dd120bc7748e4093",
       "launch_state": "enabled",
-      "library_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/lib64",
+      "library_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/lib64",
       "mode": "advanced_diagnostics",
       "requires_control_stopped": true,
       "rollback_target": "control",
-      "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1",
-      "sdk_root": "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK",
+      "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
+      "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK",
       "serial": "emulator-5586",
       "state_namespace": "advanced_diagnostics",
       "uses_legacy_application_support_root": false,
+      "runtime_variant": "stock_shadow",
       "emulator_identifier": "TFTMAC-DIAGNOSTIC",
       "launch_strategy": "external_native_host",
       "profile_policy": "fixed_registry_profile",
       "locked_profile": {
-        "identifier": "tftmac_diagnostic_r9",
+        "identifier": "tftmac_diagnostic_stock_shadow_r1",
         "width": 1920,
         "height": 1080,
-        "density_dpi": 280,
+        "density_dpi": 320,
         "refresh_hz": 60,
         "vcpu": 6,
-        "ram_mib": 6144,
+        "ram_mib": 5120,
         "gpu_mode": "host",
         "audio_backend": "coreaudio",
-        "graphics_transport": "pipe",
+        "graphics_transport": "virtio-gpu-asg",
         "asg_write_buffer_size": 1048576,
-        "asg_write_step_size": 4096,
+        "asg_write_step_size": 16384,
         "asg_data_ring_size": 32768,
         "asg_draw_flush_interval": 800,
         "angle_enabled_features": "exposeNonConformantExtensionsAndVersions:exposeES32ForTesting",
@@ -62,17 +63,17 @@
       },
       "adb_sha256": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
       "adb_vendor_keys_policy": "USER_DEFAULT_KEY",
-      "expected_emulator_version_contains": "35.6.3",
+      "expected_emulator_version_contains": "37.1.11",
       "emulator_uuids": [
-        "4C4C4436-5555-3144-A1EE-05B0F446F580:arm64"
+        "4C4C449E-5555-3144-A182-644CCB895091:arm64"
       ],
-      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
-      "qemu_sha256": "042c4932b17fd09ff056ecc2dd21084e08e1110b774c594bbcaf1e4d1ceac608",
+      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
+      "qemu_sha256": "eaa97a970b81f81640db73ed79e19ee173323653a0a1203217e1199d078011f3",
       "qemu_uuids": [
-        "4C4C447F-5555-3144-A16C-0DB6C4482B7A:arm64"
+        "4C4C4467-5555-3144-A10A-A9E5A99446F1:arm64"
       ],
       "gfxstream_backend_uuids": [
-        "4C4C4449-5555-3144-A1FC-F6DFE0021481:arm64"
+        "4C4C4406-5555-3144-A122-8AC522465662:arm64"
       ],
       "host_application": {
         "kind": "external_application",
@@ -87,22 +88,22 @@
         "build_receipt_resource": null
       },
       "diagnostic_receipts": {
-        "build_id": "gate4-r9-20260901",
-        "runtime_configuration_sha256": "005c85a2a7ffe86e7626c871fd3dd23f42c5d3ce994162d17b032e69cfc4d4f3",
+        "build_id": "stock-shadow-r1-20260902",
+        "runtime_configuration_sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
         "build": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-build.json",
-          "sha256": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d",
-          "required_state": "DIAGNOSTIC_BUILD_IDENTITY_PASS"
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         },
         "clone": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-avd-clone.json",
-          "sha256": "09e4b2d21290de582320cb0aee3148af25f5e2e59199e225e604afbb6cb19648",
-          "required_state": "DIAGNOSTIC_AVD_CLONE_RECEIPT_PASS"
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         },
         "native_host": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-forwarder-r1-native-host-build.json",
-          "sha256": "3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f",
-          "required_state": "DIAGNOSTIC_NATIVE_HOST_BUILD_PASS"
+          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         }
       }
     },

@@ -1,5 +1,5 @@
 schema: 3
-frozen_at: "2026-08-31T23:13:30Z"
+frozen_at: "2026-09-02T07:59:18Z"
 phase0_status: PASS
 
 authority:
@@ -8,12 +8,12 @@ authority:
   ssot_version: "4.0-build8-reconciliation"
   documentation_authority: "facts.md + project.md + dev.md + benchmark.md"
   authority_inputs: "ssot/AUTHORITY_INPUTS.sha256"
-  runtime_authority_sha256: "2af6196e08b3f81032b8226fa3a9c25a3b0d99537f0872b7eb21a96aaf2b5d2f"
-  authority_inputs_sha256: "2bcb0c0c7c4858b1090ce22491bb344756085f2f6ebb17c0cb73840fb3df6a38"
+  runtime_authority_sha256: "2646434592e1867cdaf1c5860cb86ce4fea250ab8aca01c7c122a3cf6caaec47"
+  authority_inputs_sha256: "22305e38b4fd588e0f70ad03862cd394d2fcebeecbff50124e1962f48960f95a"
   zengate_version: "2.3"
   zengate_score: 95.8
   zengate_result: "PASS"
-  source_build_inputs_status: "historical_reference_only_for_normal_play; isolated_diagnostic_eligibility_only"
+  source_build_inputs_status: "modern_isolated_case_sensitive_source_sync_paused; source_lock_and_live_parity_pending"
   production_guest: "official Android 16 Google Play ARM64"
   shipping_render_target: "1920x1080@60"
 
@@ -56,7 +56,8 @@ release:
   qemu_worker_qos_inheritance: "NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE"
   game_mode_eligible: true
   guest_gameplay_power_gate: true
-  active_experiment: "combat_latency_a"
+  historical_latest_capture_experiment: "combat_latency_a"
+  current_selected_experiment: "control"
   tft_graphics: "High / 60 FPS / Performance Mode OFF"
   perfetto_trace_processor_version: "58.2"
   perfetto_trace_processor_sha256: "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
@@ -68,10 +69,37 @@ release:
     cssm_error: "CSSMERR_TP_NOT_TRUSTED"
     installed_runtime_verifier: "BLOCKED_SIGNING_IDENTITY"
     conclusion: "Historical signing acceptance remains distinct from this timestamped host trust audit."
+  latest_host_signing_recheck:
+    observed_at: "2026-09-02T07:59:18Z"
+    control_deep_strict_codesign: PASS
+    dev_deep_strict_codesign: PASS
+    signing_identity: "TFTMAC Local Code Signing"
+    protected_control_hashes_match: true
+    installed_runtime_verifier: PASS
+
+launcher_products:
+  control:
+    installed_path: "/Applications/TFTMAC.app"
+    desktop_path: "/Users/flash/Desktop/TFTMAC.app"
+    desktop_wrapper_path: "/Applications/TFTMAC Control Launcher.app"
+    direct_rollback_path: "/Applications/TFTMAC.app"
+    bundle_id: "com.flashls1.tftmac"
+    runtime_mode: "control"
+    status: "PROTECTED_PLAYABLE_AUTHORITY"
+  dev:
+    installed_path: "/Applications/TFTMAC DEV.app"
+    desktop_path: "/Users/flash/Desktop/TFTMAC DEV.app"
+    bundle_id: "com.flashls1.tftmac.dev"
+    runtime_mode: "advanced_diagnostics"
+    state_namespace: "advanced_diagnostics"
+    runtime_variant: "stock_shadow"
+    avd_name: "TFTMAC_Diagnostic_StockShadow_R1"
+    status: "THREE_CONSECUTIVE_FIRST_FRAME_PASSES_PROBE_CAMPAIGN_PENDING"
+  concurrency_policy: "GLOBAL_RUNTIME_LEASE_NO_CONCURRENT_CONTROL_AND_DEV"
 
 verification_contracts:
   repository_source: "scripts/verify-tftmac.command; no installed app, external runtime, signing identity, credentials, or private capture"
-  installed_runtime: "scripts/verify-installed-runtime.command; local-only and currently blocked on signing identity"
+  installed_runtime: "scripts/verify-installed-runtime.command; local-only; latest 2026-09-02 signing recheck PASS"
   github_ci: "repository_source only"
 
 android_command_line_tools:
@@ -124,6 +152,43 @@ diagnostic_runtime:
   commit: "c8aa26ebaa5b977965eb165ad8aac5c98408469f"
   status: "isolated_non_comparable_diagnostic_eligibility_only"
   normal_play_authority: "stock_build8"
+  mode_registry_sha256: "b2a8080248900c27efdaac7fe3825ccb919188d43072af7a870bfc49c3e0e96f"
+  latest_capture: "2026-09-02T07-46-40.998Z-8260f517-a8a4-4d5e-918f-723b81de32f4"
+  adb_acceptance: "PASS_DEVICE_USER_DEFAULT_KEY"
+  automatic_capture_start: PASS
+  first_native_frame: "FAIL_TIMEOUT_120_SECONDS"
+  playable_status: "NOT_ACCEPTED"
+
+modern_causal_source:
+  manifest_branch: "emu-main-dev"
+  manifest_commit: "2692acc620f6563b21995540656674faeb536cdc"
+  source_volume: "/Volumes/TFTMAC Causal Source"
+  filesystem: "case-sensitive APFS sparse image"
+  sync_jobs: 4
+  source_lock_receipt: "NOT_CREATED_SYNC_PAUSED"
+  uninstrumented_build: "NOT_RUN"
+  source_hooks: "NOT_IMPLEMENTED"
+
+owned_probe_campaign:
+  baseline: "stock_shadow"
+  sequence: "control,queue_submit_inline,control,virtual_queue_off,control,fence_contexts_off,control"
+  keychain_service: "com.flashls1.tftmac.android-unlock.v2"
+  keychain_item_status: "NOT_CONFIGURED_AT_HANDOFF"
+  state: "NOT_RUN_NO_WINNER"
+
+latest_playability_comparison:
+  candidate_capture: "2026-09-02T05-26-14.078Z-0fb7a877-23f7-4933-bc9f-5525ed8c6d3d"
+  control_capture: "2026-09-02T05-54-33.919Z-e13fd9b8-1091-4516-bd6e-66f8b50a912d"
+  candidate_weighted_fps: 26.446
+  control_weighted_fps: 47.384
+  candidate_fps_one_percent_low: 2.770
+  control_fps_one_percent_low: 7.870
+  candidate_p95_frame_interval_ms: 117.088
+  control_p95_frame_interval_ms: 34.002
+  candidate_severe_stall_percent: 21.037
+  control_severe_stall_percent: 1.429
+  decision: "REJECT_COMBAT_LATENCY_A_KEEP_CONTROL"
+  causal_scope: "WORKLOADS_NOT_FORMALLY_MATCHED_QOS_CAUSALITY_NOT_CLAIMED"
 
 current_gameplay_capture:
   id: "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200"
@@ -131,7 +196,7 @@ current_gameplay_capture:
   database_byte_count: 63897600
   database_sha256: "c1ef9c9ffe591a297cb86660e3ccfea7e9aeb593f22100e4e732b2fc77d4ee77"
   graphics_run_duration: "42m27s"
-  active_experiment: "combat_latency_a"
+  captured_experiment: "combat_latency_a"
   tft_graphics: "High / 60 FPS / Performance Mode OFF"
   automatic_logging: "verified_pid_layer_lifetime"
   exact_layer_coverage_percent: 99.629
@@ -152,7 +217,14 @@ current_gameplay_capture:
   mac_presenter: "excluded_from_causal_candidates_context_only"
   markers_and_battles: "optional_annotations_not_validity_or_causal_gates"
   root_attribution: "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE"
-  advanced_source_causal_logger: "planned"
+  advanced_source_causal_logger: "partial_source_schema_and_cpp_abi_not_live_accepted"
+
+development_verification:
+  native_test_inventory: 54
+  causal_cpp_abi_test: PASS
+  causal_event_bytes: 96
+  causal_ring_capacity: 256
+  current_internal_root: UNKNOWN
 
 generality:
   status: "historical_reference_only_not_release_acceptance"

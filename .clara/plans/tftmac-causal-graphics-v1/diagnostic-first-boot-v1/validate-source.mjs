@@ -5,9 +5,9 @@ import path from 'node:path';
 
 const root = process.cwd();
 const registryPath = 'ssot/runtime-modes.json';
-const expectedRegistrySha = '798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b';
+const expectedRegistrySha = 'f92cfc78923814d8eb3d8f6f550a4763ba918fe5e1c20088e2863d89ce58eafe';
 const expectedPortReceiptSha = '3536b1d54a0643bc3fcbb9dbff01be2402ca9c45d2100e220c2f857e65a129cd';
-const expectedHostReceiptSha = '3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f';
+const expectedStockShadowReceiptSha = '540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285';
 
 function absolute(relativePath) { return path.join(root, relativePath); }
 function read(relativePath) { return fs.readFileSync(absolute(relativePath)); }
@@ -42,6 +42,7 @@ for (const required of [
   '.clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/PORT_ALLOCATION_RECEIPT.json',
   'RuntimeHost/DiagnosticInfo.plist',
   'scripts/build-diagnostic-forwarder.command',
+  'scripts/build-stock-shadow-runtime.command',
   registryPath,
   'tftmac/Runtime/RuntimeMode.swift',
   'tftmac/Runtime/RuntimeModeAuthority.swift',
@@ -62,22 +63,30 @@ for (const mode of Object.values(registry.modes)) {
 
 const control = registry.modes.control;
 assert(control.launch_state === 'enabled', 'control is not enabled');
+assert(control.application_bundle_id === 'com.flashls1.tftmac', 'control app identity drifted');
 assert(control.adb_server_port === 5038 && control.console_port === 5582 && control.controller_port === 8554, 'control ports drifted');
 assert(control.avd_name === 'TFT_Ultra_Tablet' && control.serial === 'emulator-5582', 'control identity drifted');
 
 const diagnostics = registry.modes.advanced_diagnostics;
 assert(diagnostics.launch_state === 'enabled', 'advanced diagnostics is not enabled');
-assert(diagnostics.sdk_root === '/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK', 'advanced diagnostic SDK root drifted');
-assert(diagnostics.adb_path === '/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb', 'advanced diagnostic ADB path drifted');
+assert(diagnostics.application_bundle_id === 'com.flashls1.tftmac.dev', 'advanced diagnostic app identity drifted');
+assert(diagnostics.adb_vendor_keys_policy === 'USER_DEFAULT_KEY', 'advanced diagnostic ADB-auth policy drifted');
+assert(diagnostics.runtime_variant === 'stock_shadow', 'advanced diagnostic runtime variant drifted');
+assert(diagnostics.sdk_root === '/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK', 'advanced diagnostic SDK root drifted');
+assert(diagnostics.adb_path === '/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb', 'advanced diagnostic ADB path drifted');
 assert(diagnostics.requires_control_stopped === true && diagnostics.rollback_target === 'control', 'diagnostic isolation/rollback drifted');
-assert(diagnostics.avd_name === 'TFTMAC_Diagnostic_API37_R9' && diagnostics.serial === 'emulator-5586', 'diagnostic AVD identity drifted');
+assert(diagnostics.avd_name === 'TFTMAC_Diagnostic_StockShadow_R1' && diagnostics.serial === 'emulator-5586', 'diagnostic AVD identity drifted');
 assert(diagnostics.adb_server_port === 5041 && diagnostics.console_port === 5586 && diagnostics.controller_port === 8556, 'diagnostic port allocation drifted');
 assert(diagnostics.launch_strategy === 'external_native_host', 'diagnostic launch strategy drifted');
 assert(diagnostics.host_application?.path === '/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-forwarder-r1/TFTMAC Diagnostic Forwarder.app', 'diagnostic host path drifted');
 assert(diagnostics.host_application?.bundle_identifier === 'com.flashls1.tftmac.runtime.diagnostic-forwarder', 'diagnostic host bundle identity drifted');
 assert(diagnostics.host_application?.executable_relative_path === 'Contents/MacOS/TFTMACDiagnosticForwarder', 'diagnostic host executable path drifted');
 assert(diagnostics.host_application?.executable_sha256 === '128239b2cf3ddb04669c4fda97e895e1a4a800dcf2c2144066979427d92af5b6', 'diagnostic host executable identity drifted');
-assert(diagnostics.diagnostic_receipts?.native_host?.sha256 === expectedHostReceiptSha, 'diagnostic host receipt reference drifted');
+assert(diagnostics.diagnostic_receipts?.build_id === 'stock-shadow-r1-20260902', 'stock-shadow build identity drifted');
+for (const receipt of Object.values(diagnostics.diagnostic_receipts ?? {}).filter((value) => value && typeof value === 'object')) {
+  assert(receipt.sha256 === expectedStockShadowReceiptSha, 'stock-shadow receipt reference drifted');
+  assert(receipt.required_state === 'STOCK_SHADOW_RUNTIME_IDENTITY_PASS', 'stock-shadow receipt state drifted');
+}
 
 const candidate = registry.modes.candidate;
 assert(candidate.launch_state === 'blocked_not_built' && candidate.controller_port === null, 'candidate is not fail-closed');
@@ -90,14 +99,14 @@ const runtimeModeSource = readText('tftmac/Runtime/RuntimeMode.swift');
 assert(runtimeModeSource.includes(`static let expectedRegistrySha256 = "${expectedRegistrySha}"`), 'Swift registry pin drifted');
 const runtimeSource = readText('tftmac/Runtime/TFTMACRuntime.swift');
 assert(runtimeSource.includes('paths.launchStrategy == .bundledForwarder || paths.launchStrategy == .externalNativeHost'), 'runtime does not accept the receipted external native host');
-assert(runtimeSource.includes('if paths.mode == .control {\n            arguments += ["-crash-report-mode", "disabled"]'), 'R9-incompatible crash-report flag is not isolated to control');
+assert(runtimeSource.includes('if paths.expectedEmulatorVersionContains == "37.1.11" {\n            arguments += ["-crash-report-mode", "disabled"]'), '37.1.11 Control/shadow crash-report consent suppression drifted');
 const tests = readText('Tests/TFTMACTests/TFTMACGate1Tests.swift');
 assert(tests.includes('testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndRejectsUnacceptedModes'), 'diagnostic selection contract test is missing');
 
 const testCount = fs.readdirSync(absolute('Tests/TFTMACTests'))
   .filter((name) => name.endsWith('.swift'))
   .reduce((total, name) => total + (readText(`Tests/TFTMACTests/${name}`).match(/^    func test/gm) ?? []).length, 0);
-assert(testCount === 49, `expected 49 native tests, found ${testCount}`);
+assert(testCount === 54, `expected 54 native tests, found ${testCount}`);
 
 console.log(JSON.stringify({
   state: 'DIAGNOSTIC_FIRST_BOOT_SOURCE_PASS',

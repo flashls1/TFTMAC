@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
-**Authority date:** 2026-09-01 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-02T02:29:46Z
+**Authority date:** 2026-09-02 America/Chicago
+**Observed runtime/source evidence through:** 2026-09-02T13:32:00Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -62,9 +62,10 @@ must never be presented as measurements of this M4 Mac mini.
   directly proves authorized ADB, official TFT PID observation, exact
   `GameActivity` SurfaceView selection, automatic graphics-run admission,
   `COMPLETE` stack receipts, and frame-to-run/hash/window/receipt linkage.
-- **VERIFIED CURRENT:** `/Users/flash/Desktop/TFTMAC.app` is a symlink to the
-  installed `/Applications/TFTMAC.app`, so the Desktop launcher opens the same
-  release rather than a second copy.
+- **VERIFIED CURRENT:** `/Users/flash/Desktop/TFTMAC.app` points to the signed
+  `/Applications/TFTMAC Control Launcher.app`, which launches the unchanged
+  `/Applications/TFTMAC.app` and may unlock only `emulator-5582`. Direct launch
+  of `/Applications/TFTMAC.app` remains the rollback.
 - **VERIFIED CURRENT:** `LSSupportsGameMode=true` is present in the installed
   bundle. This establishes Game Mode eligibility, not proof that macOS activated
   it during a particular match.
@@ -74,15 +75,14 @@ must never be presented as measurements of this M4 Mac mini.
 - **VERIFIED HISTORICAL RELEASE ACCEPTANCE:** Build 8 was signed with the local
   `TFTMAC Local Code Signing` identity and passed deep/strict verification when
   the release receipt was created. It is not notarized for public distribution.
-- **VERIFIED CURRENT HOST AUDIT (2026-08-31T23:13:30Z):** the installed TFTMAC
+- **VERIFIED TIMESTAMPED HOST AUDIT (2026-08-31T23:13:30Z):** the installed TFTMAC
   executable and emulator-host hashes still match that Build 8 receipt, but the
   login keychain now exposes zero valid code-signing identities and
   `codesign --verify --deep --strict` fails with `CSSMERR_TP_NOT_TRUSTED`.
-  Current-host installed-runtime verification is therefore blocked until the
-  local identity is repaired. This does not block unsigned source builds,
-  diagnostic-runtime work, or causal instrumentation; it must be repaired
-  before a final signed candidate installation/cutover. This does not rewrite
-  the historical acceptance result.
+  Current-host installed-runtime verification was therefore blocked until the
+  local identity was repaired. The later 2026-09-02 recheck records two valid
+  identities and deep/strict verification PASS for both installed apps. Neither
+  observation rewrites the historical release acceptance result.
 
 ## 3. Launch and ADB architecture
 
@@ -99,8 +99,9 @@ must never be presented as measurements of this M4 Mac mini.
 - **LOCKED:** ADB server port `5038`; emulator console port `5582`; serial
   `emulator-5582`.
 - **LOCKED:** do not inject `ADB_VENDOR_KEYS`. The launcher uses the logged-in
-  user's established ADB identity and clears inherited `ADB_SERVER_SOCKET` and
-  `ANDROID_ADB_SERVER_ADDRESS` values.
+  user's established ADB identity. Build 8 passes empty `ADB_SERVER_SOCKET` and
+  `ANDROID_ADB_SERVER_ADDRESS` values through `/usr/bin/open`; its packaged
+  `RuntimeHost/main.c` does not yet remove those variables before `execv`.
 - **VERIFIED HISTORICAL ROOT CAUSE:** the incorrect direct path used `5040`,
   `5592`, and `emulator-5592`, leading to `unauthorized` and eventually
   `Timed out waiting for emulator ADB device.` The Android runtime, AVD, GPU,
@@ -414,6 +415,106 @@ Decision rules:
   first internal graphics boundary remains `UNKNOWN`; present evidence localizes
   lateness upstream of or at the exact TFT SurfaceFlinger layer.
 
+### 2026-09-02 live severe-slowdown capture
+
+- **VERIFIED CURRENT CAPTURE:**
+  `2026-09-02T05-26-14.078Z-0fb7a877-23f7-4933-bc9f-5525ed8c6d3d` is retained
+  as the user's severe-slowdown run. The sealed SQLite authority is 18,583,552
+  bytes with SHA-256
+  `2246edff4f433cd5a6d8d995a612274930d2ad979fa649f9249b690fe6f3ed8b`.
+- **VERIFIED PERFORMANCE:** the final 300-second tail contains 213 exact-layer
+  windows. Mean effective FPS was 15.884, the worst window was 0.684 FPS, mean
+  1% low was 10.081 FPS, and the windows accumulated 13,494 missed-vsync
+  equivalents. This is direct evidence of unacceptable sustained frame loss.
+- **VERIFIED PIPELINE CONTEXT:** stream delivery averaged approximately 15 FPS
+  with no sequence loss while the final Mac presenter continued its established
+  near-60-Hz correctness cadence. The useful-frame deficit therefore existed
+  before the final presenter; the final presenter is not a selectable root-cause
+  candidate.
+- **VERIFIED CPU ASSIGNMENT:** guest CPUs `0-5` were online and present and the
+  guest reported six processors. The slowdown was not caused by TFTMAC assigning
+  only two guest vCPUs.
+- **VERIFIED TRACE SIGNAL:** in the second bounded Perfetto trace, Unreal's
+  `RHIThread` was scheduled running for 13.38 seconds of an approximately
+  14.7-second trace (91.3%) and runnable-but-not-running for only 1.6%.
+  `SwappyThread3`, `GameThread`, and `RenderThread` were scheduled running for
+  approximately 40.2%, 24.6%, and 11.4% of the trace. This is the strongest
+  current signal of serialized pressure in the guest Unreal RHI/Vulkan path;
+  it does not by itself prove which owned gfxstream/MoltenVK boundary must be
+  changed.
+- **VERIFIED GUEST WARNINGS:** the run logged
+  `VIRTGPU_PARAM_CREATE_FENCE_PASSING` unavailable 26 times, nine
+  `DRM_IOCTL_VIRTGPU_GET_CAPS` invalid-argument failures, and nine
+  `DRM_IOCTL_VIRTGPU_CONTEXT_INIT` file-exists fallbacks. These remain causal
+  suspects, not proven owners.
+- **VERIFIED HOST CHURN:** `emulator.stdout.log` contains 307 internal emulator
+  helper ADB failures with `cannot start server on remote host`, while TFTMAC's
+  primary ADB server remained authorized on 5038. Empty inherited ADB endpoint
+  variables are a source-level defect to repair, but this background churn is
+  not yet proven to explain the frame collapse.
+- **VERIFIED ARTIFACTS:** two bounded traces and their normalized JSON/CSV
+  receipts are retained under the capture's `perfetto/` directory. They are
+  private diagnostic evidence and must not enter Git.
+- **USER ACCEPTANCE:** this run was reported as too slow for enjoyable play. It
+  is a retained regression/problem record, not a promotable configuration.
+
+### 2026-09-02 restored play authority
+
+- **VERIFIED CURRENT LAUNCH:** capture
+  `2026-09-02T05-54-33.919Z-e13fd9b8-1091-4516-bd6e-66f8b50a912d` passed the
+  exclusive-runtime preflight, launched through the packaged Mac host, authorized
+  ADB on 5038 / `emulator-5582`, and produced a 1920x1080 first native frame.
+- **VERIFIED CURRENT SETTINGS:** preset `control`, six vCPU, 5120 MiB RAM,
+  1920x1080 at 320 dpi and 60 Hz. This is the normal-play authority restored for
+  the user's game; do not restart or replace it during live play.
+- **VERIFIED CONTROL RESULT:** graphics run
+  `3ebd80ab-5f0f-489e-97ae-d9e0d780831a` retained 14,348 exact TFT frame
+  intervals across 353.5 seconds: 47.384 weighted FPS, 7.870 FPS 1% low,
+  16.868/34.002/50.492 ms p50/p95/p99, 19.090% jank, 1.429% severe stalls,
+  and 3,820 missed-vsync equivalents.
+- **VERIFIED REJECTION:** the preceding severe run retained 35,424 intervals
+  across 1,355.8 seconds: 26.446 weighted FPS, 2.770 FPS 1% low,
+  16.975/117.088/218.054 ms p50/p95/p99, 34.714% jank, 21.037% severe stalls,
+  and 44,922 missed-vsync equivalents. Control was decisively more usable, so
+  `combat_latency_a` is rejected for normal play. The workloads were not a
+  formal matched A/B pair, so the QoS request alone is not claimed as the cause.
+
+### 2026-09-02 Control and DEV launcher separation
+
+- **LOCKED CONTROL:** `/Applications/TFTMAC.app` remains the protected normal-play
+  app with bundle ID `com.flashls1.tftmac`. Its executable SHA-256 remains
+  `d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2`,
+  and its packaged emulator-host SHA-256 remains
+  `ea028ec1d74cc025638c2a0e5f8c783748803c1b0ba9012962c038251fb3eb63`.
+  The protected app remains directly launchable as rollback. The Desktop icon
+  points to the separate signed Control unlock wrapper and retains the official
+  Control artwork.
+- **VERIFIED DEV INSTALL:** `/Applications/TFTMAC DEV.app` is a separately
+  signed native app with bundle ID `com.flashls1.tftmac.dev` and a distinct
+  generated DEV icon. `/Users/flash/Desktop/TFTMAC DEV.app` points to it.
+- **LOCKED ISOLATION:** DEV selects `advanced_diagnostics`, uses state namespace
+  `advanced_diagnostics`, ADB/console/controller ports `5041/5586/8556`, serial
+  `emulator-5586`, and AVD `TFTMAC_Diagnostic_StockShadow_R1`. Control continues to
+  use its original application-support root, ports `5038/5582/8554`, serial
+  `emulator-5582`, and AVD `TFT_Ultra_Tablet`. The global runtime lease forbids
+  either launcher from starting while the other owns the runtime.
+- **VERIFIED CURRENT SIGNING:** both installed app bundles pass strict deep
+  `codesign` verification with the local `TFTMAC Local Code Signing` identity.
+  The current keychain exposes that identity and the Apple Development identity;
+  `scripts/verify-installed-runtime.command` also passes for Control.
+- **VERIFIED CURRENT:** the stock-shadow DEV runtime physically clones Emulator
+  37.1.11 and the API 36 Control AVD into the diagnostic root. Its sealed receipt
+  state is `STOCK_SHADOW_RUNTIME_IDENTITY_PASS`; the Control AVD tree hash
+  remained unchanged before and after cloning.
+- **VERIFIED CURRENT:** three consecutive stock-shadow DEV launches reached ADB
+  `device`, awake/unlocked Android, authenticated controller, exact native first
+  frame, official TFT package/layer, input/audio receipts, and clean shutdown:
+  `2026-09-02T12-16-42.125Z-c46f...`,
+  `2026-09-02T12-18-11.819Z-1300...`, and
+  `2026-09-02T12-19-13.294Z-3d6d...`.
+- **BOUNDARY:** Control is the dependable playable launcher. DEV stock shadow is
+  launch/play compatible for isolated diagnostics but can never replace Control.
+
 - **VERIFIED CURRENT:** Build 7 live capture
   `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494`
   reached authenticated ADB, a 1920×1080 RGBA first frame, awake/stay-on guest
@@ -512,48 +613,70 @@ campaign, useful for candidate selection but not current M4 runtime performance:
   animation, extreme effects/LOD, blind 50% scale, and blind PSO prewarm.
 - Riot Performance Mode Beta and the combined Home Run A host flags.
 
-## 12. Current experiment: Combat Latency A
+## 12. Retired experiment: Combat Latency A
 
 - **LOCKED TEST SHAPE:** Control remains High/60/OFF and the complete proven
   emulator stack.
-- **CANDIDATE:** changes only the packaged emulator host's requested pre-exec
-  QoS to `user_interactive`; declares Game Mode eligibility.
+- **RETIRED CANDIDATE:** changed only the packaged emulator host's requested
+  pre-exec QoS to `user_interactive`; it is not selectable for current tests.
 - **VERIFIED IMPLEMENTATION:** candidate/configuration hashing, stale-preset
   migration, host QoS receipt parsing, guest power gate, correctness rollback,
   and stable semantic TFT-layer comparison have native tests.
 - **VERIFIED LAUNCH:** Build 7 established the requested QoS at the host
   pre-exec boundary and reached TFT ready with logging active.
-- **UNKNOWN:** comparative combat benefit. One full candidate match is now
-  measured, but no matched valid Control/Combat Latency A pair exists. Never
-  call it faster until a compatible comparison exists.
+- **VERIFIED REJECTION:** the user rejected the gameplay and the measured run
+  was materially worse than the restored Control. It remains historical only.
 
 ## 13. Causal graphics implementation state
 
-- **VERIFIED CURRENT (2026-09-02T02:07:03Z):** Wave B source integration is
+- **VERIFIED CURRENT:** R11 is `FAILED_FIRST_NATIVE_FRAME` historical evidence,
+  not launch-ready authority. Emulator 35.6.3/API 37 cannot govern current DEV.
+- **VERIFIED CURRENT:** exactly three runtime modes remain: `control`,
+  `advanced_diagnostics`, and fail-closed `candidate`. Current DEV uses the
+  `advanced_diagnostics` stock-shadow runtime described above.
+- **VERIFIED SOURCE:** `DevExperimentProfile` seals the profile, one-factor
+  feature override, effective configuration SHA-256, workload-manifest SHA-256,
+  duration, warmup, and correctness requirements. The balanced campaign order
+  is Control / queue-submit-inline / Control / virtual-queue-off / Control /
+  fence-contexts-off / Control.
+- **VERIFIED SOURCE:** the owned ARM64 Vulkan probe has five deterministic
+  one-minute workloads after a 30-second warmup and no network/Riot access.
+- **VERIFIED SOURCE:** the app schema contains all eight causal SQL structures.
+  Swift and C++ define the same 96-byte `PipelineEventV1`; the C++ per-thread
+  ring has a fixed capacity of 256 and strict owned-probe label parsing.
+  Standalone ABI/parser verification passes.
+- **BOUNDARY:** runtime/source hooks below the app and the seven-run campaign are
+  not yet accepted evidence. No internal component is named as root until the
+  label, lineage, loss, observer-overhead, and replication gates pass.
+
+The R9/R10/R11 entries below are retained as **historical failure evidence**.
+They do not override the current stock-shadow DEV authority.
+
+- **VERIFIED HISTORICAL (2026-09-02T02:07:03Z):** Wave B source integration was
   complete under the append-only Wave B v4 correction authority. The default
   mode remains `control`, and `candidate` remains blocked.
 - **VERIFIED HISTORICAL (Wave B source checkpoint):** runtime-mode registry SHA-256 was
   `136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479`.
   Runtime identity, registry/configuration hashes, AVD identity, ADB/console/
   controller ports, and serial are persisted in the exclusive lease contract.
-- **VERIFIED CURRENT:** `scripts/verify-tftmac.command` completed with exit code
+- **VERIFIED HISTORICAL:** `scripts/verify-tftmac.command` completed with exit code
   0, produced an unsigned Release build, and passed all 49 native tests with
   zero failures. The post-verification process audit found no active TFTMAC,
   emulator, or `qemu-system-aarch64` process; no runtime, AVD, installed app, or
   official TFT package was changed or launched by Wave B.
-- **VERIFIED CURRENT (2026-09-02T02:20:37Z):** diagnostic ADB `5041`, console
+- **VERIFIED HISTORICAL (2026-09-02T02:20:37Z):** diagnostic ADB `5041`, console
   `5586`, and controller `8556` passed listener and exclusive-bind checks with
   control stopped. A new R9 diagnostic forwarder was built from the proven
   native `RuntimeHost/main.c` chain, ad-hoc signed, deep/strict verified, and
   sealed under receipt SHA-256
   `3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f`.
   The stale first-load host remains preserved but is not R9 launch authority.
-- **VERIFIED CURRENT:** `advanced_diagnostics` is selectable only through the
+- **VERIFIED HISTORICAL:** the R9 `advanced_diagnostics` variant was selectable only through the
   explicit `TFTMAC_RUNTIME_MODE=advanced_diagnostics` environment request. Its
   R9 registry SHA-256 is
   `798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b`;
   unsigned Release and all 49 native tests pass. Control remains the default.
-- **VERIFIED CURRENT (first-boot attempt 1):** capture
+- **VERIFIED HISTORICAL (R9 first-boot attempt 1):** capture
   `2026-09-02T02-23-48.444Z-9a2df80c-263a-4e10-beaa-8980d095c365`
   failed before QEMU because the diagnostic registry incorrectly used the
   emulator-only R9 install directory as `ANDROID_SDK_ROOT`. The forwarder and
@@ -563,15 +686,145 @@ campaign, useful for candidate selection but not current M4 runtime performance:
   `090fe426402562e227a3a1a6bd6eab9f9572cd48fbe3d467c276d419860caf90`.
   The corrected registry restores the existing dedicated API 37 SDK and ADB at
   `/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK`; source validation and all 49
-  native tests pass after the correction. Loaded-R9 acceptance remains open.
-- **LOCKED NEXT GATE:** guarded diagnostic first boot must prove loaded R9 QEMU
-  and gfxstream identities before TFT launch. Wave C causal-event
-  instrumentation remains closed until diagnostic AVD/runtime acceptance passes.
+  native tests passed after the correction.
+- **VERIFIED HISTORICAL (R9 first-boot attempt 2):** capture
+  `2026-09-02T02-31-04.642Z-c7f52368-7fd7-411d-bbf9-d6dee45eb765`
+  failed before QEMU because Android Emulator 35.6.3 rejects the stock-control
+  `-crash-report-mode` argument. The argument is now gated to Control; it is not
+  sent to the diagnostic runtime.
+- **VERIFIED HISTORICAL (R9 first-boot attempt 3):** capture
+  `2026-09-02T02-33-42.154Z-d39fac1f-393f-409f-b235-5200853db209`
+  loaded the R9 QEMU/gfxstream runtime but crashed in
+  `protozero::MessageArena::DeleteLastMessageInternal` through
+  `perfetto::TrackEvent::Initialize`, `gfxstream::host::InitializeTracing`, and
+  `FrameBuffer::initialize`. Exact symbols place the first R9 blocker in the
+  custom gfxstream Perfetto initialization path, not in Riot, the AVD,
+  MoltenVK, Metal, ADB authorization, CPU, RAM, or audio.
+- **VERIFIED HISTORICAL (R10 first boot):** capture
+  `2026-09-02T03-00-38.256Z-b95cb5a2-59c6-4855-859e-846bc1deca8a`
+  proved the successor passed the R9 initialization crash, loaded API 37,
+  MoltenVK, selected the Apple M4 Vulkan device, enabled
+  `VK_EXT_robustness2`, and initialized the OpenGL ES Translator adapter. It
+  then crashed in `perfetto::protos::gen::TrackDescriptor::SerializeAsString`
+  from `gfxstream::SyncThread::doSyncThreadCmd`,
+  `SyncThread::initSyncEGLContext`, and `FrameBuffer::initialize`. This proves
+  default-disabling `InitializeTracing` was insufficient because unguarded
+  gfxstream trace-name macros still entered Perfetto.
+- **VERIFIED HISTORICAL (R10 minidump adjudication):** the retained macOS 26.6.2
+  arm64 minidump reports uptime `3 seconds`, `EXC_BAD_ACCESS /
+  KERN_INVALID_ADDRESS` at address `0x8`, and a crashed instruction in
+  `libandroid-emu-tracing.dylib + 0x749c`. Its stack carries
+  `track_event`, `gfxstream.default`, and
+  `libgfxstream_backend.dylib + 0x314278`; its gfxstream Mach-O UUID is
+  `4C4C4449-5555-3144-A1FC-F6DFE0021481`, and its annotation reports
+  `35.6.3-standalone-0`. This is the already-classified R10 Perfetto
+  track-registration null dereference, not an R11 crash and not evidence
+  against TFT, Riot login, the API 37 image, MoltenVK, Metal, CPU, RAM, audio,
+  or the stock 37.1.11 runtime.
+- **VERIFIED HISTORICAL (R11 sealed successor):** R11 kept tracing compiled but
+  places the gfxstream event, instant, and name-track macros behind an explicit
+  runtime opt-in. Sealed build manifest SHA-256 is
+  `3fd3e18aab970728fcb94efded84952fbde0e84bce86d0ef3592184eaa1170fa`;
+  gfxstream SHA-256 is
+  `a770f67660c8d88f5a853b4705aefa0210ef37670a9a8df1b22b702b1f79584b`;
+  runtime-configuration SHA-256 is
+  `c910e13e1096da4d3ee162ed82d5658d32aee4b29d9c6af30d19447c03784560`.
+  The fresh stopped `TFTMAC_Diagnostic_API37_R11` clone receipt SHA-256 is
+  `e7418f81a37ad3d8169a9c1818e904f1678722e3879fcf7ee610c3257b80d419`.
+- **VERIFIED HISTORICAL (R11 source/runtime gate):** registry SHA-256 is
+  `b2a8080248900c27efdaac7fe3825ccb919188d43072af7a870bfc49c3e0e96f`.
+  Diagnostic preflight is `READY` on isolated ports `5041/5586/8556`, and the
+  official unsigned Release verifier passed all 49 native tests with zero
+  failures. Control remains the default and candidate remains fail-closed.
+- **VERIFIED HISTORICAL (R11 live attempt 1):** capture
+  `2026-09-02T03-18-30.572Z-f4a767a5-b385-4385-bcff-7873c9cffdf9`
+  reached controller discovery and `LOADED_RUNTIME_IDENTITY_PASS` for exact R11
+  QEMU and gfxstream hashes. It did not crash. TFTMAC then performed an owned
+  shutdown because `runController` still hard-coded the Control emulator version
+  `37.1.11` and rejected the valid R11 status `35.6.3.0
+  (35.6.3-standalone-0)`. The check is now mode-aware and consumes the sealed
+  `expected_emulator_version_contains` authority (`35.6.3` for R11); the
+  regression assertion is included in the existing 49-test suite.
+- **VERIFIED HISTORICAL (R11 corrected live attempt):** capture
+  `2026-09-02T03-27-32.017Z-80c1dff8-30cf-4f3d-984f-2a3c37863de6`
+  passed controller authentication and exact R11 loaded-runtime identity. The
+  R9/R10 Perfetto crash did not recur. ADB changed from `offline` to
+  `unauthorized` using the logged-in user's default key and no
+  `ADB_VENDOR_KEYS`; no native first frame arrived before the bounded 120-second
+  gate. The emulator explicitly reported that the API 37 guest requires a host
+  supporting `QemuCameraSensorOrientation` and `VulkanVirtualQueue`. The owned
+  shutdown restored the diagnostic AVD configuration.
+- **VERIFIED HISTORICAL (R11 wake-control retry):** capture
+  `2026-09-02T03-33-05.318Z-d463ced7-5843-4a11-8c95-c9757c7ee032`
+  repeated exact R11 identity/controller passes and sent `Power` immediately
+  after authentication. It again produced no first frame and ADB remained
+  unauthorized. This rejects a wake-command timing explanation; repeating the
+  same R11 runtime is not an eligible next experiment.
+- **VERIFIED HISTORICAL (R11 ADB provisioning and isolated DEV launch):** the
+  existing logged-in-user ADB identity was approved once inside the isolated
+  DEV AVD; no `ADB_VENDOR_KEYS` injection or authorization bypass remains in
+  the runtime profile. Final DEV capture
+  `2026-09-02T07-46-40.998Z-8260f517-a8a4-4d5e-918f-723b81de32f4`
+  passed ownership preflight, exact R11 loaded-runtime identity, and ADB state
+  `device`. Automatic session/database logging started in the isolated DEV
+  application-support namespace.
+- **VERIFIED HISTORICAL (R11 first-frame failure after ADB repair):** that same
+  capture never emitted `FIRST_NATIVE_FRAME` and recorded `RUNTIME_FAILED` at
+  `2026-09-02T07:48:46Z` with `Timed out waiting for Android to post its first
+  native frame.` The 120-second gate therefore proves the launcher and ADB
+  authorization are no longer the blocking boundary; the custom R11/API 37
+  rendering path still fails before native frame delivery. DEV was shut down
+  cleanly after preserving this evidence.
+- **VERIFIED HISTORICAL (hybrid compatibility probe):** substituting the R11
+  gfxstream backend into an isolated APFS clone of the stock 37.1.11 host failed
+  to load because stock `libemugl_common.dylib` does not export the actively
+  required `g_emugl_dma_get_host_addr` symbol. Substituting the paired R11
+  `libemugl_common.dylib` passed that loader boundary but the stock QEMU then
+  terminated with `SIGSEGV` during gfxstream renderer initialization (minidump
+  `21ab1231-eb10-42b6-a896-35f4e3c31511.dmp`). A null-symbol shim would corrupt
+  active DMA call sites. Further binary-library swapping is rejected.
+- **VERIFIED SOURCE BOUNDARY:** Google's published 37.1.11 stable release notes
+  state that the release added Vulkan extensions required by API 37 system
+  images. The public QEMU history exposes 37.1.8 as the last 37.1 canary version
+  bump but does not expose a `37.1.11` bump commit or a 37.x release branch.
+  Therefore an exact source identity for build `15917651` is currently
+  `UNKNOWN`; no branch head or 37.1.8 revision may be represented as that exact
+  source.
+- **OPEN LIVE GATE:** R11 proved crash removal and exact loaded identity, but it
+  did not pass native first-frame or API 37 AVD acceptance. The next eligible
+  runtime is one built from a coherent modern `emu-main-dev` manifest graph,
+  not another 35.6.3 retry or hybrid library swap. Manual device PIN, Riot
+  authentication, and gameplay remain user-operated and are not automated.
+
+### 2026-09-02 clean-stop continuation facts
+
+- **VERIFIED SOURCE:** the modern manifest is pinned to
+  `2692acc620f6563b21995540656674faeb536cdc` on `emu-main-dev`; preparation and
+  uninstrumented Release build scripts enforce four-job parallelism and refuse
+  to run while Control or DEV is active.
+- **VERIFIED FAILURE AND FIX:** the first sync target was the case-insensitive
+  external APFS volume and failed because Android requires distinct `BUILD` and
+  `build/` paths. `scripts/prepare-causal-source-runtime.command` now creates a
+  180-GiB sparse, case-sensitive APFS image and validates case sensitivity
+  before syncing. The failed checkout is historical partial state and is not
+  source authority.
+- **PAUSED, NOT FAILED:** the corrected case-sensitive sync was deliberately
+  interrupted for this clean handoff. No source-lock receipt or uninstrumented
+  causal-stock build receipt exists yet. The preparation script is resumable.
+- **OPEN LOCAL SETUP:** Keychain service
+  `com.flashls1.tftmac.android-unlock.v2`, account `android-user-0`, was not
+  populated before this stop. The PIN is never in source, arguments, logs, SQL,
+  or this repository. `scripts/setup-android-unlock.command` is the only setup
+  entry point.
+- **NOT RUN:** the seven-run owned Vulkan-probe campaign has no accepted result
+  yet. No one-factor candidate is promoted and no source component has been
+  named as root.
 
 ## 14. Explicit unknowns and open acceptance
 
-1. Combat Latency A's effect on continuous whole-run FPS, 1% low, p95/p99,
-   frame-budget misses, and visible stutter versus Control.
+1. The causal magnitude of Combat Latency A's QoS request under a formally
+   workload-matched A/B. It is already rejected for normal play because its
+   observed severe run was decisively worse and provided no usable benefit.
 2. Whether QEMU decoder/render/submission workers actually receive beneficial
    scheduling after exec.
 3. The first divergent boundary in the run's worst sustained under-60 periods.

@@ -1,9 +1,9 @@
 # TFTMAC Project Record
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `codex/native-tftmac-2.0.0`  
-**Current installed release:** TFTMAC 2.3.0 build 8, installed, live-launched, and automatically logging; release hashes match, while the timestamped current-host signing audit is blocked by the missing local identity
-**Project record through:** 2026-08-31 America/Chicago
+**Current development line:** `clara/implement-wave-b-runtime-mode-selection--215ec5a3`
+**Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control hashes match
+**Project record through:** 2026-09-02 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
 what TFTMAC is, why the architecture changed, what has been built, what the
@@ -44,6 +44,25 @@ scenes.
 Runtime files live on the external volume at
 `/Volumes/MAC MINI M4/TFTMAC/Runtime`. Captures and the normalized laboratory
 stay under `~/Library/Application Support/TFTMAC`.
+
+The installed products are intentionally separate:
+
+```text
+/Applications/TFTMAC.app
+  -> protected playable Control
+  -> bundle com.flashls1.tftmac
+  -> TFT_Ultra_Tablet / ports 5038, 5582, 8554
+
+/Applications/TFTMAC DEV.app
+  -> isolated engineering runtime
+  -> bundle com.flashls1.tftmac.dev
+  -> TFTMAC_Diagnostic_StockShadow_R1 / ports 5041, 5586, 8556
+```
+
+The Desktop contains one launcher symlink for each installed product. The global
+runtime lease prevents them from running concurrently. DEV has separate state,
+captures, AVD, ports, bundle identity, launch profile, and generated icon; it
+does not mutate or replace Control.
 
 The shipping display path is raw authenticated 1920×1080 RGBA from the emulator
 controller into a bounded native Metal presentation ring. MMAP/zero-copy remains
@@ -400,10 +419,19 @@ Direct evidence from that capture:
 - clock p95 RTT was 86.757 ms, so this match cannot assign the first upstream
   cause or serve as a formal matched candidate-vs-Control decision.
 
-The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the installed
-`/Applications/TFTMAC.app`. Runtime process state is intentionally not frozen
-as a durable fact; documentation and Git publication do not restart the app or
-its emulator.
+The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the signed
+`/Applications/TFTMAC Control Launcher.app`, which launches the unchanged
+`/Applications/TFTMAC.app` and unlocks only `5038/emulator-5582`. Direct launch
+of the protected app remains the rollback. Runtime process state is not frozen
+as a durable fact.
+
+The Desktop launcher `/Users/flash/Desktop/TFTMAC DEV.app` points to
+`/Applications/TFTMAC DEV.app`. Its wrapper selects the isolated
+`advanced_diagnostics` profile. R11 is retained only as historical
+`FAILED_FIRST_NATIVE_FRAME` evidence. The current stock-shadow variant clones
+the proven Emulator 37.1.11/API 36 baseline and passed three consecutive
+controller/ADB/unlock/native-frame/package/layer/input/audio launches. Control
+remains the dependable game launcher and is never replaced by DEV.
 
 What the Build 7 run does **not** prove: a Combat Latency A FPS win. It is one
 historical candidate baseline, not a compatible A/B pair.
@@ -412,28 +440,34 @@ The current Build 8 full-session authority is capture
 `2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200`: a 42m27s
 automatic graphics run with 144,364 exact intervals, 99.629% exact-layer
 coverage, 189 incidents, 56.98 weighted FPS, 21.49 FPS 1% low, 21.510 ms p95,
-and 33.434 ms p99. It observed `combat_latency_a` with High/60/Performance Mode
-OFF; that is an observed active preset, not a performance promotion. The run
+and 33.434 ms p99. It historically observed `combat_latency_a` with
+High/60/Performance Mode OFF; the current selected profile is `control`, and
+the historical observation is not a performance promotion. The run
 proves degradation and continuous logging but leaves internal root attribution
 `UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE`.
 
-The same 2026-08-31 host audit confirmed that the installed main and emulator-
+The timestamped 2026-08-31 host audit confirmed that the installed main and emulator-
 host hashes match the historical Build 8 release receipt. It also found zero
 valid local signing identities and a current `CSSMERR_TP_NOT_TRUSTED` result.
-Historical signing acceptance and current-host trust are separate facts.
+Historical signing acceptance and timestamped host trust are separate facts.
+A 2026-09-02 recheck after restoring the local identity found two valid signing
+identities and deep/strict verification PASS for both Control and DEV.
 
 ## 10. Current repository state and authority map
 
 Current repository observation:
 
 ```text
-branch: codex/native-tftmac-2.0.0
-HEAD:   2889cf00b54da28ff62e81fd14a6ae892f37d7cf (Build 8)
+branch: clara/implement-wave-b-runtime-mode-selection--215ec5a3
+clean handoff HEAD: the branch tip containing this receipt
+published upstream HEAD: must equal the clean handoff HEAD
 remote: github -> https://github.com/flashls1/TFTMAC.git
 ```
 
-The Build 8 line was committed cleanly. Branch/worktree state is mutable and
-must be re-observed before it is used as a handoff fact.
+The Build 8 line is the playable Control authority. The clean-handoff branch tip
+containing this section owns the launcher/profile, stock-shadow, owned-probe,
+campaign, and partial causal-logger changes. Re-observe the branch tip and live
+process state before acting; no document can freeze mutable process state.
 
 Current authority roles:
 
@@ -491,9 +525,10 @@ records must not override the current SSOT.
    receipt completeness, and conservative boundary views using `benchmark.md`.
    CPU/RAM/audio remain correctness context only.
 5. The latest automatic run confirms an unresolved internal causal gap below
-   the SurfaceFlinger authority. Implement the planned source-level work-ID
-   instrumentation only in the isolated
-   `tftmac-runtime` diagnostic stack at `c8aa26e`; do not replace Build 8.
+   the SurfaceFlinger authority. Resume the pinned modern `emu-main-dev`
+   preparation, prove the uninstrumented API 36 stock-shadow parity build, then
+   integrate source-level work-ID hooks only in that isolated runtime. Do not
+   replace Build 8.
 6. Use that evidence to choose an owned code target. Current TFT is direct
    Unreal Vulkan; ANGLE is second-line only if a run receipt proves it is active.
 7. Preserve the recurrent Riot WebView ANR as a separate login reliability issue,
@@ -506,3 +541,40 @@ The native app is launchable and playable. The remaining project objective is
 not another wrapper or another generic FPS counter; it is a measured improvement
 that holds at least 60 useful FPS across the complete run without destroying
 correctness or the official package boundary.
+
+## 13. Clean-stop continuation receipt — 2026-09-02T14:07:33Z
+
+The branch tip containing this receipt is the continuation authority. At the
+stop boundary:
+
+- Control was running through `/Applications/TFTMAC Control Launcher.app` on
+  `5038/emulator-5582`, capture
+  `2026-09-02T14-05-44.327Z-48a72032-8f61-4639-8912-418001248ad5`. It was not
+  stopped, restarted, or modified. A resuming agent must re-observe live state
+  and must not disturb Control if it is still active.
+- No DEV, diagnostic emulator, experiment runner, source-sync, or source-build
+  process remained active. Orphaned sync children were terminated explicitly.
+- Stock-shadow DEV has three consecutive launch passes. The owned Vulkan probe,
+  sealed experiment profiles, campaign/analyzer, Control/DEV launch separation,
+  secure-Keychain code path, causal SQL schema, Swift/C++ 96-byte event ABI,
+  fixed rings, segment hashing, and deterministic finding states are in source.
+- The one-time v2 Android-unlock Keychain item is not configured. When Control
+  has exited, run `scripts/setup-android-unlock.command` and enter the PIN only
+  in the local secure prompt. Never pass it to a shell, source file, log, or SQL.
+- The seven-run campaign did not complete and has no winner. Do not infer a
+  candidate from setup attempts.
+- The first Android source sync failed on the case-insensitive external volume.
+  The corrected script creates `/Volumes/TFTMAC Causal Source` from a sparse
+  case-sensitive APFS image. Its sync was intentionally paused for this handoff;
+  rerunning `scripts/prepare-causal-source-runtime.command` resumes it.
+- After a `CAUSAL_SOURCE_LOCK_PASS` receipt, run
+  `scripts/build-causal-stock-runtime.command` and prove API 36 first-frame and
+  owned-probe parity before adding any source hooks. The actual modern
+  gfxstream/MoltenVK hook integration and custom optimization patch remain
+  incomplete.
+
+The shortest valid resume order is: re-observe Control; wait for it to exit;
+complete Keychain setup; finish the seven-run stock-shadow probe campaign;
+resume the pinned source sync; build/prove uninstrumented parity; add hooks;
+then select at most one evidence-owned patch. Riot login and gameplay remain
+manual.

@@ -74,4 +74,4 @@ if [[ -f "$LEASE" ]]; then
   fi
 fi
 
-print "TFTMAC diagnostic runtime preflight: READY (R9 identities; ports 5041/5586/8556; control stopped)"
+print "TFTMAC diagnostic runtime preflight: READY (stock-shadow identities; ports 5041/5586/8556; control stopped)"

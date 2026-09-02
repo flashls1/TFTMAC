@@ -25,14 +25,28 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             )
             activeProfile = runtimeConfiguration.profile
             activeApplicationSupport = runtimeConfiguration.applicationSupport
+            let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC"
+            )
+            if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
+                controller.emulatorView.setStatus("Automatic Android unlock is stored securely.", isError: false)
+                NSApp.terminate(nil)
+                return
+            }
             let runtime = TFTMACRuntimeController(
                 runtimeConfiguration: runtimeConfiguration,
+                guestUnlockSecret: unlockSecret,
                 mailbox: mailbox,
                 status: { [weak controller] text, isError in
                     controller?.emulatorView.setStatus(text, isError: isError)
                 },
                 gameFrame: { [weak controller] window in
                     controller?.emulatorView.setGameFrameWindow(window)
+                },
+                completed: {
+                    if runtimeConfiguration.workload == .ownedVulkanProbe {
+                        NSApp.terminate(nil)
+                    }
                 }
             )
             runtimeController = runtime

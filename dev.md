@@ -1,8 +1,8 @@
 # TFTMAC Developer Record
 
-**Development baseline:** TFTMAC 2.3.0 build 8 installed and live-verified with automatic PID/layer logging and complete stack receipts; historical release hashes match, while current-host signing trust is blocked by the absent local identity
+**Development baseline:** untouched TFTMAC 2.3.0 build 8 Control plus a playable isolated Emulator 37.1.11/API 36 stock-shadow DEV runtime; three consecutive DEV native-frame launches passed
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
-**Active candidate:** `combat_latency_a`  
+**Active campaign:** deterministic owned Vulkan probe screening; `combat_latency_a`, Home Run A, and Performance Mode Beta are retired
 **Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
 
 This is the engineering working file. It contains code ownership, measurement
@@ -110,9 +110,43 @@ QEMU child-thread inheritance=NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE
 
 The candidate configuration SHA-256 is
 `05039d1fd0987f46fc7da8de5f483d8c7ffaf8f39bd1eaecdd1aee11603bbb07`.
-It has passed launch/readiness and was the active observed preset in the latest
-Build 8 automatic run. That observation is not a performance promotion or a
-controlled comparison.
+It passed launch/readiness, but the 2026-09-02 severe run delivered 26.446
+weighted FPS, 2.770 FPS 1% low, 117.088 ms p95, and 21.037% severe intervals.
+The immediately restored Control run delivered 47.384 weighted FPS, 7.870 FPS
+1% low, 34.002 ms p95, and 1.429% severe intervals. The workloads were not
+formally matched, so QoS alone is not assigned causality; the candidate is still
+rejected because it produced no usable normal-play benefit.
+
+### Separate Control and DEV launch products
+
+```text
+Desktop TFTMAC.app
+  -> /Applications/TFTMAC Control Launcher.app
+  -> unchanged /Applications/TFTMAC.app
+  -> com.flashls1.tftmac
+  -> control / TFT_Ultra_Tablet / 5038 + 5582 + 8554
+
+Desktop TFTMAC DEV.app
+  -> /Applications/TFTMAC DEV.app
+  -> com.flashls1.tftmac.dev
+  -> advanced_diagnostics / TFTMAC_Diagnostic_StockShadow_R1 / 5041 + 5586 + 8556
+```
+
+`DevLauncher/main.c` is the minimal mode-selecting wrapper. It exports
+`TFTMAC_RUNTIME_MODE=advanced_diagnostics` and execs the separately packaged
+`TFTMACDEVCore`. `scripts/build-dev-launcher.command` builds/signs the isolated
+bundle and packages its generated DEV artwork. `scripts/install-desktop-launchers.command`
+verifies the protected Control hashes before and after installing DEV, the
+signed Control unlock wrapper, and the two Desktop symlinks. The PIN remains in
+Keychain and is sent to Control only through an interactive ADB shell stdin
+channel pinned to `5038/emulator-5582`, never in process arguments. The shared
+global runtime lease is the collision guard.
+
+The DEV AVD accepts the logged-in user's normal ADB key and reaches `device`
+without `ADB_VENDOR_KEYS` injection. R11/API 37 remains historical
+failed-first-frame evidence. The current physical stock-shadow clone passed
+three consecutive native-frame launches and is the only DEV baseline permitted
+for screening. It remains an engineering launcher and cannot replace Control.
 
 ## 4. Graphics pipeline and observability
 
@@ -454,15 +488,22 @@ queue depth at each owned handoff
 static source-site ID mapped to commit/blob/function/line in a sealed manifest
 ```
 
-**Status:** **PLANNED, GATED NEXT LAYER.** The current automatic graphics logger
+**Status:** **PARTIALLY IMPLEMENTED, NOT YET LIVE-ACCEPTED.** The current automatic graphics logger
 adds `graphics_runs`, stack-receipt SHA, per-window joins, and conservative
 `TFT`/`PIPE` views; the presenter remains hidden correctness context. Those do
 not create a shared work ID.
 
+Swift now provides the exact finding enum/analyzer, fixed 96-byte ABI, 256-event
+ring model, segment seals, and eight SQL structures. The matching C++ ABI,
+fixed per-thread ring, 60-second segment format, and strict
+`TFTMAC/<profile>/<workload>/<frame-id>` parser compile and pass their standalone
+test. The remaining decisive gate is integration and parity of the loadable
+gfxstream/MoltenVK hooks in the isolated modern source runtime.
+
 **Gate:** the 42-minute Build 8 automatic run established an unresolved internal
-causal gap below the SurfaceFlinger authority. Implement only in isolated
-source-built `tftmac-runtime` at
-commit `c8aa26e`, never by replacing normal-play Build 8. Clock mapping,
+causal gap below the SurfaceFlinger authority. Implement only in the isolated
+modern `emu-main-dev` manifest pinned at
+`2692acc620f6563b21995540656674faeb536cdc`, never by replacing normal-play Build 8. Clock mapping,
 source/binary manifest, and overwrite counts are mandatory. Do not log shaders,
 frame contents, or credentials.
 
@@ -601,9 +642,9 @@ or weaken AVD rollback merely to report a smaller startup number.
    by ID, size, hash, and normalized metrics only; keep the raw database private.
 2. Keep stock Build 8 as normal-play authority and keep the final Mac presenter
    out of displayed/ranked causal views.
-3. Implement H2's work-ID/source-site instrumentation only in isolated
-   `tftmac-runtime@c8aa26e`, with parity, clock, loss, stream-seal, and observer-
-   overhead gates.
+3. Complete the already-started H2 work-ID/source-site integration only in the
+   isolated modern `emu-main-dev` source runtime, with parity, clock, loss,
+   stream-seal, and observer-overhead gates.
 4. Have the diagnostic run identify the first owned divergent boundary or name
    the exact missing/unowned boundary as `UNKNOWN`.
 5. Use that evidence to choose exactly one owned performance change from H3,
@@ -658,9 +699,10 @@ runtime: /Volumes/MAC MINI M4/TFTMAC/Runtime
 Verification claims must be scoped:
 
 - unit tests prove parsers, configuration, comparison logic, and local contracts;
-- source verification proves the unsigned Release build and 43 native tests;
-- installed-runtime verification proves current local hashes/runtime/signing and
-  is presently expected to fail on the missing local signing identity;
+- source verification proves the unsigned Release build and the current 54-test
+  native suite;
+- installed-runtime verification proves current local hashes/runtime/signing;
+  the 2026-09-02 post-repair check passed for both installed launchers;
 - launch receipts prove runtime readiness, not combat gain;
 - SQL combat comparison proves measured change, not internal cause when clock or
   observer gates fail;
@@ -678,11 +720,13 @@ session can seal and restore its AVD transaction.
 
 ## 14. Current gaps to close
 
+- complete the owned-probe campaign on the accepted stock-shadow DEV baseline;
+- build and parity-check the pinned modern uninstrumented source runtime before
+  enabling causal hooks;
 - first-boundary frame correlation during the worst sustained under-60 period;
 - source-site receipts and complete work-ID joins across owned diagnostic stages;
 - recurrent Riot WebView/IME reliability;
 - audible-sound user acceptance;
-- repair of the local signing identity for current-host trust verification;
 - public signing/notarization if distribution beyond this Mac becomes a goal;
 - source-level gfxstream/MoltenVK performance changes only after the diagnostic
   logger names the relevant owned boundary;

@@ -6,7 +6,10 @@ import Foundation
 /// and recorded by the launch transaction.
 enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     case control
-    case combatLatencyA = "combat_latency_a"
+    case queueSubmitInline = "queue_submit_inline"
+    case virtualQueueOff = "virtual_queue_off"
+    case fenceContextsOff = "fence_contexts_off"
+    case retiredCombatLatencyA = "combat_latency_a"
     case retiredHomeRunA = "home_run_a"
 
     private static let preferenceKey = "runtime.experimentPreset"
@@ -19,12 +22,15 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
         "AsyncComposeSupport",
         "VirtioGpuFenceContexts"
     ]
-    static let selectableCases: [Self] = [.control, .combatLatencyA]
+    static let selectableCases: [Self] = [.control]
 
     var displayName: String {
         switch self {
         case .control: "Control (Proven Baseline)"
-        case .combatLatencyA: "Combat Latency A"
+        case .queueSubmitInline: "DEV — Queue Submit Inline"
+        case .virtualQueueOff: "DEV — Virtual Queue Off"
+        case .fenceContextsOff: "DEV — Fence Contexts Off"
+        case .retiredCombatLatencyA: "Retired — Combat Latency A"
         case .retiredHomeRunA: "Retired — Performance Mode Beta"
         }
     }
@@ -33,8 +39,14 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
         switch self {
         case .control:
             "Uses High / 60 FPS / Performance Mode OFF and the proven emulator settings."
-        case .combatLatencyA:
-            "Keeps the complete Control graphics stack and requests user-interactive macOS scheduling for the emulator launch."
+        case .queueSubmitInline:
+            "DEV runner only: disables VulkanQueueSubmitWithCommands and changes nothing else."
+        case .virtualQueueOff:
+            "DEV runner only: disables VulkanVirtualQueue and changes nothing else."
+        case .fenceContextsOff:
+            "DEV runner only: disables VirtioGpuFenceContexts and changes nothing else."
+        case .retiredCombatLatencyA:
+            "Historical receipt only. The host-QoS experiment is retired and cannot be selected."
         case .retiredHomeRunA:
             "Historical receipt only. Riot Performance Mode Beta is rejected and cannot be selected for a new launch."
         }
@@ -45,16 +57,22 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     }
 
     var isActiveCandidate: Bool {
-        self == .combatLatencyA
+        switch self {
+        case .queueSubmitInline, .virtualQueueOff, .fenceContextsOff: true
+        case .control, .retiredCombatLatencyA, .retiredHomeRunA: false
+        }
     }
 
     var requestsHostLatencyQoS: Bool {
-        self == .combatLatencyA
+        self == .retiredCombatLatencyA
     }
 
     var emulatorFeatureAdditions: [String] {
         switch self {
-        case .control, .combatLatencyA: []
+        case .control, .retiredCombatLatencyA: []
+        case .queueSubmitInline: ["-VulkanQueueSubmitWithCommands"]
+        case .virtualQueueOff: ["-VulkanVirtualQueue"]
+        case .fenceContextsOff: ["-VirtioGpuFenceContexts"]
         case .retiredHomeRunA: ["NativeTextureDecompression", "NoDelayCloseColorBuffer"]
         }
     }
@@ -62,7 +80,11 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     func effectiveEmulatorFeatures(
         baseline: [String] = RuntimeExperimentPreset.baselineEmulatorFeatures
     ) -> [String] {
-        baseline + emulatorFeatureAdditions.filter { !baseline.contains($0) }
+        let disabledNames = Set(emulatorFeatureAdditions.compactMap { feature in
+            feature.hasPrefix("-") ? String(feature.dropFirst()) : nil
+        })
+        return baseline.filter { !disabledNames.contains($0) }
+            + emulatorFeatureAdditions.filter { !baseline.contains($0) }
     }
 
     func configurationReceipt(
@@ -99,6 +121,83 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
 struct RuntimeExperimentConfigurationReceipt: Sendable, Equatable {
     let canonicalJSON: String
     let sha256: String
+}
+
+enum TFTMACRuntimeWorkload: String, Codable, Sendable {
+    case officialTFT = "official_tft"
+    case ownedVulkanProbe = "owned_vulkan_probe"
+
+    static let environmentKey = "TFTMAC_DEV_WORKLOAD"
+
+    static func load(
+        mode: TFTMACRuntimeMode,
+        environment: [String: String]
+    ) throws -> Self {
+        guard let requested = environment[environmentKey], !requested.isEmpty else { return .officialTFT }
+        guard mode == .advancedDiagnostics else {
+            throw TFTMACRuntimeModeError(message: "A DEV workload cannot be selected for the Control runtime.")
+        }
+        guard let workload = Self(rawValue: requested) else {
+            throw TFTMACRuntimeModeError(message: "Unknown DEV workload \(requested).")
+        }
+        return workload
+    }
+}
+
+struct DevExperimentProfile: Sendable, Equatable {
+    static let environmentKey = "TFTMAC_DEV_EXPERIMENT_PROFILE"
+    static let durationSeconds = 330
+    static let warmupSeconds = 30
+    static let baseRuntimeVariant = "stock_shadow"
+    static let correctnessRequirements = [
+        "image",
+        "input",
+        "audio",
+        "crash",
+        "leak",
+        "cleanup",
+        "event_loss"
+    ]
+
+    let id: RuntimeExperimentPreset
+    let baseRuntimeVariant: String
+    let emulatorFeatureOverrides: [String]
+    let effectiveConfigurationSHA256: String
+    let workloadManifestSHA256: String
+    let durationSeconds: Int
+    let warmupSeconds: Int
+    let correctnessRequirements: [String]
+
+    static func load(
+        mode: TFTMACRuntimeMode,
+        environment: [String: String],
+        baseProfile: TFTMACRuntimeProfile,
+        bundle: Bundle
+    ) throws -> Self? {
+        guard let raw = environment[environmentKey], !raw.isEmpty else { return nil }
+        guard mode == .advancedDiagnostics else {
+            throw TFTMACRuntimeModeError(message: "A DEV experiment profile cannot be selected for Control.")
+        }
+        guard let id = RuntimeExperimentPreset(rawValue: raw),
+              [.control, .queueSubmitInline, .virtualQueueOff, .fenceContextsOff].contains(id) else {
+            throw TFTMACRuntimeModeError(message: "Unknown or retired DEV experiment profile \(raw).")
+        }
+        guard let manifestURL = bundle.url(forResource: "workload-manifest", withExtension: "json"),
+              let manifestData = try? Data(contentsOf: manifestURL) else {
+            throw TFTMACRuntimeModeError(message: "TFTMAC DEV is missing its sealed Vulkan workload manifest.")
+        }
+        let selectedProfile = baseProfile.with(experimentPreset: id)
+        return Self(
+            id: id,
+            baseRuntimeVariant: baseRuntimeVariant,
+            emulatorFeatureOverrides: id.emulatorFeatureAdditions,
+            effectiveConfigurationSHA256: selectedProfile.experimentConfigurationReceipt.sha256,
+            workloadManifestSHA256: SHA256.hash(data: manifestData).map { String(format: "%02x", $0) }.joined(),
+            durationSeconds: durationSeconds,
+            warmupSeconds: warmupSeconds,
+            correctnessRequirements: correctnessRequirements
+        )
+    }
 }
 
 struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {

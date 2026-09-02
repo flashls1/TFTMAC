@@ -280,7 +280,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b"
+    static let expectedRegistrySha256 = "f92cfc78923814d8eb3d8f6f550a4763ba918fe5e1c20088e2863d89ce58eafe"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String
@@ -423,9 +423,10 @@ struct TFTMACRuntimeModeRegistry: Sendable {
         let diagnostics = try required(.advancedDiagnostics, from: document)
         guard diagnostics.launchState == .enabled,
               diagnostics.controllerPort == 8556,
-              diagnostics.sdkRoot == "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK",
-              diagnostics.adbPath == "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb",
-              diagnostics.avdName == "TFTMAC_Diagnostic_API37_R9",
+              diagnostics.runtimeRoot == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
+              diagnostics.sdkRoot == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK",
+              diagnostics.adbPath == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb",
+              diagnostics.avdName == "TFTMAC_Diagnostic_StockShadow_R1",
               diagnostics.adbServerPort == 5041,
               diagnostics.consolePort == 5586,
               diagnostics.serial == "emulator-5586",
@@ -436,7 +437,7 @@ struct TFTMACRuntimeModeRegistry: Sendable {
               diagnostics.requiresControlStopped,
               diagnostics.rollbackTarget == .control else {
             throw TFTMACRuntimeModeError(
-                message: "Advanced diagnostics no longer matches its isolated receipted R9 authority."
+                message: "Advanced diagnostics no longer matches its isolated stock-shadow authority."
             )
         }
 
