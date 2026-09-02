@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const registryPath = 'ssot/runtime-modes.json';
-const expectedRegistrySha = '6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d';
+const expectedRegistrySha = '798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b';
 const expectedPortReceiptSha = '3536b1d54a0643bc3fcbb9dbff01be2402ca9c45d2100e220c2f857e65a129cd';
 const expectedHostReceiptSha = '3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f';
 
@@ -67,6 +67,8 @@ assert(control.avd_name === 'TFT_Ultra_Tablet' && control.serial === 'emulator-5
 
 const diagnostics = registry.modes.advanced_diagnostics;
 assert(diagnostics.launch_state === 'enabled', 'advanced diagnostics is not enabled');
+assert(diagnostics.sdk_root === '/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK', 'advanced diagnostic SDK root drifted');
+assert(diagnostics.adb_path === '/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb', 'advanced diagnostic ADB path drifted');
 assert(diagnostics.requires_control_stopped === true && diagnostics.rollback_target === 'control', 'diagnostic isolation/rollback drifted');
 assert(diagnostics.avd_name === 'TFTMAC_Diagnostic_API37_R9' && diagnostics.serial === 'emulator-5586', 'diagnostic AVD identity drifted');
 assert(diagnostics.adb_server_port === 5041 && diagnostics.console_port === 5586 && diagnostics.controller_port === 8556, 'diagnostic port allocation drifted');

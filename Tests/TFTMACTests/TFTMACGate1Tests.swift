@@ -297,6 +297,8 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(diagnostics.definition.consolePort, 5586)
         XCTAssertEqual(diagnostics.definition.controllerPort, 8556)
         XCTAssertEqual(diagnostics.definition.serial, "emulator-5586")
+        XCTAssertEqual(diagnostics.definition.sdkRoot, "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK")
+        XCTAssertEqual(diagnostics.definition.adbPath, "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb")
         XCTAssertTrue(diagnostics.definition.requiresControlStopped)
         for requested in ["candidate", "unknown"] {
             XCTAssertThrowsError(try registry.selection(environment: [

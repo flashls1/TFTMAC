@@ -3,7 +3,7 @@
   "default_mode": "control",
   "modes": {
     "advanced_diagnostics": {
-      "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/platform-tools/adb",
+      "adb_path": "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb",
       "adb_server_port": 5041,
       "allowed_purpose": "ISOLATED_SOURCE_INSTRUMENTATION_AND_ELIGIBILITY",
       "application_build": "8",
@@ -22,7 +22,7 @@
       "avd_ini_sha256": "30d4ed7ebc20fb3415461fa48f6d91654955e04825de84176bd21a4adad9b98d",
       "avd_name": "TFTMAC_Diagnostic_API37_R9",
       "comparability_class": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
-      "configuration_sha256": "08ced04cb1cd2e6ecf2880c66c5f6e45e3af64449d265d8c7e2d736aeda04009",
+      "configuration_sha256": "1c7b33f3b32a530fff0ba79aedeb82001f392295ebd538a516374fff5db7f903",
       "console_port": 5586,
       "controller_port": 8556,
       "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/emulator",
@@ -35,7 +35,7 @@
       "requires_control_stopped": true,
       "rollback_target": "control",
       "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1",
-      "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901",
+      "sdk_root": "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK",
       "serial": "emulator-5586",
       "state_namespace": "advanced_diagnostics",
       "uses_legacy_application_support_root": false,

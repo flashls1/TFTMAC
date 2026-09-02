@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
 **Authority date:** 2026-09-01 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-02T02:20:37Z
+**Observed runtime/source evidence through:** 2026-09-02T02:29:46Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -532,7 +532,7 @@ campaign, useful for candidate selection but not current M4 runtime performance:
 - **VERIFIED CURRENT (2026-09-02T02:07:03Z):** Wave B source integration is
   complete under the append-only Wave B v4 correction authority. The default
   mode remains `control`, and `candidate` remains blocked.
-- **VERIFIED CURRENT:** runtime-mode registry SHA-256 is
+- **VERIFIED HISTORICAL (Wave B source checkpoint):** runtime-mode registry SHA-256 was
   `136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479`.
   Runtime identity, registry/configuration hashes, AVD identity, ADB/console/
   controller ports, and serial are persisted in the exclusive lease contract.
@@ -551,8 +551,19 @@ campaign, useful for candidate selection but not current M4 runtime performance:
 - **VERIFIED CURRENT:** `advanced_diagnostics` is selectable only through the
   explicit `TFTMAC_RUNTIME_MODE=advanced_diagnostics` environment request. Its
   R9 registry SHA-256 is
-  `6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d`;
+  `798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b`;
   unsigned Release and all 49 native tests pass. Control remains the default.
+- **VERIFIED CURRENT (first-boot attempt 1):** capture
+  `2026-09-02T02-23-48.444Z-9a2df80c-263a-4e10-beaa-8980d095c365`
+  failed before QEMU because the diagnostic registry incorrectly used the
+  emulator-only R9 install directory as `ANDROID_SDK_ROOT`. The forwarder and
+  isolated ADB server did launch, the emulator reported `Broken AVD system
+  path`, no QEMU process loaded, and the R9 AVD configuration was restored to
+  its accepted SHA-256
+  `090fe426402562e227a3a1a6bd6eab9f9572cd48fbe3d467c276d419860caf90`.
+  The corrected registry restores the existing dedicated API 37 SDK and ADB at
+  `/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK`; source validation and all 49
+  native tests pass after the correction. Loaded-R9 acceptance remains open.
 - **LOCKED NEXT GATE:** guarded diagnostic first boot must prove loaded R9 QEMU
   and gfxstream identities before TFT launch. Wave C causal-event
   instrumentation remains closed until diagnostic AVD/runtime acceptance passes.

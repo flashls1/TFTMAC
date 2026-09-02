@@ -280,7 +280,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d"
+    static let expectedRegistrySha256 = "798bad7512da1079167b120575c5c446a1ae7a5bec3030c19fc1da817dbf206b"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String
@@ -423,6 +423,8 @@ struct TFTMACRuntimeModeRegistry: Sendable {
         let diagnostics = try required(.advancedDiagnostics, from: document)
         guard diagnostics.launchState == .enabled,
               diagnostics.controllerPort == 8556,
+              diagnostics.sdkRoot == "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK",
+              diagnostics.adbPath == "/Volumes/MAC MINI M4/TFTMAC-RUNTIME-DATA/SDK/platform-tools/adb",
               diagnostics.avdName == "TFTMAC_Diagnostic_API37_R9",
               diagnostics.adbServerPort == 5041,
               diagnostics.consolePort == 5586,
