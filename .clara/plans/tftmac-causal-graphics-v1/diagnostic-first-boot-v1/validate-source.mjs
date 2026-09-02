@@ -90,6 +90,7 @@ const runtimeModeSource = readText('tftmac/Runtime/RuntimeMode.swift');
 assert(runtimeModeSource.includes(`static let expectedRegistrySha256 = "${expectedRegistrySha}"`), 'Swift registry pin drifted');
 const runtimeSource = readText('tftmac/Runtime/TFTMACRuntime.swift');
 assert(runtimeSource.includes('paths.launchStrategy == .bundledForwarder || paths.launchStrategy == .externalNativeHost'), 'runtime does not accept the receipted external native host');
+assert(runtimeSource.includes('if paths.mode == .control {\n            arguments += ["-crash-report-mode", "disabled"]'), 'R9-incompatible crash-report flag is not isolated to control');
 const tests = readText('Tests/TFTMACTests/TFTMACGate1Tests.swift');
 assert(tests.includes('testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndRejectsUnacceptedModes'), 'diagnostic selection contract test is missing');
 

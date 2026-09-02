@@ -2812,10 +2812,13 @@ actor TFTMACRuntimeService {
             "-dns-server", "1.1.1.1,8.8.8.8",
             "-cores", "\(profile.vCPU)", "-memory", "\(profile.ramMiB)",
             "-no-hidpi-scaling", "-no-snapshot", "-no-metrics", "-no-boot-anim",
-            "-crash-report-mode", "disabled", "-qt-hide-window",
+            "-qt-hide-window",
             "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
         ]
+        if paths.mode == .control {
+            arguments += ["-crash-report-mode", "disabled"]
+        }
         if let zone = TimeZone.current.identifier.addingPercentEncoding(withAllowedCharacters: .alphanumerics), !zone.isEmpty {
             arguments += ["-timezone", TimeZone.current.identifier]
         }
