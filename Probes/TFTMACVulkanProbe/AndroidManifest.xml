@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.flashls1.tftmac.vulkanprobe">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="36" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="4198400" android:required="true" />
+    <application android:allowBackup="false" android:debuggable="false" android:hasCode="false" android:label="TFTMAC Vulkan Probe">
+        <activity
+            android:name="android.app.NativeActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen">
+            <meta-data android:name="android.app.lib_name" android:value="tftmac_vulkan_probe" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -712,7 +712,7 @@ INSERT OR REPLACE INTO runtime_configs (
     'tftmac_stock_build8_high60_control','tftmac_5gb_native_v1','Stock Build 8 High/60 normal-play control','37.1.11','37.0.1','system-images;android-36;google_apis_playstore;arm64-v8a',7,
     'TFT_Ultra_Tablet','emulator-5582',5038,5582,6,5120,1920,1080,320,60.0,'host',1,
     'virtio-gpu-asg','Conditional: do not assume ANGLE is TFT main rendering path','Unreal direct Vulkan observed','gfxstream host Vulkan -> MoltenVK/Metal','authenticated raw gRPC -> AppKit Metal full screen','CONTROL','2026-08-31T22:30:26Z',
-    'Normal-play authority. Active observed experiment combat_latency_a uses High/60/Performance Mode OFF and is not a promoted performance intervention.'
+    'Normal-play authority. The selected profile is control: High/60/Performance Mode OFF. The historical capture observed combat_latency_a but did not promote it.'
 );
 
 INSERT OR REPLACE INTO sessions(
@@ -765,12 +765,12 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('current_playable_baseline_session','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200'),
 ('current_release_gameplay_benchmark','VERIFIED_CAPTURE_ROOT_ATTRIBUTION_UNKNOWN'),
 ('current_runtime_mode','STOCK_BUILD8_NORMAL_PLAY_AUTHORITY'),
-('current_active_experiment','combat_latency_a observed High/60/Performance Mode OFF; not promoted'),
+('current_active_experiment','control selected; High/60/Performance Mode OFF'),
 ('current_renderer_path','Unreal direct Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE conditional only'),
 ('current_mac_presenter_policy','Final Mac presenter is excluded from causal candidates and retained only as context/correctness telemetry.'),
 ('current_marker_policy','MATCH_ENTRY, MATCH_END, combat, battle, and quality markers are optional annotations only; automatic process/layer lifetime defines capture validity.'),
 ('current_root_attribution','UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE'),
-('advanced_source_causal_logger','PLANNED: isolated non-comparable tftmac-runtime diagnostic build; no causal code-site claim until complete work-ID joins, valid clocks, sealed streams, and overhead gate pass.');
+('advanced_source_causal_logger','PARTIAL_NOT_LIVE_ACCEPTED: PipelineEventV1 ABI, fixed rings, segment hashing, SQL schema, analyzer states, owned Vulkan probe, stock-shadow DEV runtime, and campaign runner exist. Modern source hooks, uninstrumented parity, live lineage, clock, loss, and observer-overhead gates remain pending.');
 
 UPDATE experiments
 SET state='CANCELLED',
@@ -780,19 +780,19 @@ WHERE id IN ('exp_asg_flush400_ab','exp_native_frame_trace','exp_tft_fps_cap_ab'
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('current_presentation_candidate','RETIRED_AS_CURRENT_ACTION: final Mac presentation and broad SurfaceFlinger/HWC directional candidates are context only; causal changes wait for the planned source causal logger.'),
-('current_graphics_next_action','Build and validate the isolated source causal logger. Do not run a tuning A/B until it identifies an owned first divergent boundary or explicitly reports that the first missing boundary is unowned.');
+('current_graphics_next_action','Complete the sealed seven-run stock-shadow Vulkan-probe campaign, then build and validate the pinned modern source runtime and causal hooks. Do not patch a component until replicated evidence identifies the first divergent owned boundary.');
 
 -- Exact-key overrides for the Build 8 authority. Earlier values remain in the
 -- SQL history but cannot survive as the effective current policy.
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('logger_guard_policy','Automatic logging follows the TFT process and exact layer from game start until process/app close. MATCH_ENTRY, MATCH_END, combat, battle, quality, and result markers are optional annotations only.'),
 ('multi_match_policy','Keep raw telemetry continuous across every game. Process/layer lifetime and timestamps define validity; marker pairing and battle classification are never required.'),
-('current_measurement_gap','Exact TFT SurfaceFlinger actual-present timing is implemented and verified. Internal causal attribution below the guest TFT surface remains unimplemented because owned-stage work IDs are absent.'),
+('current_measurement_gap','Exact TFT SurfaceFlinger actual-present timing is implemented and verified. PipelineEventV1, storage, SQL, analyzer states, and the owned probe are implemented, but live modern-source hook joins below the guest surface have not passed parity, lineage, loss, clock, or observer-overhead gates.'),
 ('current_tft_graphics_observed','High'),
 ('current_tft_fps_cap_observed','60'),
 ('current_tft_performance_mode_beta_observed','OFF'),
 ('current_native_frame_truth','Exact TFT SurfaceFlinger actual-present timestamps are FPS authority. Final Mac presentation is hidden correctness context only and is excluded from causal ranking.'),
 ('current_native_logger','Automatic private SQL capture covers the TFT PID/layer lifetime, exact intervals/windows, receipts, incidents, and bounded supporting telemetry. Markers are optional annotations.'),
 ('current_surfaceflinger_counter_policy','Exact TFT actual-present intervals and one-second windows are primary. Cumulative counters are supporting context only and do not require marked windows.'),
-('current_optimization_priority','Analyze all automatic full-run graphics data. Do not tune or name a root component until the planned source causal logger proves the first divergent owned boundary or explicitly reports UNKNOWN.'),
-('current_graphics_experiment','No tuning A/B is active. The next development phase is the PLANNED isolated source causal logger; combat_latency_a is an observed High/60/Performance Mode OFF preset, not a promoted result.');
+('current_optimization_priority','Run the bounded owned-probe screen first. Name or patch a component only after source causal hooks prove the first divergent owned boundary; otherwise report UNKNOWN or UNREAL_OR_PRE_HOST_UNKNOWN.'),
+('current_graphics_experiment','Control is selected for normal play. The isolated stock-shadow DEV seven-run Vulkan-probe campaign is prepared and awaits its sealed execution; no synthetic candidate or historical combat_latency_a configuration is promoted.');

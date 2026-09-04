@@ -1,0 +1,21 @@
+EXECUTION-SCOPE LOCK — TFTMAC CAUSAL GRAPHICS OPTIMIZATION V1
+
+Implement only:
+1. Safe reconciliation and preservation of the current local TFTMAC checkout/worktrees.
+2. Formal project-authority amendments needed to authorize an isolated diagnostic graphics runtime.
+3. A protected control runtime, an isolated advanced_diagnostics runtime, and later a separately gated candidate runtime.
+4. Deterministic renderer-path, exact-layer, build-identity, symptom-parity, work-lineage, clock, stream-integrity, and observer-overhead gates.
+5. Source instrumentation in only the pinned AEMU/gfxstream/MoltenVK/Metal-facing open-source code needed to localize the first owned graphics divergence.
+6. Raw-first fixed-record collection, sealed evidence, deterministic normalization, causal classification, controlled fault fixtures, and append-only SQL evidence.
+7. A narrowly targeted settings adjustment or owned-source patch derived from a valid ROOT_NAMED receipt.
+8. Controlled A/B validation and the quality-promotion ladder ending at Ultra High / 60 FPS / Performance Mode OFF / 1920x1080 when all acceptance gates pass.
+9. A stock-compatible candidate runtime with one-action rollback, only after diagnostic and production-layer acceptance.
+
+Do not implement:
+- Riot APK modification, repacking, re-signing, binary patching, process injection, credential capture, screenshot capture, shader extraction, or fabricated Riot/Unreal source attribution.
+- Unrelated refactors, cleanup, renames, reformatting, dependency upgrades, broad architecture replacement, or speculative optimization.
+- Any source-built runtime as a hidden replacement for the proven control runtime.
+- Any optimization selected only from timestamps, queue handles, aggregate counters, subjective feel, or a single diagnostic epoch.
+- Any default-runtime cutover without an exact accepted candidate SHA, a rollback receipt, and Ultra High live acceptance.
+
+A material diff is permitted only when it traces to this lock, a listed phase deliverable, or a proven blocking dependency added through an append-only amendment and a targeted ZenMC/ZenGate rerun.

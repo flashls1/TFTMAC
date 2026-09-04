@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "state": "DIAGNOSTIC_PORT_ALLOCATION_PASS",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-02T02:12:04Z",
+  "base_head_sha": "a84aaa7",
+  "mode": "advanced_diagnostics",
+  "loopback_only": true,
+  "ports": {
+    "adb_server": 5041,
+    "console": 5586,
+    "controller": 8556
+  },
+  "checks": {
+    "listeners_found": 0,
+    "exclusive_bind_5041": "PASS",
+    "exclusive_bind_5586": "PASS",
+    "exclusive_bind_8556": "PASS",
+    "qemu_system_aarch64_processes": 0,
+    "control_runtime_stopped": true
+  },
+  "reservation_scope": "TFTMAC advanced_diagnostics runtime lease",
+  "invalidated_by": "Any listener or runtime using 5041, 5586, or 8556 before guarded launch requires a new receipt."
+}

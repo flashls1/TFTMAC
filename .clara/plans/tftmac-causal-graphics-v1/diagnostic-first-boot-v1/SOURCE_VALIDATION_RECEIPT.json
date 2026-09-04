@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "state": "DIAGNOSTIC_FIRST_BOOT_SOURCE_PASS",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "verified_at": "2026-09-02T02:20:37Z",
+  "base_head_sha": "a84aaa709b59bd61a5b5ca6ee0ef305375f314cd",
+  "runtime_modes_sha256": "6fb1861abcf6d3fb711e8a730163fc0325b7cae3b1730076bbae9145bf8e9c3d",
+  "source_validator_sha256": "3095f0466033364eba071ee7127dc2479467fdb870dc426bc9365ad9006ed732",
+  "source_verifier_sha256": "664fd4435ac47632d1995916957a990db09fb01f5e91deb98c3ce70ce752676b",
+  "diagnostic_forwarder_build_script_sha256": "634cc6468ee160711c183b912d7bb95a63419aa157401b5b65b5dd568411f204",
+  "diagnostic_forwarder_receipt": {
+    "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-forwarder-r1-native-host-build.json",
+    "sha256": "3a0bfccbcc96466bbdb83a14a0530906ef7c37ec0e0e61b8f701b2e534e15c7f"
+  },
+  "diagnostic_ports": {
+    "adb_server": 5041,
+    "console": 5586,
+    "controller": 8556
+  },
+  "unsigned_release_build": "PASS",
+  "native_tests": {
+    "executed": 49,
+    "failures": 0
+  },
+  "control_default": true,
+  "candidate_state": "blocked_not_built",
+  "runtime_launch_attempted": false,
+  "next_safe_action": "Run the local diagnostic-runtime preflight, then launch the guarded R9 first boot from the unsigned verified app."
+}

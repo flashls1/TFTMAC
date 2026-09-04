@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "state": "WAVE_B_V4_PREPARATION_PASS",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "observed_at": "2026-09-02T02:00:39Z",
+  "base_head_sha": "3326792efc694e853312aa7347abcb1edd96575a",
+  "original_plan_sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "correction_amendment_sha256": "18e85884498c52144f3e56217eb372b78289b6d938c5c92c0459a35882296b15",
+  "preflight_sha256": "6e8e415d921d0517d00a82101125340f109f9ca8bd3824b9ab9a130939054cfe",
+  "zengate_sha256": "35c9fbf5e295fd33a4ead854da72a3ac972620f4a4cd0205f5e6ebaa03b06c49",
+  "apply_runner_sha256": "36275b1c20aafa68bd34ddca8e8ebd466c31d8e27f3ade1d08a246be4aa89c72",
+  "disposable_proof": {
+    "unsigned_release_build": "PASS",
+    "native_tests": 49,
+    "native_test_failures": 0
+  },
+  "product_source_mutated": false,
+  "runtime_effect_attempted": false,
+  "next_safe_action": "Run the guarded Wave B v4 apply on the exact base head, then run the production source verifier once."
+}

@@ -1,0 +1,138 @@
+diff --git a/host/vulkan/CMakeLists.txt b/host/vulkan/CMakeLists.txt
+index 67f72cc80..f3cf13e38 100644
+--- a/host/vulkan/CMakeLists.txt
++++ b/host/vulkan/CMakeLists.txt
+@@ -53,6 +53,12 @@ add_library(gfxstream-vulkan-server
+             vulkan_handle_mapping.cpp
+             vulkan_stream.cpp
+             )
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_sources(gfxstream-vulkan-server PRIVATE
++                   ${TFTMAC_CAUSAL_RUNTIME_ROOT}/PipelineEventV1.cpp)
++    target_include_directories(gfxstream-vulkan-server PRIVATE
++                               ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
+ set_source_files_properties(vk_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
+ set_source_files_properties(vk_sub_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
+ set_source_files_properties(vk_decoder_snapshot.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
+diff --git a/host/vulkan/vk_decoder.cpp b/host/vulkan/vk_decoder.cpp
+index 3174d3256..073f7977d 100644
+--- a/host/vulkan/vk_decoder.cpp
++++ b/host/vulkan/vk_decoder.cpp
+@@ -52,6 +52,10 @@
+ #include "vulkan_dispatch.h"
+ #include "vulkan_stream.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ #define MAX_PACKET_LENGTH (400 * 1024 * 1024)  // 400MB
+ #define CC_LIKELY(exp) (__builtin_expect(!!(exp), true))
+ #define CC_UNLIKELY(exp) (__builtin_expect(!!(exp), false))
+@@ -1481,10 +1485,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                                    (unsigned long long)fence);
+                 }
+                 VkResult vkQueueSubmit_VkResult_return = VK_ERROR_OUT_OF_HOST_MEMORY;
++#if defined(__APPLE__)
++                uint64_t tftmac_transport_work_id = 0;
++                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
++                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
++                }
++                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);
++                if (tftmac_owned_submit) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_transport_work_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kInstant,
++                        tftmac::causal::Boundary::kGfxstreamDecode,
++                        1001);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1002,
++                        0,
++                        submitCount);
++                }
++                const uint64_t tftmac_submit_started_ns = tftmac_owned_submit
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++#endif
+                 if (CC_LIKELY(vk)) {
+                     vkQueueSubmit_VkResult_return = m_state->on_vkQueueSubmit(
+                         &m_pool, snapshotApiCallHandle, queue, submitCount, pSubmits, fence);
+                 }
++#if defined(__APPLE__)
++                if (tftmac_owned_submit) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1002,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_submit_started_ns,
++                        submitCount,
++                        static_cast<uint16_t>(vkQueueSubmit_VkResult_return));
++                    tftmac::causal::ClearThreadTransportWorkId();
++                }
++#endif
+                 if ((vkQueueSubmit_VkResult_return) == VK_ERROR_DEVICE_LOST)
+                     m_state->on_DeviceLost();
+                 vkStream->unsetHandleMapping();
+@@ -22262,10 +22302,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                         ioStream, (unsigned long long)queue, (unsigned long long)submitCount,
+                         (unsigned long long)pSubmits, (unsigned long long)fence);
+                 }
++#if defined(__APPLE__)
++                uint64_t tftmac_transport_work_id = 0;
++                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
++                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
++                }
++                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);
++                if (tftmac_owned_submit) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_transport_work_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kInstant,
++                        tftmac::causal::Boundary::kGfxstreamDecode,
++                        1001);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1002,
++                        0,
++                        submitCount);
++                }
++                const uint64_t tftmac_submit_started_ns = tftmac_owned_submit
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++#endif
+                 if (CC_LIKELY(vk)) {
+                     m_state->on_vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle, queue,
+                                                          submitCount, pSubmits, fence);
+                 }
++#if defined(__APPLE__)
++                if (tftmac_owned_submit) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1002,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_submit_started_ns,
++                        submitCount,
++                        0);
++                    tftmac::causal::ClearThreadTransportWorkId();
++                }
++#endif
+                 vkStream->unsetHandleMapping();
+                 if (m_snapshotsEnabled) {
+                     m_state->snapshot()->vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle,
+diff --git a/host/vulkan/vk_decoder_global_state.cpp b/host/vulkan/vk_decoder_global_state.cpp
+index 4316e99ba..36e4ad3cb 100644
+--- a/host/vulkan/vk_decoder_global_state.cpp
++++ b/host/vulkan/vk_decoder_global_state.cpp
+@@ -33,6 +33,7 @@
+ #ifdef __APPLE__
+ #include <CoreFoundation/CoreFoundation.h>
+ #include <vulkan/vulkan_beta.h> // for MoltenVK portability extensions
++#include "PipelineEventV1.h"
+ #endif
+ 
+ #include "common/goldfish_vk_deepcopy.h"

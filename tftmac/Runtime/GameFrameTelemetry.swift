@@ -6,6 +6,7 @@ enum GameFrameTelemetryUnavailable: Sendable, Equatable {
     case noTimestamps
     case malformedLatency
     case adbError
+    case loginPromptActive
 }
 
 enum GameFrameTelemetryStatus: Sendable, Equatable {
@@ -68,12 +69,32 @@ struct GameFrameTelemetryUpdate: Sendable, Equatable {
 
 enum GameFrameTelemetry {
     static let tftGameActivitySurface = "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)"
+    static let tftMobileFREActivity = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
+    static let ownedProbeSurface = "SurfaceView[com.flashls1.tftmac.vulkanprobe/android.app.NativeActivity]"
     static let maxLatencyHistoryFrames = 128
 
+    static func hasActiveLoginPrompt(in output: String) -> Bool {
+        output.split(whereSeparator: \.isNewline).contains { rawLine in
+            let line = String(rawLine)
+            guard line.contains(tftMobileFREActivity) else { return false }
+            return !line.contains("ActivityRecord") && !line.contains("SnapshotStartingWindow")
+        }
+    }
+
     static func selectTFTSurfaceViewLayer(from output: String) -> GameFrameLayerSelection {
+        if hasActiveLoginPrompt(in: output) {
+            return .unavailable(.loginPromptActive)
+        }
+        return selectSurfaceViewLayer(from: output, containing: tftGameActivitySurface)
+    }
+
+    static func selectSurfaceViewLayer(
+        from output: String,
+        containing requiredIdentity: String
+    ) -> GameFrameLayerSelection {
         let matches = output.split(whereSeparator: \.isNewline).compactMap { rawLine -> String? in
             let line = normalizedLayerLine(String(rawLine))
-            guard line.contains(tftGameActivitySurface) else { return nil }
+            guard line.contains(requiredIdentity) else { return nil }
             return line
         }
         switch matches.count {
@@ -138,13 +159,25 @@ struct GameFrameTelemetrySampler: Sendable {
     private var windowIntervals = [GameFramePresentInterval]()
     private var windowHistoryTruncated = false
     private var windowRefreshPeriodNS: UInt64?
+    private let requiredLayerIdentity: String
 
-    init(windowDurationNS: UInt64 = 1_000_000_000) {
+    init(
+        windowDurationNS: UInt64 = 1_000_000_000,
+        requiredLayerIdentity: String = GameFrameTelemetry.tftGameActivitySurface
+    ) {
         self.windowDurationNS = windowDurationNS
+        self.requiredLayerIdentity = requiredLayerIdentity
     }
 
     mutating func updateLayerList(_ output: String) -> GameFrameTelemetryStatus {
-        switch GameFrameTelemetry.selectTFTSurfaceViewLayer(from: output) {
+        if requiredLayerIdentity == GameFrameTelemetry.tftGameActivitySurface,
+           GameFrameTelemetry.hasActiveLoginPrompt(in: output) {
+            selectedLayer = nil
+            status = .unavailable(.loginPromptActive)
+            resetTimingState()
+            return status
+        }
+        switch GameFrameTelemetry.selectSurfaceViewLayer(from: output, containing: requiredLayerIdentity) {
         case .selected(let layer):
             if selectedLayer != layer { reset(layer: layer) }
             status = .available

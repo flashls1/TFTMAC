@@ -99,8 +99,85 @@ HOST_MACOS="${HOST_APP}/Contents/MacOS"
 /usr/bin/plutil -lint "${HOST_APP}/Contents/Info.plist" >/dev/null
 /usr/bin/codesign --force --sign "${SIGNING_IDENTITY_HASH}" --timestamp=none "${HOST_APP}"
 
-/usr/bin/codesign --force --deep --sign "${SIGNING_IDENTITY_HASH}" --timestamp=none "${DIST}"
+# Seal the non-reproducible signed Mach-O identity into a receipt that is then
+# protected by the outer application signature. Source and Info.plist hashes
+# remain fixed in the runtime-mode registry; the signed receipt binds those
+# inputs to the exact packaged host executable and UUID.
+/usr/bin/python3 - "${ROOT}" "${DIST}" "${HOST_APP}" <<'PY'
+import datetime
+import hashlib
+import json
+import pathlib
+import plistlib
+import re
+import subprocess
+import sys
+
+root = pathlib.Path(sys.argv[1])
+dist = pathlib.Path(sys.argv[2])
+host = pathlib.Path(sys.argv[3])
+source = root / "RuntimeHost/main.c"
+info_source = root / "RuntimeHost/Info.plist"
+info_packaged = host / "Contents/Info.plist"
+executable = host / "Contents/MacOS/TFTMACEmulatorHost"
+
+def sha256(path):
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+uuid_output = subprocess.check_output(["/usr/bin/dwarfdump", "--uuid", str(executable)], text=True)
+uuids = [f"{match.group(1)}:{match.group(2)}" for match in re.finditer(r"UUID: ([0-9A-F-]+) \(([^)]+)\)", uuid_output)]
+if not uuids:
+    raise SystemExit("Control native host has no Mach-O UUID receipt")
+with info_packaged.open("rb") as handle:
+    bundle_identifier = plistlib.load(handle)["CFBundleIdentifier"]
+compiler = subprocess.check_output(["/usr/bin/xcrun", "--find", "clang"], text=True).strip()
+compiler_version = subprocess.check_output([compiler, "--version"], text=True).splitlines()[0]
+receipt = {
+    "schema": 1,
+    "state": "CONTROL_NATIVE_HOST_BUILD_PASS",
+    "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "host_application_relative_path": "TFTMAC Emulator Host.app",
+    "bundle_identifier": bundle_identifier,
+    "source_path": "RuntimeHost/main.c",
+    "source_sha256": sha256(source),
+    "info_plist_path": "RuntimeHost/Info.plist",
+    "info_plist_sha256": sha256(info_source),
+    "packaged_info_plist_sha256": sha256(info_packaged),
+    "executable_relative_path": "Contents/MacOS/TFTMACEmulatorHost",
+    "executable_sha256": sha256(executable),
+    "executable_uuids": uuids,
+    "compiler_path": compiler,
+    "compiler_version": compiler_version,
+    "compile_arguments": ["-Os", "-arch", "arm64", "-mmacosx-version-min=15.0"],
+    "signed_before_receipt": True,
+    "outer_app_seals_receipt": True
+}
+receipt_path = dist / "Contents/Resources/control-host-build.json"
+receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+PY
+
+# The nested host is already signed. Sign the outer app without deep-resigning
+# it, so the exact executable hash in the newly written receipt stays true.
+/usr/bin/codesign --force --sign "${SIGNING_IDENTITY_HASH}" --timestamp=none "${DIST}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${DIST}"
+/usr/bin/python3 - "${DIST}" "${HOST_APP}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+dist = pathlib.Path(sys.argv[1])
+host = pathlib.Path(sys.argv[2])
+receipt = json.loads((dist / "Contents/Resources/control-host-build.json").read_text())
+executable = host / receipt["executable_relative_path"]
+h = hashlib.sha256(executable.read_bytes()).hexdigest()
+if h != receipt["executable_sha256"]:
+    raise SystemExit("Outer signing changed the receipted control-host executable")
+PY
 /usr/bin/codesign -dvv "${DIST}" 2>&1 \
   | /usr/bin/grep -F "Authority=${SIGNING_IDENTITY_NAME}" >/dev/null
 

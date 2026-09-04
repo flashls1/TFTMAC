@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "state": "WAVE_B_V4_IMPLEMENTATION_APPLIED",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "operation_id": null,
+  "applied_at": "2026-09-02T02:05:30.118Z",
+  "base_head_sha": "3326792efc694e853312aa7347abcb1edd96575a",
+  "original_plan_sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "correction_amendment_sha256": "18e85884498c52144f3e56217eb372b78289b6d938c5c92c0459a35882296b15",
+  "runtime_modes_sha256": "136d1f8f9ac587f9ab0e839e7521b21d9c5e7a1d451d5a0bac44b44a8fe56479",
+  "expected_test_count": 49,
+  "modified_paths": [
+    "ssot/runtime-modes.json",
+    "tftmac/App/AppCoordinator.swift",
+    "tftmac/Runtime/RuntimeMode.swift",
+    "tftmac/Runtime/RuntimeModeAuthority.swift",
+    "tftmac/Runtime/RuntimeLease.swift",
+    "tftmac/Runtime/TFTMACRuntime.swift",
+    "Tests/TFTMACTests/TFTMACGate1Tests.swift",
+    "TFTMAC.xcodeproj/project.pbxproj",
+    "scripts/build-native-app.command",
+    "scripts/verify-tftmac.command"
+  ],
+  "effects": {
+    "source_only": true,
+    "emulator_launch_attempted": false,
+    "runtime_replacement_attempted": false,
+    "control_stop_attempted": false,
+    "installed_app_replacement_attempted": false,
+    "package_launch_attempted": false
+  },
+  "next_safe_action": "Run the single changed-head production source verifier and correct only a proven failure."
+}

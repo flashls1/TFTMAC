@@ -1,0 +1,242 @@
+{
+  "accepted_diagnostic_build": {
+    "content_match": true,
+    "expected_sha256": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d",
+    "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-build.json",
+    "sha256": "9556ffe5c9d083d3ba90006628b8fc5a94a6989f56fa21d40bb9a30f2f99ef8d",
+    "sidecar_match": true,
+    "sidecar_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-build.json.sha256"
+  },
+  "accepted_native_host": {
+    "content_match": true,
+    "expected_sha256": "a72d10106acb83444a38027ed3978b6ef3bc60e7ec0ae0ba9439f67eb57f6067",
+    "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-host-r1-native-host-build.json",
+    "sha256": "a72d10106acb83444a38027ed3978b6ef3bc60e7ec0ae0ba9439f67eb57f6067",
+    "sidecar_match": true,
+    "sidecar_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/gate4-r9-host-r1-native-host-build.json.sha256"
+  },
+  "accepted_stopped_clone": {
+    "content_match": true,
+    "expected_sha256": "09e4b2d21290de582320cb0aee3148af25f5e2e59199e225e604afbb6cb19648",
+    "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-avd-clone.json",
+    "sha256": "09e4b2d21290de582320cb0aee3148af25f5e2e59199e225e604afbb6cb19648",
+    "sidecar_match": true,
+    "sidecar_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/gate4-r9-20260901/diagnostic-avd-clone.json.sha256"
+  },
+  "app_integration_seams": {
+    "coordinator_file": {
+      "lines": [
+        {
+          "line": 7,
+          "text": "private var runtimeController: TFTMACRuntimeController?"
+        },
+        {
+          "line": 17,
+          "text": "let runtime = TFTMACRuntimeController("
+        },
+        {
+          "line": 46,
+          "text": "runtime.start()"
+        },
+        {
+          "line": 104,
+          "text": "await runtimeController.stop()"
+        }
+      ],
+      "path": "tftmac/App/AppCoordinator.swift",
+      "sha256": "d0eb27df9a0e6aaa45ff60c63fd81bc229350a6f8feca833b776bbe4a954bda4"
+    },
+    "runtime_file": {
+      "lines": [
+        {
+          "line": 24,
+          "text": "let runtimeRoot = URL(fileURLWithPath: \"/Volumes/MAC MINI M4/TFTMAC/Runtime\", isDirectory: true)"
+        },
+        {
+          "line": 30,
+          "text": "throw TFTMACRuntimeError(\"The proven Android runtime is not mounted at /Volumes/MAC MINI M4/TFTMAC/Runtime.\")"
+        },
+        {
+          "line": 55,
+          "text": "let hostApplication = resourceURL.appendingPathComponent(\"TFTMAC Emulator Host.app\", isDirectory: true)"
+        },
+        {
+          "line": 57,
+          "text": "throw TFTMACRuntimeError(\"TFTMAC Emulator Host.app is missing from the application bundle.\")"
+        },
+        {
+          "line": 2400,
+          "text": "\"serial\": \"emulator-5582\","
+        },
+        {
+          "line": 2406,
+          "text": "[\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"emu\", \"kill\"],"
+        },
+        {
+          "line": 2436,
+          "text": "[\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"emu\", \"kill\"],"
+        },
+        {
+          "line": 2452,
+          "text": "payload: [\"pid\": ownedPID ?? 0, \"serial\": \"emulator-5582\", \"owned\": ownsRunningEmulator]"
+        },
+        {
+          "line": 2503,
+          "text": "process.arguments = [\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"logcat\", \"-v\", \"threadtime\", \"-T\", sessionStartSelector]"
+        },
+        {
+          "line": 2598,
+          "text": "(\"launcher_method\", \"/usr/bin/open -n -W --env ... --args ...\", \"Mactician donor architecture\", \"DIRECT\"),"
+        },
+        {
+          "line": 2603,
+          "text": "(\"adb_serial\", \"emulator-5582\", \"known-good donor\", \"DIRECT\"),"
+        },
+        {
+          "line": 2643,
+          "text": "\"serial\": \"emulator-5582\","
+        },
+        {
+          "line": 2661,
+          "text": "\"--env\", \"TFT_ADB_SERVER_PORT=5038\","
+        },
+        {
+          "line": 2679,
+          "text": "\"@TFT_Ultra_Tablet\", \"-id\", \"TFTMAC\", \"-port\", \"5582\","
+        },
+        {
+          "line": 2698,
+          "text": "process.executableURL = URL(fileURLWithPath: \"/usr/bin/open\")"
+        },
+        {
+          "line": 2706,
+          "text": "\"method\": \"/usr/bin/open\","
+        },
+        {
+          "line": 2795,
+          "text": "await status(\"Waiting for the proven ADB identity on emulator-5582\u2026\", false)"
+        },
+        {
+          "line": 2802,
+          "text": "[\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"get-state\"],"
+        },
+        {
+          "line": 2820,
+          "text": "\"serial\": \"emulator-5582\","
+        },
+        {
+          "line": 2825,
+          "text": "\"serial\": \"emulator-5582\","
+        },
+        {
+          "line": 2831,
+          "text": "await status(\"Waiting for emulator-5582 to appear on ADB 5038\u2026\", false)"
+        },
+        {
+          "line": 2840,
+          "text": "throw TFTMACRuntimeError(\"ADB emulator-5582 did not authorize in the logged-in Mac session (last state: \\(lastState)).\")"
+        },
+        {
+          "line": 2842,
+          "text": "telemetry.recordEvent(\"ADB_DEVICE_AUTHORIZED\", payload: [\"port\": 5038, \"serial\": \"emulator-5582\"])"
+        },
+        {
+          "line": 3707,
+          "text": "[\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"shell\", \"perfetto\", \"--txt\", \"-c\", \"-\", \"-o\", remotePath],"
+        },
+        {
+          "line": 4574,
+          "text": "[\"-P\", \"5038\", \"-s\", \"emulator-5582\"] + arguments,"
+        },
+        {
+          "line": 4588,
+          "text": "\"-P\", \"5038\", \"-s\", \"emulator-5582\", \"shell\", \"pidof\","
+        }
+      ],
+      "path": "tftmac/Runtime/TFTMACRuntime.swift",
+      "sha256": "8932032d93af01b46e46b5fb5a04eff1ec457f2f0e8f92f364d5a1a703ab5a5f"
+    }
+  },
+  "blocked_action": "Diagnostic first boot, loaded-runtime proof, TFT launch, and source instrumentation remain closed while the protected stock runtime is active or until all launch preconditions pass.",
+  "change_id": "e66bd32e-b6c5-43bd-ae7e-792a234335bf",
+  "control_runtime": {
+    "active": true,
+    "authority": "STOCK_BUILD8",
+    "mutation_attempted": false,
+    "processes": [
+      "96695     1 /Applications/TFTMAC.app/Contents/MacOS/TFTMAC",
+      "96706 96695 /usr/bin/open -n -W --env TFT_EMULATOR=/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/emulator --env TFT_ADB_SERVER_PORT=5038 --env ANDROID_ADB_SERVER_PORT=5038 --env ADB_MDNS_AUTO_CONNECT= --env ADB_SERVER_SOCKET= --env ANDROID_ADB_SERVER_ADDRESS= --env ANDROID_SDK_ROOT=/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK --env ANDROID_AVD_HOME=/Volumes/MAC MINI M4/TFTMAC/Runtime/AVD --env ANDROID_EMULATOR_USE_SYSTEM_LIBS=0 --env ANGLE_FEATURE_OVERRIDES_ENABLED=exposeNonConformantExtensionsAndVersions:exposeES32ForTesting --env ANGLE_FEATURE_OVERRIDES_DISABLED=preferSubmitAtFBOBoundary --env MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0 --env MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=64 --env MVK_CONFIG_FAST_MATH_ENABLED=1 --env TFT_HOST_LATENCY_QOS=user_interactive --env TFT_HOST_STDOUT=/Users/flash/Library/Application Support/TFTMAC/Captures/2026-09-01T19-05-12.436Z-462c1f5b-423f-441f-a316-9ec4d5333acd/emulator.stdout.log --env TFT_HOST_STDERR=/Users/flash/Library/Application Support/TFTMAC/Captures/2026-09-01T19-05-12.436Z-462c1f5b-423f-441f-a316-9ec4d5333acd/emulator.stderr.log /Applications/TFTMAC.app/Contents/Resources/TFTMAC Emulator Host.app  -args  TFT_Ultra_Tablet  id  FTMAC  port  582  gpu  ost  audio  oreaudio  feature  LESDynamicVersion,Vulkan,GuestAngle,-GLPipeChecksum,VulkanBatchedDescriptorSetUpdate,AsyncComposeSupport,VirtioGpuFenceContexts  append-userspace-opt  ndroidboot.opengles.version=196610  append-userspace-opt  ndroidboot.tftmac.graphics_profile=tftmac  append-userspace-opt  ndroidboot.tftmac.session=2026-09-01T19-05-12.436Z-462c1f5b-423f-441f-a316-9ec4d5333acd  skin  920x1080  vsync-rate",
+      "96707     1 /Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64 @TFT_Ultra_Tablet -id TFTMAC -port 5582 -gpu host -audio coreaudio -feature GLESDynamicVersion,Vulkan,GuestAngle,-GLPipeChecksum,VulkanBatchedDescriptorSetUpdate,AsyncComposeSupport,VirtioGpuFenceContexts -append-userspace-opt androidboot.opengles.version=196610 -append-userspace-opt androidboot.tftmac.graphics_profile=tftmac -append-userspace-opt androidboot.tftmac.session=2026-09-01T19-05-12.436Z-462c1f5b-423f-441f-a316-9ec4d5333acd -skin 1920x1080 -vsync-rate 60 -dns-server 1.1.1.1,8.8.8.8 -cores 6 -memory 5120 -no-hidpi-scaling -no-snapshot -no-metrics -no-boot-anim -crash-report-mode disabled -qt-hide-window -grpc 8554 -grpc-use-token -idle-grpc-timeout 300 -timezone America/Chicago"
+    ]
+  },
+  "current_gate_state": "SOURCE_INTEGRATION_READY_DIAGNOSTIC_BOOT_BLOCKED_CONTROL_ACTIVE",
+  "diagnostic_mode": {
+    "avd": {
+      "adb_server_port": 5041,
+      "avd_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD/TFTMAC_Diagnostic_API37_R9.avd",
+      "config_sha256": "090fe426402562e227a3a1a6bd6eab9f9572cd48fbe3d467c276d419860caf90",
+      "console_port": 5586,
+      "ini_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD/TFTMAC_Diagnostic_API37_R9.ini",
+      "ini_sha256": "30d4ed7ebc20fb3415461fa48f6d91654955e04825de84176bd21a4adad9b98d",
+      "name": "TFTMAC_Diagnostic_API37_R9",
+      "root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/AVD",
+      "serial": "emulator-5586"
+    },
+    "avd_acceptance": "PENDING_FIRST_BOOT",
+    "build_id": "gate4-r9-20260901",
+    "comparability": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
+    "controller_port": "UNRESOLVED_MUST_BE_ALLOCATED_AND_RECEIPTED_BEFORE_BOOT",
+    "emulator": {
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/emulator",
+      "sha256": "fb7782eb3abd7c5b4cb000e68f0c296fed1098f9581aacb01971a45f6b6836aa",
+      "uuids": [
+        "4C4C4436-5555-3144-A1EE-05B0F446F580:arm64"
+      ]
+    },
+    "gfxstream_backend": {
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-20260901/emulator/lib64/libgfxstream_backend.dylib",
+      "sha256": "23d54a05a3b73704a7f7d0394f40e04f21bd7e546b1982911a681ae0fe375c9d",
+      "uuids": [
+        "4C4C4449-5555-3144-A1FC-F6DFE0021481:arm64"
+      ]
+    },
+    "loaded_binary_receipt": null,
+    "source_instrumentation": "CLOSED_UNTIL_DIAGNOSTIC_AVD_ACCEPTANCE_PASS"
+  },
+  "diagnostic_runtime_processes": [],
+  "execution_scope_lock": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/SCOPE_LOCK.txt",
+    "sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e"
+  },
+  "governing_plan": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/IMPLEMENTATION_PLAN.md",
+    "sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+    "version": "1.1"
+  },
+  "head_sha": "c8b79ea009197c25bc7e64bebd5e8948eea918b1",
+  "installed_stock_app": {
+    "build": "8",
+    "bundle_id": "com.flashls1.tftmac",
+    "codesign_status": 0,
+    "codesign_stderr": "--prepared:/Applications/TFTMAC.app/Contents/Frameworks/libswiftCompatibilitySpan.dylib\n--validated:/Applications/TFTMAC.app/Contents/Frameworks/libswiftCompatibilitySpan.dylib\n/Applications/TFTMAC.app: valid on disk\n/Applications/TFTMAC.app: satisfies its Designated Requirement",
+    "path": "/Applications/TFTMAC.app",
+    "version": "2.3.0"
+  },
+  "next_safe_action": "Implement the exact three-mode registry and fail-closed app-side mode/identity plumbing without launching or replacing any runtime.",
+  "noninterference": {
+    "clone_repeated": false,
+    "diagnostic_launch_attempted": false,
+    "runtime_build_repeated": false,
+    "stock_stop_attempted": false
+  },
+  "observed_at": "2026-09-01T19:23:52.210992Z",
+  "project_id": "tftmac",
+  "schema": 1,
+  "state": "GATE4_APP_INTEGRATION_AUTHORITY_PASS",
+  "zenmc": {
+    "path": ".clara/plans/tftmac-causal-graphics-v1/TFTMAC_CAUSAL_GRAPHICS_ZENMC_RECEIPT_V2_VERIFIED_4f0d706f.json",
+    "result": null,
+    "sha256": "4f0d706f7c5bf5d7f88a1fb4363ef6efeb9f57f678f78a39cf30fec3c5bf1c80",
+    "sidecar": ".clara/plans/tftmac-causal-graphics-v1/TFTMAC_CAUSAL_GRAPHICS_ZENMC_RECEIPT_V2_VERIFIED_4f0d706f.sha256"
+  }
+}

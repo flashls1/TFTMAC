@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import XCTest
 
 final class TFTMACGate1Tests: XCTestCase {
@@ -124,22 +125,29 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(candidate.identifier, "tftmac_native_6144m_8c_30hz_flush400")
     }
 
-    func testRapidCombatExperimentHasExactlyTwoNamedPresets() {
-        XCTAssertEqual(RuntimeExperimentPreset.selectableCases.map(\.rawValue), ["control", "combat_latency_a"])
+    func testRetiredInteractiveExperimentsAreNotUserSelectable() {
+        XCTAssertEqual(RuntimeExperimentPreset.selectableCases.map(\.rawValue), ["control"])
     }
 
-    func testCombatLatencyAChangesOnlyTheHostSchedulingRequest() {
+    func testDevGraphicsCandidatesChangeExactlyOneEmulatorFeature() {
         let control = TFTMACRuntimeProfile.playable.with(experimentPreset: .control)
-        let candidate = TFTMACRuntimeProfile.playable.with(experimentPreset: .combatLatencyA)
         XCTAssertEqual(control.effectiveEmulatorFeatures, RuntimeExperimentPreset.baselineEmulatorFeatures)
-        XCTAssertEqual(candidate.effectiveEmulatorFeatures, RuntimeExperimentPreset.baselineEmulatorFeatures)
-        XCTAssertEqual(control.vCPU, candidate.vCPU)
-        XCTAssertEqual(control.ramMiB, candidate.ramMiB)
-        XCTAssertEqual(control.asgDrawFlushInterval, candidate.asgDrawFlushInterval)
-        XCTAssertFalse(control.experimentPreset.requestsHostLatencyQoS)
-        XCTAssertTrue(candidate.experimentPreset.requestsHostLatencyQoS)
-        XCTAssertEqual(control.comparisonConfigurationSHA256, candidate.comparisonConfigurationSHA256)
-        XCTAssertNotEqual(control.experimentConfigurationReceipt.sha256, candidate.experimentConfigurationReceipt.sha256)
+        let candidates: [(RuntimeExperimentPreset, String)] = [
+            (.queueSubmitInline, "-VulkanQueueSubmitWithCommands"),
+            (.virtualQueueOff, "-VulkanVirtualQueue"),
+            (.fenceContextsOff, "-VirtioGpuFenceContexts")
+        ]
+        for (preset, expectedOverride) in candidates {
+            let candidate = TFTMACRuntimeProfile.playable.with(experimentPreset: preset)
+            XCTAssertEqual(candidate.experimentPreset.emulatorFeatureAdditions, [expectedOverride])
+            XCTAssertTrue(candidate.effectiveEmulatorFeatures.contains(expectedOverride))
+            XCTAssertEqual(control.vCPU, candidate.vCPU)
+            XCTAssertEqual(control.ramMiB, candidate.ramMiB)
+            XCTAssertEqual(control.asgDrawFlushInterval, candidate.asgDrawFlushInterval)
+            XCTAssertFalse(candidate.experimentPreset.requestsHostLatencyQoS)
+            XCTAssertEqual(control.comparisonConfigurationSHA256, candidate.comparisonConfigurationSHA256)
+            XCTAssertNotEqual(control.experimentConfigurationReceipt.sha256, candidate.experimentConfigurationReceipt.sha256)
+        }
     }
 
     func testRetiredPerformanceModePresetMigratesToControl() throws {
@@ -148,6 +156,78 @@ final class TFTMACGate1Tests: XCTestCase {
         defer { suite.removePersistentDomain(forName: suiteName) }
         suite.set("home_run_a", forKey: "runtime.experimentPreset")
         XCTAssertEqual(RuntimeExperimentPreset.load(from: suite), .control)
+        suite.set("combat_latency_a", forKey: "runtime.experimentPreset")
+        XCTAssertEqual(RuntimeExperimentPreset.load(from: suite), .control)
+    }
+
+    func testPipelineEventV1HasFixedNinetySixByteEncoding() {
+        let event = makePipelineEvent(workID: 7, boundary: .gfxstreamDecode, durationNS: 20_000_000)
+        XCTAssertEqual(event.encodedBinary().count, PipelineEventV1.binaryByteCount)
+    }
+
+    func testFixedPipelineRingReportsOverwriteAndRetainsNewestEvents() {
+        var ring = FixedPipelineEventRing(capacity: 2)
+        ring.append(makePipelineEvent(workID: 1, boundary: .asgHostReceive, durationNS: 1))
+        ring.append(makePipelineEvent(workID: 2, boundary: .gfxstreamDecode, durationNS: 2))
+        ring.append(makePipelineEvent(workID: 3, boundary: .hostVulkanSubmit, durationNS: 3))
+        XCTAssertEqual(ring.overwriteCount, 1)
+        XCTAssertEqual(ring.orderedEvents().compactMap(\.transportWorkID), [2, 3])
+    }
+
+    func testCausalAnalyzerNamesOnlyReplicatedFirstOwnedBoundary() {
+        let events = (1...4).flatMap { workID in
+            [
+                makePipelineEvent(workID: UInt64(workID), boundary: .asgHostReceive, durationNS: 2_000_000),
+                makePipelineEvent(workID: UInt64(workID), boundary: .gfxstreamDecode, durationNS: 22_000_000),
+                makePipelineEvent(workID: UInt64(workID), boundary: .moltenVKEnqueue, durationNS: 28_000_000)
+            ]
+        }
+        let finding = PipelineCausalAnalyzer.analyze(
+            events: events,
+            eligibleFrameCount: 4,
+            unambiguousLineageCount: 4,
+            overwriteCount: 0,
+            observerOverheadPercent: 1.2,
+            officialTFT: false
+        )
+        XCTAssertEqual(finding.state, .rootNamed)
+        XCTAssertEqual(finding.boundary, .gfxstreamDecode)
+        XCTAssertEqual(finding.owner, "GFXSTREAM")
+    }
+
+    func testCausalAnalyzerDoesNotInventOfficialTFTGuestIdentity() {
+        let finding = PipelineCausalAnalyzer.analyze(
+            events: [],
+            eligibleFrameCount: 100,
+            unambiguousLineageCount: 100,
+            overwriteCount: 0,
+            observerOverheadPercent: 1,
+            officialTFT: true
+        )
+        XCTAssertEqual(finding.state, .unrealOrPreHostUnknown)
+        XCTAssertNil(finding.boundary)
+    }
+
+    private func makePipelineEvent(
+        workID: UInt64,
+        boundary: PipelineBoundary,
+        durationNS: UInt64
+    ) -> PipelineEventV1 {
+        PipelineEventV1(
+            kind: .instant,
+            boundary: boundary,
+            flags: 0,
+            processID: 1,
+            threadID: 2,
+            timestampNS: workID * 100,
+            transportWorkID: workID,
+            presentLineageID: workID,
+            generation: 1,
+            sourceSiteID: 1,
+            queueDepth: 0,
+            durationNS: durationNS,
+            payloadHash: SHA256.hash(data: Data())
+        )
     }
 
     func testGuestPowerReceiptRequiresPoweredStayOnAndAwake() throws {
@@ -263,5 +343,137 @@ final class TFTMACGate1Tests: XCTestCase {
             TelemetrySignalClassifier.pipelineSignals(in: "[MVK] Vulkan error: shader compilation failed"),
             PipelineLogSignals(vulkanErrorCount: 1, moltenVKWarningCount: 1, shaderErrorCount: 1)
         )
+    }
+
+    func testGuestUnlockSecretAcceptsOnlyBoundedNumericPINs() throws {
+        XCTAssertNotNil(TFTMACGuestUnlockSecret(pin: "1234"))
+        XCTAssertNotNil(TFTMACGuestUnlockSecret(pin: String(repeating: "7", count: 16)))
+        XCTAssertNil(TFTMACGuestUnlockSecret(pin: "123"))
+        XCTAssertNil(TFTMACGuestUnlockSecret(pin: String(repeating: "7", count: 17)))
+        XCTAssertNil(TFTMACGuestUnlockSecret(pin: "12a4"))
+        XCTAssertEqual(
+            try TFTMACGuestUnlockSecret(pin: "9876")?.transientPIN(),
+            "9876"
+        )
+    }
+
+    private func runtimeModeRegistryData() throws -> Data {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try Data(contentsOf: repositoryRoot.appendingPathComponent("ssot/runtime-modes.json"))
+    }
+
+    func testRuntimeModeRegistryDefinesExactControlIdentity() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        XCTAssertEqual(Set(registry.document.modes.keys), Set(TFTMACRuntimeMode.allCases.map(\.rawValue)))
+        XCTAssertEqual(registry.document.defaultMode, .control)
+        let selection = try registry.selection(environment: [:])
+        XCTAssertEqual(selection.mode, .control)
+        XCTAssertEqual(selection.definition.applicationBundleId, "com.flashls1.tftmac")
+        XCTAssertEqual(selection.definition.avdName, "TFT_Ultra_Tablet")
+        XCTAssertEqual(selection.definition.adbServerPort, 5038)
+        XCTAssertEqual(selection.definition.consolePort, 5582)
+        XCTAssertEqual(selection.definition.controllerPort, 8554)
+        XCTAssertEqual(selection.definition.serial, "emulator-5582")
+    }
+
+    func testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndRejectsUnacceptedModes() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        let diagnostics = try registry.selection(environment: [
+            TFTMACRuntimeModeRegistry.environmentKey: "advanced_diagnostics"
+        ])
+        XCTAssertEqual(diagnostics.mode, .advancedDiagnostics)
+        XCTAssertEqual(diagnostics.definition.applicationBundleId, "com.flashls1.tftmac.dev")
+        XCTAssertEqual(diagnostics.definition.avdName, "TFTMAC_Diagnostic_StockShadow_R1")
+        XCTAssertEqual(diagnostics.definition.adbServerPort, 5041)
+        XCTAssertEqual(diagnostics.definition.consolePort, 5586)
+        XCTAssertEqual(diagnostics.definition.controllerPort, 8556)
+        XCTAssertEqual(diagnostics.definition.serial, "emulator-5586")
+        XCTAssertEqual(
+            diagnostics.definition.sdkRoot,
+            "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK"
+        )
+        XCTAssertEqual(
+            diagnostics.definition.adbPath,
+            "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb"
+        )
+        XCTAssertTrue(diagnostics.definition.requiresControlStopped)
+        let authority = try TFTMACRuntimeModeAuthority(data: runtimeModeRegistryData())
+        XCTAssertEqual(
+            try authority.definition(for: .advancedDiagnostics).adbVendorKeysPolicy,
+            "USER_DEFAULT_KEY"
+        )
+        for requested in ["candidate", "unknown"] {
+            XCTAssertThrowsError(try registry.selection(environment: [
+                TFTMACRuntimeModeRegistry.environmentKey: requested
+            ]), requested)
+        }
+    }
+
+    func testRuntimeModeRegistryRejectsTamperedBytes() throws {
+        var data = try runtimeModeRegistryData()
+        data.append(Data(" ".utf8))
+        XCTAssertThrowsError(try TFTMACRuntimeModeRegistry(data: data))
+        XCTAssertThrowsError(try TFTMACRuntimeModeAuthority(data: data))
+    }
+
+    func testSupplementalRuntimeAuthoritySeparatesStateAndLaunchStrategies() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        XCTAssertNoThrow(try authority.validateConsistency(with: registry))
+        let control = try authority.definition(for: .control)
+        let diagnostics = try authority.definition(for: .advancedDiagnostics)
+        let candidate = try authority.definition(for: .candidate)
+        XCTAssertEqual(control.launchStrategy, .bundledForwarder)
+        XCTAssertEqual(diagnostics.launchStrategy, .externalNativeHost)
+        XCTAssertEqual(diagnostics.runtimeVariant, "stock_shadow")
+        XCTAssertEqual(diagnostics.expectedEmulatorVersionContains, "37.1.11")
+        XCTAssertEqual(candidate.launchStrategy, .blocked)
+        XCTAssertNotEqual(control.stateNamespace, diagnostics.stateNamespace)
+        XCTAssertNotEqual(diagnostics.stateNamespace, candidate.stateNamespace)
+        XCTAssertNotNil(diagnostics.diagnosticReceipts)
+        XCTAssertNil(candidate.hostApplication)
+        XCTAssertNotEqual(
+            authority.applicationSupportURL(for: .control),
+            authority.applicationSupportURL(for: .advancedDiagnostics)
+        )
+    }
+
+    func testControlModePreservesValidatedNativeProfile() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        let selection = try registry.selection(environment: [:])
+        let effective = try authority.effectiveProfile(savedProfile: .playable, selection: selection)
+        XCTAssertEqual(effective, .playable)
+        XCTAssertEqual(effective.controllerPort, selection.definition.controllerPort)
+    }
+
+    func testRuntimeLeasePersistsExactModeIdentityAndRejectsSecondOwner() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        let selection = try registry.selection(environment: [:])
+        let identity = try selection.leaseIdentity()
+        let stateRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tftmac-mode-lease-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: stateRoot) }
+        let first = try TFTMACRuntimeLease.acquire(stateRoot: stateRoot, identity: identity)
+        defer { first.release() }
+        let leaseURL = stateRoot.appendingPathComponent("native-runtime.lease")
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: leaseURL)) as? [String: Any]
+        )
+        XCTAssertEqual((object["schema"] as? NSNumber)?.intValue, 2)
+        XCTAssertEqual(object["mode"] as? String, "control")
+        XCTAssertEqual(object["registry_sha256"] as? String, registry.registrySha256)
+        XCTAssertEqual(object["configuration_sha256"] as? String, selection.definition.configurationSha256)
+        XCTAssertEqual(object["avd_name"] as? String, "TFT_Ultra_Tablet")
+        XCTAssertEqual((object["adb_server_port"] as? NSNumber)?.intValue, 5038)
+        XCTAssertEqual((object["console_port"] as? NSNumber)?.intValue, 5582)
+        XCTAssertEqual((object["controller_port"] as? NSNumber)?.intValue, 8554)
+        XCTAssertEqual(object["serial"] as? String, "emulator-5582")
+        XCTAssertThrowsError(try TFTMACRuntimeLease.acquire(stateRoot: stateRoot, identity: identity))
     }
 }

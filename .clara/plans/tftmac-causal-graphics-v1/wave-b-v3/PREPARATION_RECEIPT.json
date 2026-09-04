@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "state": "WAVE_B_V3_PREPARATION_PASS",
+  "project_id": "tftmac",
+  "change_id": "215ec5a3-6554-4ca3-95db-1525433bb20f",
+  "operation_id": "tftmac-waveb-v3-prepare-host-20260901-v1",
+  "observed_at": "2026-09-01T22:47:27.564Z",
+  "base_head_sha": "d96a1caf68b807bbae1a03246666da7eea4df620",
+  "original_plan_sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "amendment_sha256": "df9d3a537d94d4f32337c2658168714925c1f3206775964069ea135a27cbdc4a",
+  "preflight_sha256": "bec3a488d3386966cb3f98cdf1b5f35a083519d1dfb873260db4d63576b19247",
+  "zengate_sha256": "6d460880102823285456668f98dde26d54a11b0e3e20f8270d699947ae2b7003",
+  "accepted_registry_restored_sha256": "81086498d8a16f2096f8461922731d7cf5c027cf6163d874452c16ffa543fdb2",
+  "preserved_root": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3",
+  "product_source_mutated": false,
+  "runtime_effect_attempted": false,
+  "next_safe_action": "Checkpoint this preparation, then apply Wave B v3 product source."
+}

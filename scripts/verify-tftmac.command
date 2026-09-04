@@ -35,11 +35,35 @@ for required in \
   "$PROTO" \
   "$PROTO_SOURCE" \
   tftmac/Assets/TFTMAC-Official-Icon.png \
+  tftmac/Assets/TFTMAC-DEV-Icon.png \
+  ControlLauncher/Info.plist \
+  ControlLauncher/main.swift \
+  CausalRuntime/PipelineEventV1.h \
+  CausalRuntime/PipelineEventV1.cpp \
+  CausalRuntime/PipelineEventV1_test.cpp \
+  DevLauncher/main.c \
+  Probes/TFTMACVulkanProbe/AndroidManifest.xml \
+  Probes/TFTMACVulkanProbe/workload-manifest.json \
+  Probes/TFTMACVulkanProbe/src/main.cpp \
+  Probes/TFTMACVulkanProbe/shaders/probe.vert \
+  Probes/TFTMACVulkanProbe/shaders/probe.frag \
   Generated/EmulatorController/emulator_controller.pb.swift \
   Generated/EmulatorController/emulator_controller.grpc.swift \
   scripts/generate-emulator-proto.command \
   scripts/build-tftmac-app.command \
   scripts/build-native-app.command \
+  scripts/build-dev-launcher.command \
+  scripts/build-control-launcher.command \
+  scripts/prepare-causal-source-runtime.command \
+  scripts/build-causal-stock-runtime.command \
+  scripts/build-stock-shadow-runtime.command \
+  scripts/build-vulkan-probe.command \
+  scripts/install-desktop-launchers.command \
+  scripts/run-vulkan-experiment-campaign.command \
+  scripts/setup-android-unlock.command \
+  scripts/analyze-vulkan-experiment-campaign.mjs \
+  scripts/sign-apk-v2.mjs \
+  scripts/test-causal-runtime.command \
   scripts/install-trace-processor.command \
   scripts/ensure-local-signing-identity.command \
   scripts/test-native-app.command \
@@ -47,6 +71,11 @@ for required in \
   ssot/AUTHORITY_INPUTS.sha256 \
   ssot/STACK.lock.yaml \
   ssot/runtime-authority.json \
+  ssot/runtime-modes.json \
+  tftmac/Runtime/RuntimeMode.swift \
+  tftmac/Runtime/RuntimeModeAuthority.swift \
+  .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs \
+  .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs \
   ssot/retained-evidence-index.json \
   ssot/TFTMAC_ENGINEERING_MAP.sql \
   ssot/TFTMAC_PERFORMANCE_LAB.sql; do
@@ -93,7 +122,7 @@ jq -e '
   .runtimeProfile.tftGraphicsQuality == "High" and
   .runtimeProfile.tftFrameRateCap == 60 and
   .runtimeProfile.tftPerformanceModeBeta == false and
-  .runtimeProfile.activeExperiment == "combat_latency_a" and
+  .runtimeProfile.activeExperiment == "control" and
   .finalInstalledRelease.version == "2.3.0" and
   .finalInstalledRelease.build == "8" and
   .finalInstalledRelease.receiptScope == "HISTORICAL_BUILD8_RELEASE_ACCEPTANCE" and
@@ -140,10 +169,15 @@ jq -e '
   .currentGameplayCapture.markersAndBattles == "OPTIONAL_ANNOTATIONS_NOT_VALIDITY_OR_CAUSAL_GATES" and
   .currentGameplayCapture.automaticLogging == "VERIFIED_PID_LAYER_LIFETIME" and
   .currentGameplayCapture.rootAttribution == "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE" and
-  .currentGameplayCapture.nextLayer == "ADVANCED_SOURCE_CAUSAL_LOGGER_PLANNED" and
+  .currentGameplayCapture.capturedExperiment == "combat_latency_a" and
+  .currentGameplayCapture.nextLayer == "ADVANCED_SOURCE_CAUSAL_LOGGER_PARTIAL_NOT_LIVE_ACCEPTED" and
   .diagnosticRuntimeEligibility.repository == "flashls1/tftmac-runtime" and
   .diagnosticRuntimeEligibility.commit == "c8aa26ebaa5b977965eb165ad8aac5c98408469f" and
-  .diagnosticRuntimeEligibility.normalPlayAuthority == "STOCK_BUILD8"
+  .diagnosticRuntimeEligibility.normalPlayAuthority == "STOCK_BUILD8" and
+  .diagnosticRuntimeEligibility.currentDevVariant == "stock_shadow" and
+  .diagnosticRuntimeEligibility.currentDevAVD == "TFTMAC_Diagnostic_StockShadow_R1" and
+  .diagnosticRuntimeEligibility.consecutiveFirstFramePasses == 3 and
+  .diagnosticRuntimeEligibility.r11Status == "FAILED_FIRST_NATIVE_FRAME_HISTORICAL"
 ' ssot/runtime-authority.json >/dev/null || fail "current Build 8 capture or diagnostic-runtime authority drifted"
 
 jq -e '
@@ -182,7 +216,8 @@ for locked in \
   'cssm_error: "CSSMERR_TP_NOT_TRUSTED"' \
   'installed_runtime_verifier: "BLOCKED_SIGNING_IDENTITY"' \
   'id: "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200"' \
-  'advanced_source_causal_logger: "planned"'; do
+  'current_selected_experiment: "control"' \
+  'advanced_source_causal_logger: "partial_source_schema_and_cpp_abi_not_live_accepted"'; do
   rg -q -F -- "$locked" ssot/STACK.lock.yaml || fail "active stack lock drifted: $locked"
 done
 
@@ -201,11 +236,31 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "43" ]] || fail "native test inventory drifted: expected 43, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "55" ]] || fail "native test inventory drifted: expected 55, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
   || fail "official TFTMAC icon source hash drifted"
+[[ "$(shasum -a 256 tftmac/Assets/TFTMAC-DEV-Icon.png | awk '{print $1}')" == "660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945" ]] \
+  || fail "TFTMAC DEV icon source hash drifted"
+jq -e '
+  .default_mode == "control" and
+  .modes.control.application_bundle_id == "com.flashls1.tftmac" and
+  .modes.advanced_diagnostics.application_bundle_id == "com.flashls1.tftmac.dev" and
+  .modes.advanced_diagnostics.requires_control_stopped == true and
+  .modes.advanced_diagnostics.state_namespace == "advanced_diagnostics" and
+  .modes.advanced_diagnostics.adb_server_port == 5041 and
+  .modes.advanced_diagnostics.console_port == 5586 and
+  .modes.advanced_diagnostics.controller_port == 8556
+' ssot/runtime-modes.json >/dev/null || fail "Control/DEV launcher isolation contract drifted"
+/usr/bin/xcrun --sdk macosx clang -fsyntax-only DevLauncher/main.c
+/usr/bin/plutil -lint ControlLauncher/Info.plist >/dev/null
+rg -q -F 'private static let serial = "emulator-5582"' ControlLauncher/main.swift \
+  || fail "Control unlock wrapper is not pinned to emulator-5582"
+rg -q -F 'process.arguments = ["-P", adbPort, "-s", serial, "shell"]' ControlLauncher/main.swift \
+  || fail "Control unlock wrapper does not keep the PIN out of process arguments"
+rg -q -F 'setenv("TFTMAC_RUNTIME_MODE", kRuntimeMode, 1)' DevLauncher/main.c \
+  || fail "DEV launcher does not enforce its runtime mode"
 
 readonly PROTO_SHA="$(shasum -a 256 "$PROTO" | awk '{print $1}')"
 readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"
@@ -233,9 +288,14 @@ while IFS= read -r script; do
 done < <(find scripts -type f \( -name '*.command' -o -name '*.sh' \) | LC_ALL=C sort)
 
 node --check tools/tftmac-direct-control.mjs >/dev/null
+node --check scripts/analyze-vulkan-experiment-campaign.mjs >/dev/null
+node --check scripts/sign-apk-v2.mjs >/dev/null
+node --check .clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs >/dev/null
+node --check .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 [[ ! -f tools/tftmac-v2.mjs ]] || node --check tools/tftmac-v2.mjs >/dev/null
 node tools/tftmac-direct-control.mjs engineering-map-selftest >/dev/null
 node tools/tftmac-direct-control.mjs lab-selftest >/dev/null
+/bin/zsh scripts/test-causal-runtime.command >/dev/null
 
 if [[ -n "${TFTMAC_FORBIDDEN_TOKEN:-}" ]]; then
   if git ls-files | rg -i -F -- "$TFTMAC_FORBIDDEN_TOKEN"; then
@@ -282,8 +342,14 @@ readonly RELEASE_DERIVED="${ROOT}/.build/native-ci-release"
   -derivedDataPath "$RELEASE_DERIVED" \
   CODE_SIGNING_ALLOWED=NO \
   build
-[[ -x "${RELEASE_DERIVED}/Build/Products/Release/TFTMAC.app/Contents/MacOS/TFTMAC" ]] \
+readonly RELEASE_APP="${RELEASE_DERIVED}/Build/Products/Release/TFTMAC.app"
+[[ -x "${RELEASE_APP}/Contents/MacOS/TFTMAC" ]] \
   || fail "unsigned Release build did not produce the TFTMAC executable"
+cmp -s ssot/runtime-modes.json "${RELEASE_APP}/Contents/Resources/runtime-modes.json" \
+  || fail "unsigned Release app did not package the exact runtime-mode registry"
+cmp -s ssot/runtime-authority.json "${RELEASE_APP}/Contents/Resources/runtime-authority.json" \
+  || fail "unsigned Release app did not package the exact control authority"
+node .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 
 /bin/zsh scripts/test-native-app.command
 
@@ -293,4 +359,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 43 native tests)"
+print "TFTMAC source validation: OK (unsigned Release build; 55 native tests; diagnostic mode source authority PASS)"

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "contract": "TFTMAC_VULKAN_PROBE_WORKLOAD_V1",
+  "package": "com.flashls1.tftmac.vulkanprobe",
+  "warmup_seconds": 30,
+  "workload_seconds": 60,
+  "workloads": [
+    {"id": "stable_descriptor_draw", "index": 1, "draws_per_frame": 1, "texture_upload_each_frame": false, "pipeline_rebuild_each_frame": false, "queue_wait_idle_each_frame": false},
+    {"id": "texture_upload_sampling", "index": 2, "draws_per_frame": 1, "texture_upload_each_frame": true, "pipeline_rebuild_each_frame": false, "queue_wait_idle_each_frame": false},
+    {"id": "pipeline_shader_churn", "index": 3, "draws_per_frame": 1, "texture_upload_each_frame": false, "pipeline_rebuild_each_frame": true, "queue_wait_idle_each_frame": false},
+    {"id": "fill_rate_overdraw", "index": 4, "draws_per_frame": 64, "texture_upload_each_frame": false, "pipeline_rebuild_each_frame": false, "queue_wait_idle_each_frame": false},
+    {"id": "queue_fence_present_pressure", "index": 5, "draws_per_frame": 4, "texture_upload_each_frame": false, "pipeline_rebuild_each_frame": false, "queue_wait_idle_each_frame": true}
+  ],
+  "network_access": false,
+  "riot_interaction": false,
+  "frame_identity": "FNV1A64(profile,workload,frame,texture_generation)",
+  "result_stream": "logcat:TFTMAC_VKPROBE"
+}

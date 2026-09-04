@@ -31,7 +31,7 @@
     "tftGraphicsQuality": "High",
     "tftFrameRateCap": 60,
     "tftPerformanceModeBeta": false,
-    "activeExperiment": "combat_latency_a"
+    "activeExperiment": "control"
   },
   "androidWebView": {
     "package": "com.google.android.webview",
@@ -154,13 +154,42 @@
     "markersAndBattles": "OPTIONAL_ANNOTATIONS_NOT_VALIDITY_OR_CAUSAL_GATES",
     "automaticLogging": "VERIFIED_PID_LAYER_LIFETIME",
     "rootAttribution": "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE",
-    "nextLayer": "ADVANCED_SOURCE_CAUSAL_LOGGER_PLANNED"
+    "capturedExperiment": "combat_latency_a",
+    "nextLayer": "ADVANCED_SOURCE_CAUSAL_LOGGER_PARTIAL_NOT_LIVE_ACCEPTED"
   },
   "diagnosticRuntimeEligibility": {
     "repository": "flashls1/tftmac-runtime",
     "commit": "c8aa26ebaa5b977965eb165ad8aac5c98408469f",
     "status": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
-    "normalPlayAuthority": "STOCK_BUILD8"
+    "normalPlayAuthority": "STOCK_BUILD8",
+    "currentDevVariant": "stock_shadow",
+    "currentDevAVD": "TFTMAC_Diagnostic_StockShadow_R1",
+    "currentDevRuntime": "EMULATOR_37_1_11_API_36_PHYSICAL_CLONE",
+    "consecutiveFirstFramePasses": 3,
+    "r11Status": "FAILED_FIRST_NATIVE_FRAME_HISTORICAL",
+    "causalLogger": "PARTIAL_SOURCE_AND_SCHEMA_NOT_LIVE_ACCEPTED",
+    "modernCausalSource": {
+      "manifestBranch": "emu-main-dev",
+      "manifestCommit": "2692acc620f6563b21995540656674faeb536cdc",
+      "storage": "CASE_SENSITIVE_APFS_SPARSE_IMAGE",
+      "sourceLockReceipt": "NOT_CREATED_SYNC_PAUSED",
+      "uninstrumentedBuild": "NOT_RUN",
+      "sourceHooks": "NOT_IMPLEMENTED"
+    },
+    "ownedProbeCampaign": {
+      "sequence": [
+        "control",
+        "queue_submit_inline",
+        "control",
+        "virtual_queue_off",
+        "control",
+        "fence_contexts_off",
+        "control"
+      ],
+      "keychainService": "com.flashls1.tftmac.android-unlock.v2",
+      "keychainItemStatus": "NOT_CONFIGURED_AT_HANDOFF",
+      "state": "NOT_RUN_NO_WINNER"
+    }
   },
   "evidenceOperations": [
     "native-events:CONTROLLER_AUTHENTICATED",

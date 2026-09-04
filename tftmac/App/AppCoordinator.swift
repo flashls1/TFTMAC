@@ -7,43 +7,69 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private var runtimeController: TFTMACRuntimeController?
     private var settingsWindowController: RuntimeSettingsWindowController?
     private var activeProfile: TFTMACRuntimeProfile = .playable
+    private var activeApplicationSupport = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
     private var terminationInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = MainWindowController(mailbox: mailbox)
         mainWindowController = controller
-        let activeProfile = TFTMACRuntimeProfile.load()
-        self.activeProfile = activeProfile
-        let runtime = TFTMACRuntimeController(
-            profile: activeProfile,
-            mailbox: mailbox,
-            status: { [weak controller] text, isError in
-                controller?.emulatorView.setStatus(text, isError: isError)
-            },
-            gameFrame: { [weak controller] window in
-                controller?.emulatorView.setGameFrameWindow(window)
-            }
-        )
-        runtimeController = runtime
-        controller.emulatorView.onTouchInput = { [weak runtime] input in
-            runtime?.sendTouch(input)
-        }
-        controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons in
-            runtime?.sendMouse(x: x, y: y, buttons: buttons)
-        }
-        controller.emulatorView.onKeyboardInput = { [weak runtime] text, key in
-            runtime?.sendKeyboard(text: text, key: key)
-        }
-        controller.emulatorView.onPresentationSample = { [weak runtime] sample in
-            runtime?.recordPresentation(sample)
-        }
-        controller.emulatorView.onHostPresentationWindow = { [weak runtime] sample in
-            runtime?.recordHostPresentation(sample)
-        }
         controller.showWindow(nil)
         controller.window?.makeFirstResponder(controller.emulatorView)
         NSApp.activate(ignoringOtherApps: true)
-        runtime.start()
+
+        do {
+            let savedProfile = TFTMACRuntimeProfile.load()
+            let runtimeConfiguration = try TFTMACSelectedRuntimeConfiguration.load(
+                savedProfile: savedProfile
+            )
+            activeProfile = runtimeConfiguration.profile
+            activeApplicationSupport = runtimeConfiguration.applicationSupport
+            let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC"
+            )
+            if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
+                controller.emulatorView.setStatus("Automatic Android unlock is stored securely.", isError: false)
+                NSApp.terminate(nil)
+                return
+            }
+            let runtime = TFTMACRuntimeController(
+                runtimeConfiguration: runtimeConfiguration,
+                guestUnlockSecret: unlockSecret,
+                mailbox: mailbox,
+                status: { [weak controller] text, isError in
+                    controller?.emulatorView.setStatus(text, isError: isError)
+                },
+                gameFrame: { [weak controller] window in
+                    controller?.emulatorView.setGameFrameWindow(window)
+                },
+                completed: {
+                    if runtimeConfiguration.workload == .ownedVulkanProbe {
+                        NSApp.terminate(nil)
+                    }
+                }
+            )
+            runtimeController = runtime
+            controller.emulatorView.onTouchInput = { [weak runtime] input in
+                runtime?.sendTouch(input)
+            }
+            controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons in
+                runtime?.sendMouse(x: x, y: y, buttons: buttons)
+            }
+            controller.emulatorView.onKeyboardInput = { [weak runtime] text, key in
+                runtime?.sendKeyboard(text: text, key: key)
+            }
+            controller.emulatorView.onPresentationSample = { [weak runtime] sample in
+                runtime?.recordPresentation(sample)
+            }
+            controller.emulatorView.onHostPresentationWindow = { [weak runtime] sample in
+                runtime?.recordHostPresentation(sample)
+            }
+            runtime.start()
+        } catch {
+            controller.emulatorView.setStatus(error.localizedDescription, isError: true)
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak controller] in
             controller?.enterNativeFullscreen()
         }
@@ -82,8 +108,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     @objc func markMatchEnd(_ sender: Any?) { recordMarker("MATCH_END") }
 
     @objc func revealCaptureFolder(_ sender: Any?) {
-        let captures = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/TFTMAC/Captures", isDirectory: true)
+        let captures = activeApplicationSupport
+            .appendingPathComponent("Captures", isDirectory: true)
         try? FileManager.default.createDirectory(at: captures, withIntermediateDirectories: true)
         NSWorkspace.shared.open(captures)
     }

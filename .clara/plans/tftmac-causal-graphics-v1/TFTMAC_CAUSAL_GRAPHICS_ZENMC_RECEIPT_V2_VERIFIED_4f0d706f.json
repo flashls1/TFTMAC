@@ -1,0 +1,105 @@
+{
+  "amendments": [
+    {
+      "authority_inputs_sha256": "1d85f4f2f64f3b6089c79385b329dfe42bb479b8c65877c39bf01bdef13703ac",
+      "canonical_branch": "master",
+      "canonical_git_state": {
+        "ahead": 0,
+        "aligned_with_origin": true,
+        "behind": 0,
+        "clean": true,
+        "open_pull_requests": 0
+      },
+      "canonical_head_at_amendment": "c8b79ea009197c25bc7e64bebd5e8948eea918b1",
+      "canonical_repository": "flashls1/TFTMAC",
+      "delta_zenmc": {
+        "invariant_violations": {
+          "candidate_cutover_without_signing_validation": 0,
+          "implementation_from_dirty_or_diverged_repo": 0,
+          "implementation_with_authority_hash_failure": 0,
+          "noncanonical_worktree_imported": 0
+        },
+        "model_sha256": "e67e5473b309a210816b87dc55c0765567e4d996b48c9ca982eeb66863d7ad85",
+        "name": "TFTMAC Causal Graphics Clean Repository Amendment ZenMC Delta",
+        "note": "Scenario weights are adversarial branch-coverage weights, not empirical probabilities or forecasts.",
+        "random_outcomes": {
+          "BLOCKED_AUTHORITY_HASH_DRIFT": 353,
+          "BLOCKED_BASELINE_SOURCE_VALIDATION": 656,
+          "BLOCKED_CANONICAL_REPO_DRIFT": 516,
+          "BLOCKED_NONCANONICAL_WORKTREE_IMPORT": 621,
+          "LEGACY_PHASE0_PRESERVATION_REQUIRED": 1395,
+          "READY_FOR_IMPLEMENTATION": 5129,
+          "READY_FOR_IMPLEMENTATION_AND_LATER_CUTOVER_GATES": 729,
+          "SOURCE_WORK_READY_CUTOVER_BLOCKED_SIGNING_IDENTITY": 601
+        },
+        "random_trajectories": 10000,
+        "result": "PASS",
+        "seed": 202608311955,
+        "targeted_cases": {
+          "authority_hash_drift": "BLOCKED_AUTHORITY_HASH_DRIFT",
+          "clean_aligned_success": "READY_FOR_IMPLEMENTATION",
+          "dirty_repo": "LEGACY_PHASE0_PRESERVATION_REQUIRED",
+          "diverged_repo": "BLOCKED_CANONICAL_REPO_DRIFT",
+          "missing_signing_identity_at_cutover": "SOURCE_WORK_READY_CUTOVER_BLOCKED_SIGNING_IDENTITY",
+          "old_worktree_import": "BLOCKED_NONCANONICAL_WORKTREE_IMPORT",
+          "source_verifier_failure": "BLOCKED_BASELINE_SOURCE_VALIDATION"
+        },
+        "version": "1.1"
+      },
+      "diagnostic_runtime": {
+        "classification": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
+        "commit": "c8aa26ebaa5b977965eb165ad8aac5c98408469f",
+        "repository": "flashls1/tftmac-runtime"
+      },
+      "id": "TFTMAC_CAUSAL_GRAPHICS_CLEAN_REPOSITORY_V1_1",
+      "observed_at_local": "2026-08-31 19:55 America/Chicago",
+      "observed_at_utc": "2026-09-01T00:55:04.583Z",
+      "stack_lock_sha256": "e2b6fca2e3d310f97ca833b0fccd0f5202f766b6f72aeeb795f061a8c1baf096",
+      "supersedes": [
+        "The old canonical-head observation 365e891ea2950e2cc68a9e4fec683c8538a831e6.",
+        "The assumption that current native-controller work exists only in dirty Clara worktrees.",
+        "The instruction to create missing root facts.md, project.md, dev.md, or benchmark.md.",
+        "The classification of the 42m27s Build 8 capture as unreceipted.",
+        "The old Phase 0 broad-recovery path when the implementation checkout is clean and aligned."
+      ],
+      "type": "APPEND_ONLY_AUTHORITY_AMENDMENT"
+    }
+  ],
+  "invariants": [
+    "No control-runtime mutation before accepted production promotion.",
+    "No ROOT_NAMED without three matching epochs, at least two cold epochs, owned stage, and decisive site.",
+    "No patch attempt without an owned ROOT_NAMED receipt.",
+    "No production promotion without diagnostic A/B pass, stock-candidate pass, Ultra High pass, and rollback receipt.",
+    "Any evidence loss, clock failure, parity failure, surface ambiguity, or observer effect fails closed."
+  ],
+  "name": "TFTMAC Causal Graphics Optimization ZenMC",
+  "note": "Scenario weights are adversarial branch-coverage weights, not empirical probabilities or forecasts.",
+  "plan_filename": "TFTMAC_CAUSAL_GRAPHICS_OPTIMIZATION_IMPLEMENTATION_PLAN.md",
+  "plan_version": "1.1",
+  "random_outcome_examples": {
+    "BLOCKED_LOCAL_WORK_UNPRESERVED": 799,
+    "ROOT_CANDIDATE": 139,
+    "ULTRA_HIGH_60_ACCEPTED": 5,
+    "UNKNOWN_BOUNDED_TO_STAGE": 44,
+    "UNKNOWN_CLOCK_UNCERTAINTY": 731,
+    "UNKNOWN_DIAGNOSTIC_NOT_REPRESENTATIVE": 1302,
+    "UNKNOWN_HEALTHY_BASELINE_INSUFFICIENT": 867,
+    "UNKNOWN_OBSERVER_EFFECT": 1091,
+    "UNKNOWN_PIPELINE_RECEIPT": 1053,
+    "UNKNOWN_PRESENT_LINEAGE_GAP": 748,
+    "UNKNOWN_UNREAL_OR_PRE_ENCODER": 53
+  },
+  "random_trajectories": 10000,
+  "results": {
+    "all_targeted_faults_reached_expected_fail_closed_outcome": true,
+    "early_control_runtime_mutations": 0,
+    "false_root_named": 0,
+    "patches_without_owned_root": 0,
+    "unsafe_production_promotions": 0
+  },
+  "scope_lock_sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+  "seed": 20260831,
+  "targeted_single_gate_mutations": 24,
+  "targeted_success_case": 1,
+  "version": 2
+}

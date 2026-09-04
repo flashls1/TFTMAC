@@ -10,63 +10,77 @@ import SQLite3
 import SwiftProtobuf
 
 struct TFTMACRuntimePaths: Sendable {
+    let mode: TFTMACRuntimeMode
+    let registrySha256: String
+    let configurationSha256: String
+    let runtimeRoot: URL
     let sdkRoot: URL
+    let libraryRoot: URL
     let emulator: URL
+    let qemu: URL
+    let gfxstreamBackend: URL
     let adb: URL
     let avdHome: URL
+    let avdName: String
     let avdDirectory: URL
     let avdConfig: URL
+    let avdINI: URL
     let hostApplication: URL
     let applicationSupport: URL
+    let globalApplicationSupport: URL
+    let adbServerPort: Int
+    let consolePort: Int
+    let controllerPort: Int
+    let serial: String
+    let emulatorIdentifier: String
+    let launchStrategy: TFTMACRuntimeLaunchStrategy
+    let adbVendorKeysPolicy: String
+    let expectedEmulatorVersionContains: String
 
-    static func discover() throws -> Self {
-        let manager = FileManager.default
-        let runtimeRoot = URL(fileURLWithPath: "/Volumes/MAC MINI M4/TFTMAC/Runtime", isDirectory: true)
-        let sdkCandidates = ["SDK", "sdk"].map { runtimeRoot.appendingPathComponent($0, isDirectory: true) }
-        guard let sdkRoot = sdkCandidates.first(where: {
-            manager.isExecutableFile(atPath: $0.appendingPathComponent("emulator/emulator").path)
-                && manager.isExecutableFile(atPath: $0.appendingPathComponent("platform-tools/adb").path)
-        }) else {
-            throw TFTMACRuntimeError("The proven Android runtime is not mounted at /Volumes/MAC MINI M4/TFTMAC/Runtime.")
+    static func discover(
+        configuration: TFTMACSelectedRuntimeConfiguration,
+        bundle: Bundle = .main
+    ) throws -> Self {
+        let selection = configuration.selection
+        let definition = selection.definition
+        let resolved = try configuration.authority.resolveForLaunch(
+            selection: selection,
+            bundle: bundle
+        )
+        guard let controllerPort = definition.controllerPort,
+              let qemuPath = resolved.supplemental.qemuPath,
+              let expectedEmulatorVersionContains = resolved.supplemental.expectedEmulatorVersionContains else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(selection.mode.rawValue) has no accepted launch lease."
+            )
         }
-
-        let avdCandidates = ["AVD", "avd"].map { runtimeRoot.appendingPathComponent($0, isDirectory: true) }
-        guard let avdHome = avdCandidates.first(where: {
-            manager.fileExists(atPath: $0.appendingPathComponent("TFT_Ultra_Tablet.ini").path)
-        }) else {
-            throw TFTMACRuntimeError("The TFT_Ultra_Tablet AVD is missing from the proven runtime.")
-        }
-        let avdINI = avdHome.appendingPathComponent("TFT_Ultra_Tablet.ini")
-        let iniText = try String(contentsOf: avdINI, encoding: .utf8)
-        guard let avdPath = iniText.split(whereSeparator: \.isNewline)
-            .first(where: { $0.hasPrefix("path=") })?
-            .dropFirst("path=".count), !avdPath.isEmpty else {
-            throw TFTMACRuntimeError("TFT_Ultra_Tablet.ini does not identify its AVD directory.")
-        }
-        let avdDirectory = URL(fileURLWithPath: String(avdPath), isDirectory: true)
-        let avdConfig = avdDirectory.appendingPathComponent("config.ini")
-        guard manager.fileExists(atPath: avdConfig.path) else {
-            throw TFTMACRuntimeError("The TFT_Ultra_Tablet config.ini is missing.")
-        }
-
-        guard let resourceURL = Bundle.main.resourceURL else {
-            throw TFTMACRuntimeError("TFTMAC.app has no Resources directory.")
-        }
-        let hostApplication = resourceURL.appendingPathComponent("TFTMAC Emulator Host.app", isDirectory: true)
-        guard manager.fileExists(atPath: hostApplication.path) else {
-            throw TFTMACRuntimeError("TFTMAC Emulator Host.app is missing from the application bundle.")
-        }
-        let applicationSupport = manager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
         return Self(
-            sdkRoot: sdkRoot,
-            emulator: sdkRoot.appendingPathComponent("emulator/emulator"),
-            adb: sdkRoot.appendingPathComponent("platform-tools/adb"),
-            avdHome: avdHome,
-            avdDirectory: avdDirectory,
-            avdConfig: avdConfig,
-            hostApplication: hostApplication,
-            applicationSupport: applicationSupport
+            mode: selection.mode,
+            registrySha256: selection.registrySha256,
+            configurationSha256: definition.configurationSha256,
+            runtimeRoot: URL(fileURLWithPath: definition.runtimeRoot, isDirectory: true),
+            sdkRoot: URL(fileURLWithPath: definition.sdkRoot, isDirectory: true),
+            libraryRoot: URL(fileURLWithPath: definition.libraryRoot, isDirectory: true),
+            emulator: URL(fileURLWithPath: definition.emulatorPath),
+            qemu: URL(fileURLWithPath: qemuPath),
+            gfxstreamBackend: URL(fileURLWithPath: definition.gfxstreamBackendPath),
+            adb: URL(fileURLWithPath: definition.adbPath),
+            avdHome: URL(fileURLWithPath: definition.avdHome, isDirectory: true),
+            avdName: definition.avdName,
+            avdDirectory: URL(fileURLWithPath: definition.avdDirectory, isDirectory: true),
+            avdConfig: URL(fileURLWithPath: definition.avdConfigPath),
+            avdINI: URL(fileURLWithPath: definition.avdIniPath),
+            hostApplication: resolved.hostApplication,
+            applicationSupport: resolved.applicationSupport,
+            globalApplicationSupport: resolved.globalApplicationSupport,
+            adbServerPort: definition.adbServerPort,
+            consolePort: definition.consolePort,
+            controllerPort: controllerPort,
+            serial: definition.serial,
+            emulatorIdentifier: resolved.supplemental.emulatorIdentifier,
+            launchStrategy: resolved.supplemental.launchStrategy,
+            adbVendorKeysPolicy: resolved.supplemental.adbVendorKeysPolicy,
+            expectedEmulatorVersionContains: expectedEmulatorVersionContains
         )
     }
 }
@@ -93,6 +107,7 @@ private enum EmulatorInput: Sendable {
     case touch(TouchInput)
     case mouse(MouseInput)
     case keyboard(KeyboardInput)
+    case secureUnlock(TFTMACGuestUnlockSecret)
 }
 
 struct PresentationSample: Sendable {
@@ -307,6 +322,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     private var activeGraphicsRunID: String?
     private var activeGraphicsRunPID: Int32?
     private var activeGraphicsStackSHA256: String?
+    private var activePipelineEpochID: String?
+    private var activePipelineEpochStartedUTC: String?
+    private var activePipelineEpochStartedNS: UInt64?
+    private var activeDevFeatureReceiptJSON = "{}"
     private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(profile: TFTMACRuntimeProfile, applicationSupport: URL) throws {
@@ -489,6 +508,85 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 [.text(self.sessionIdentifier), .text(utc), .integer(Int64(bitPattern: monotonic)), .text(kind), .text(payloadText)]
             )
             try self.eventLog?.write(contentsOf: lineData)
+        }
+    }
+
+    func beginDevExperiment(_ profile: DevExperimentProfile, workload: TFTMACRuntimeWorkload) {
+        let epochID = "probe-\(sessionIdentifier)"
+        let startedUTC = Self.utcNow()
+        let startedNS = DispatchTime.now().uptimeNanoseconds
+        enqueue {
+            try self.execute(
+                "INSERT INTO pipeline_diagnostic_epochs(epoch_id, session_id, workload_kind, experiment_profile_id, configuration_sha256, workload_manifest_sha256, started_utc, started_monotonic_ns, status) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING')",
+                [
+                    .text(epochID), .text(self.sessionIdentifier), .text(workload.rawValue),
+                    .text(profile.id.rawValue), .text(profile.effectiveConfigurationSHA256),
+                    .text(profile.workloadManifestSHA256), .text(startedUTC),
+                    .integer(Int64(bitPattern: startedNS))
+                ]
+            )
+            self.activePipelineEpochID = epochID
+            self.activePipelineEpochStartedUTC = startedUTC
+            self.activePipelineEpochStartedNS = startedNS
+        }
+    }
+
+    func recordDevFeatureReceipt(_ receipt: [String: String]) {
+        let json = Self.json(receipt)
+        enqueue { self.activeDevFeatureReceiptJSON = json }
+    }
+
+    func recordOwnedProbePayload(_ payload: [String: Any]) {
+        guard payload["event"] as? String == "window" else { return }
+        let observedNS = DispatchTime.now().uptimeNanoseconds
+        let durationNS = (payload["cpu_p99_ms"] as? NSNumber)
+            .map { Int64(($0.doubleValue * 1_000_000).rounded()) }
+        let payloadJSON = Self.json(payload)
+        enqueue {
+            try self.execute(
+                "INSERT INTO pipeline_events(session_id, epoch_id, schema_version, observed_monotonic_ns, component, boundary, event_kind, transport_work_id, present_lineage_id, lineage_generation, source_site_id, queue_depth, duration_ns, payload_json) VALUES(?, ?, 1, ?, 'OWNED_PROBE', 'guestProbeSubmit', 'WINDOW', NULL, NULL, NULL, NULL, NULL, ?, ?)",
+                [
+                    .text(self.sessionIdentifier), self.activePipelineEpochID.map(SQLiteValue.text) ?? .null,
+                    .integer(Int64(bitPattern: observedNS)),
+                    durationNS.map(SQLiteValue.integer) ?? .null,
+                    .text(payloadJSON)
+                ]
+            )
+        }
+    }
+
+    func finishDevExperiment(
+        profile: DevExperimentProfile,
+        state: String,
+        correctnessPassed: Bool,
+        result: [String: Any]
+    ) {
+        let endedUTC = Self.utcNow()
+        let endedNS = DispatchTime.now().uptimeNanoseconds
+        let resultJSON = Self.json(result)
+        enqueue {
+            guard let epochID = self.activePipelineEpochID,
+                  let startedUTC = self.activePipelineEpochStartedUTC else { return }
+            try self.execute(
+                "UPDATE pipeline_diagnostic_epochs SET ended_utc = ?, ended_monotonic_ns = ?, status = ?, lineage_coverage = 0, observer_overhead_percent = NULL, explicit_unknowns_json = ? WHERE epoch_id = ? AND ended_utc IS NULL",
+                [
+                    .text(endedUTC), .integer(Int64(bitPattern: endedNS)), .text(state),
+                    .text("[\"SOURCE_LEVEL_LINEAGE_NOT_ACTIVE\"]"), .text(epochID)
+                ]
+            )
+            try self.execute(
+                "INSERT OR IGNORE INTO pipeline_experiment_runs(run_id, session_id, experiment_profile_id, base_runtime_variant, configuration_sha256, workload_manifest_sha256, effective_feature_receipt_json, started_utc, ended_utc, state, correctness_passed, event_loss_count, result_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                [
+                    .text(self.sessionIdentifier), .text(self.sessionIdentifier), .text(profile.id.rawValue),
+                    .text(profile.baseRuntimeVariant), .text(profile.effectiveConfigurationSHA256),
+                    .text(profile.workloadManifestSHA256), .text(self.activeDevFeatureReceiptJSON),
+                    .text(startedUTC), .text(endedUTC), .text(state),
+                    .integer(correctnessPassed ? 1 : 0), .text(resultJSON)
+                ]
+            )
+            self.activePipelineEpochID = nil
+            self.activePipelineEpochStartedUTC = nil
+            self.activePipelineEpochStartedNS = nil
         }
     }
 
@@ -1026,6 +1124,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 keyboard.text.map { .integer(Int64($0.count)) } ?? .null,
                 keyboard.key.map(SQLiteValue.text) ?? .null
             ]
+        case .secureUnlock:
+            return
         }
         enqueue {
             try self.execute(
@@ -1434,6 +1534,118 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           character_count INTEGER,
           special_key TEXT
         );
+        CREATE TABLE IF NOT EXISTS pipeline_diagnostic_epochs(
+          epoch_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          workload_kind TEXT NOT NULL,
+          experiment_profile_id TEXT NOT NULL,
+          configuration_sha256 TEXT NOT NULL,
+          workload_manifest_sha256 TEXT,
+          started_utc TEXT NOT NULL,
+          started_monotonic_ns INTEGER NOT NULL,
+          ended_utc TEXT,
+          ended_monotonic_ns INTEGER,
+          status TEXT NOT NULL,
+          lineage_coverage REAL,
+          observer_overhead_percent REAL,
+          overwrite_count INTEGER NOT NULL DEFAULT 0,
+          explicit_unknowns_json TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_events(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          epoch_id TEXT,
+          schema_version INTEGER NOT NULL,
+          observed_monotonic_ns INTEGER NOT NULL,
+          component TEXT NOT NULL,
+          boundary TEXT NOT NULL,
+          event_kind TEXT NOT NULL,
+          transport_work_id TEXT,
+          present_lineage_id TEXT,
+          lineage_generation INTEGER,
+          source_site_id INTEGER,
+          queue_depth INTEGER,
+          duration_ns INTEGER,
+          payload_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_event_segments(
+          segment_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          epoch_id TEXT NOT NULL,
+          started_monotonic_ns INTEGER NOT NULL,
+          ended_monotonic_ns INTEGER NOT NULL,
+          event_count INTEGER NOT NULL,
+          overwrite_count INTEGER NOT NULL,
+          relative_path TEXT NOT NULL,
+          byte_count INTEGER NOT NULL,
+          payload_sha256 TEXT NOT NULL,
+          previous_segment_sha256 TEXT NOT NULL,
+          segment_sha256 TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_source_sites(
+          source_site_id INTEGER NOT NULL,
+          component TEXT NOT NULL,
+          source_commit TEXT NOT NULL,
+          source_blob_sha256 TEXT NOT NULL,
+          relative_path TEXT NOT NULL,
+          function_name TEXT NOT NULL,
+          line_number INTEGER,
+          instrumentation_state TEXT NOT NULL,
+          PRIMARY KEY(source_site_id, component, source_commit)
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_lineage(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          epoch_id TEXT NOT NULL,
+          transport_work_id TEXT,
+          present_lineage_id TEXT,
+          generation INTEGER NOT NULL,
+          first_boundary TEXT,
+          last_boundary TEXT,
+          unambiguous INTEGER NOT NULL,
+          ambiguity_reason TEXT
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_findings(
+          finding_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          epoch_id TEXT NOT NULL,
+          created_utc TEXT NOT NULL,
+          state TEXT NOT NULL CHECK(state IN ('ROOT_NAMED','ROOT_CANDIDATE','UNKNOWN','UNREAL_OR_PRE_HOST_UNKNOWN')),
+          first_divergent_boundary TEXT,
+          owner_component TEXT,
+          confidence REAL NOT NULL,
+          supporting_lineage_count INTEGER NOT NULL,
+          explicit_unknowns_json TEXT NOT NULL,
+          analyzer_version TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_experiment_runs(
+          run_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          experiment_profile_id TEXT NOT NULL,
+          base_runtime_variant TEXT NOT NULL,
+          configuration_sha256 TEXT NOT NULL,
+          workload_manifest_sha256 TEXT NOT NULL,
+          effective_feature_receipt_json TEXT NOT NULL,
+          started_utc TEXT NOT NULL,
+          ended_utc TEXT NOT NULL,
+          state TEXT NOT NULL,
+          correctness_passed INTEGER NOT NULL,
+          event_loss_count INTEGER NOT NULL,
+          result_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_experiment_comparisons(
+          comparison_id TEXT PRIMARY KEY,
+          control_run_id TEXT NOT NULL,
+          candidate_run_id TEXT NOT NULL,
+          created_utc TEXT NOT NULL,
+          workload_deltas_json TEXT NOT NULL,
+          one_percent_low_delta_percent REAL,
+          relevant_pipeline_p99_delta_percent REAL,
+          maximum_other_workload_regression_percent REAL,
+          correctness_passed INTEGER NOT NULL,
+          decision TEXT NOT NULL,
+          decision_reason TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_events_kind_time ON events(kind, monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_graphics_runs_session_time ON graphics_runs(session_id, started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_frames_time ON frame_samples(received_monotonic_ns);
@@ -1458,6 +1670,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS idx_graphics_incidents_run_time ON graphics_pipeline_incidents(graphics_run_id, observed_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_combat_benchmarks_session ON combat_benchmarks(session_id, started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_inputs_time ON input_samples(monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_events_epoch_time ON pipeline_events(epoch_id, observed_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_lineage_epoch_work ON pipeline_lineage(epoch_id, transport_work_id, present_lineage_id);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_findings_epoch ON pipeline_findings(epoch_id, created_utc);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_experiment_profile ON pipeline_experiment_runs(experiment_profile_id, ended_utc);
         DROP VIEW IF EXISTS graphics_frame_facts;
         DROP VIEW IF EXISTS graphics_pipeline_windows;
         DROP VIEW IF EXISTS graphics_window_context;
@@ -1736,6 +1952,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             return ("UNAVAILABLE", "MALFORMED_LATENCY")
         case .unavailable(.adbError):
             return ("UNAVAILABLE", "ADB_ERROR")
+        case .unavailable(.loginPromptActive):
+            return ("UNAVAILABLE", "LOGIN_PROMPT_ACTIVE")
         }
     }
 
@@ -2025,6 +2243,8 @@ actor TFTMACRuntimeService {
     typealias StatusHandler = @MainActor @Sendable (String, Bool) -> Void
     typealias GameFrameHandler = @MainActor @Sendable (GameFrameTelemetryWindow?) -> Void
 
+    private let runtimeConfiguration: TFTMACSelectedRuntimeConfiguration
+    private let guestUnlockSecret: TFTMACGuestUnlockSecret
     private let profile: TFTMACRuntimeProfile
     private let mailbox: LatestFrameMailbox
     private let status: StatusHandler
@@ -2064,54 +2284,131 @@ actor TFTMACRuntimeService {
     private var tftPackageVersion = "unknown"
     private var stopping = false
 
+    private var activeWorkloadPackage: String {
+        runtimeConfiguration.workload == .ownedVulkanProbe
+            ? "com.flashls1.tftmac.vulkanprobe"
+            : "com.riotgames.league.teamfighttactics"
+    }
+
     init(
-        profile: TFTMACRuntimeProfile,
+        runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
+        guestUnlockSecret: TFTMACGuestUnlockSecret,
         mailbox: LatestFrameMailbox,
         status: @escaping StatusHandler,
         gameFrame: @escaping GameFrameHandler
     ) {
-        self.profile = profile
+        self.runtimeConfiguration = runtimeConfiguration
+        self.guestUnlockSecret = guestUnlockSecret
+        self.profile = runtimeConfiguration.profile
         self.mailbox = mailbox
         self.status = status
         self.gameFrame = gameFrame
     }
 
     func run() async throws {
-        let applicationSupport = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
-        let telemetry = try TFTMACNativeTelemetry(profile: profile, applicationSupport: applicationSupport)
-        self.telemetry = telemetry
-        labStore = try CombatBenchmarkLabStore(applicationSupport: applicationSupport)
-        await status("Starting Android through the native Mac app host…", false)
-
+        await status("Validating the selected TFTMAC runtime identity…", false)
         do {
-            let paths = try TFTMACRuntimePaths.discover()
+            let paths = try TFTMACRuntimePaths.discover(configuration: runtimeConfiguration)
             self.paths = paths
-            let stateRoot = paths.applicationSupport.appendingPathComponent("State", isDirectory: true)
-            runtimeLease = try TFTMACRuntimeLease.acquire(stateRoot: stateRoot)
+            let telemetry = try TFTMACNativeTelemetry(
+                profile: profile,
+                applicationSupport: paths.applicationSupport
+            )
+            self.telemetry = telemetry
+            labStore = try CombatBenchmarkLabStore(applicationSupport: paths.applicationSupport)
+            await status("Starting Android through the native Mac app host…", false)
+
+            let leaseIdentity = try runtimeConfiguration.selection.leaseIdentity()
+            let globalStateRoot = paths.globalApplicationSupport
+                .appendingPathComponent("State", isDirectory: true)
+            runtimeLease = try TFTMACRuntimeLease.acquire(
+                stateRoot: globalStateRoot,
+                identity: leaseIdentity
+            )
             telemetry.recordEvent("RUNTIME_LEASE_ACQUIRED", payload: [
-                "lease": "State/native-runtime.lease",
+                "lease": runtimeConfiguration.registry.document.activeLeaseRelativePath,
                 "pid": ProcessInfo.processInfo.processIdentifier,
-                "exclusive": true
+                "exclusive": true,
+                "mode": paths.mode.rawValue,
+                "registry_sha256": paths.registrySha256,
+                "configuration_sha256": paths.configurationSha256,
+                "avd": paths.avdName,
+                "adb_server_port": paths.adbServerPort,
+                "console_port": paths.consolePort,
+                "controller_port": paths.controllerPort,
+                "serial": paths.serial
             ])
-            try assertRuntimeUnoccupied(telemetry: telemetry)
+            try assertRuntimeUnoccupied(paths: paths, telemetry: telemetry)
             try recoverInterruptedAVDTransaction(paths: paths)
             recordFrozenReceipts(telemetry: telemetry, paths: paths)
+            if let experiment = runtimeConfiguration.devExperimentProfile {
+                telemetry.beginDevExperiment(experiment, workload: runtimeConfiguration.workload)
+                telemetry.recordReceipt(
+                    key: "dev_experiment_profile",
+                    value: experiment.id.rawValue,
+                    source: "sealed DEV environment selection",
+                    confidence: "DIRECT"
+                )
+                telemetry.recordReceipt(
+                    key: "dev_workload_manifest_sha256",
+                    value: experiment.workloadManifestSHA256,
+                    source: "bundled workload-manifest.json",
+                    confidence: "DIRECT"
+                )
+                telemetry.recordEvent("DEV_EXPERIMENT_PROFILE_SEALED", payload: [
+                    "id": experiment.id.rawValue,
+                    "base_runtime_variant": experiment.baseRuntimeVariant,
+                    "emulator_feature_overrides": experiment.emulatorFeatureOverrides,
+                    "effective_configuration_sha256": experiment.effectiveConfigurationSHA256,
+                    "workload_manifest_sha256": experiment.workloadManifestSHA256,
+                    "duration_seconds": experiment.durationSeconds,
+                    "warmup_seconds": experiment.warmupSeconds,
+                    "correctness_requirements": experiment.correctnessRequirements,
+                    "workload": runtimeConfiguration.workload.rawValue
+                ])
+            }
             avdTransaction = try prepareAVD(paths: paths, telemetry: telemetry)
             try startADBServer(paths: paths, telemetry: telemetry)
             let launchStarted = Date()
             try launchEmulatorHost(paths: paths, telemetry: telemetry)
-            let discovery = try await waitForDiscovery(paths: paths, captureDirectory: telemetry.captureDirectory, after: launchStarted)
+            let discovery = try await waitForDiscovery(
+                paths: paths,
+                captureDirectory: telemetry.captureDirectory,
+                after: launchStarted
+            )
+            guard discovery.port == paths.controllerPort else {
+                throw TFTMACRuntimeError(
+                    "The emulator published controller port \(discovery.port), not the accepted port \(paths.controllerPort)."
+                )
+            }
             self.discovery = discovery
             telemetry.recordEvent("EMULATOR_CONTROLLER_DISCOVERED", payload: [
                 "pid": discovery.processIdentifier,
                 "grpc_port": discovery.port,
                 "record": discovery.recordPath,
-                "token_persisted": false
+                "token_persisted": false,
+                "mode": paths.mode.rawValue
+            ])
+            let loadedIdentity = try runtimeConfiguration.authority.validateLoadedRuntime(
+                processIdentifier: discovery.processIdentifier,
+                selection: runtimeConfiguration.selection
+            )
+            telemetry.recordEvent("LOADED_RUNTIME_IDENTITY_PASS", payload: [
+                "pid": loadedIdentity.processIdentifier,
+                "mode": paths.mode.rawValue,
+                "qemu_path": loadedIdentity.qemuPath,
+                "qemu_sha256": loadedIdentity.qemuSha256,
+                "qemu_uuids": loadedIdentity.qemuUuids,
+                "gfxstream_backend_path": loadedIdentity.gfxstreamBackendPath,
+                "gfxstream_backend_sha256": loadedIdentity.gfxstreamBackendSha256,
+                "gfxstream_backend_uuids": loadedIdentity.gfxstreamBackendUuids
             ])
             try recordHostSchedulingReceipt(telemetry: telemetry)
 
-            let (inputStream, continuation) = AsyncStream.makeStream(of: EmulatorInput.self, bufferingPolicy: .bufferingNewest(256))
+            let (inputStream, continuation) = AsyncStream.makeStream(
+                of: EmulatorInput.self,
+                bufferingPolicy: .bufferingNewest(256)
+            )
             inputContinuation = continuation
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask { [profile, mailbox] in
@@ -2121,6 +2418,7 @@ actor TFTMACRuntimeService {
                         mailbox: mailbox,
                         telemetry: telemetry,
                         inputStream: inputStream,
+                        expectedEmulatorVersionContains: paths.expectedEmulatorVersionContains,
                         status: self.status
                     )
                 }
@@ -2128,7 +2426,11 @@ actor TFTMACRuntimeService {
                     try await self.waitForBootAndLaunchGame(paths: paths, telemetry: telemetry)
                 }
                 group.addTask {
-                    try await self.sampleRuntime(paths: paths, telemetry: telemetry, emulatorPID: discovery.processIdentifier)
+                    try await self.sampleRuntime(
+                        paths: paths,
+                        telemetry: telemetry,
+                        emulatorPID: discovery.processIdentifier
+                    )
                 }
                 group.addTask {
                     try await self.sampleGameFrames(paths: paths, telemetry: telemetry)
@@ -2139,19 +2441,28 @@ actor TFTMACRuntimeService {
             if !stopping { throw TFTMACRuntimeError("The native emulator session ended unexpectedly.") }
         } catch {
             if stopping || error is CancellationError {
-                telemetry.recordEvent("RUNTIME_STOP_REQUESTED", payload: ["reason": "application_termination"])
+                telemetry?.recordEvent("RUNTIME_STOP_REQUESTED", payload: ["reason": "application_termination"])
                 await cleanup(status: "STOPPED")
                 return
             }
-            telemetry.recordEvent("RUNTIME_FAILED", payload: [
+            telemetry?.recordEvent("RUNTIME_FAILED", payload: [
                 "error": error.localizedDescription,
                 "diagnostic": String(describing: error),
-                "type": String(reflecting: type(of: error))
+                "type": String(reflecting: type(of: error)),
+                "mode": runtimeConfiguration.selection.mode.rawValue
             ])
+            if let experiment = runtimeConfiguration.devExperimentProfile {
+                telemetry?.finishDevExperiment(
+                    profile: experiment,
+                    state: "FAILED",
+                    correctnessPassed: false,
+                    result: ["error": error.localizedDescription]
+                )
+            }
             if profile.experimentPreset.isActiveCandidate {
                 recordCorrectnessRejection(reason: error.localizedDescription)
                 TFTMACRuntimeProfile.playable.with(experimentPreset: .control).save()
-                telemetry.recordEvent("EXPERIMENT_AUTO_ROLLBACK", payload: [
+                telemetry?.recordEvent("EXPERIMENT_AUTO_ROLLBACK", payload: [
                     "failed_preset": profile.experimentPreset.rawValue,
                     "restored_preset": RuntimeExperimentPreset.control.rawValue,
                     "classification": "REJECTED_CORRECTNESS",
@@ -2394,16 +2705,25 @@ actor TFTMACRuntimeService {
         inputContinuation?.finish()
         if let paths,
            let ownedPID = discovery?.processIdentifier,
-           Self.processMatchesLaunchedIdentity(ownedPID, sessionMarker: expectedSessionMarker) {
+           Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker) {
+            if runtimeConfiguration.workload == .officialTFT {
+                _ = try? Self.runCommand(
+                    paths.adb,
+                    ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "am", "force-stop", "com.riotgames.league.teamfighttactics"],
+                    environment: Self.adbEnvironment(paths: paths),
+                    timeout: 5
+                )
+                try? await Task.sleep(for: .milliseconds(300))
+            }
             telemetry?.recordEvent("EMULATOR_STOP_SIGNAL_SENT", payload: [
                 "pid": ownedPID,
-                "serial": "emulator-5582",
+                "serial": paths.serial,
                 "method": "adb emu kill",
                 "ownership_verified": true
             ])
             _ = try? Self.runCommand(
                 paths.adb,
-                ["-P", "5038", "-s", "emulator-5582", "emu", "kill"],
+                ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "emu", "kill"],
                 environment: Self.adbEnvironment(paths: paths),
                 timeout: 15
             )
@@ -2415,16 +2735,33 @@ actor TFTMACRuntimeService {
         inputContinuation = nil
         var emulatorExitConfirmed = true
         if let paths {
-            let ownedPID = discovery?.processIdentifier ?? expectedSessionMarker.flatMap(Self.findOwnedEmulatorPID)
+            let ownedPID = discovery?.processIdentifier ?? expectedSessionMarker.flatMap { marker in
+                Self.findOwnedEmulatorPID(sessionMarker: marker, paths: paths)
+            }
             let ownedProcessExists = ownedPID.map(Self.processExists) ?? false
             let ownsRunningEmulator = ownedPID.map {
-                ownedProcessExists && Self.processMatchesLaunchedIdentity($0, sessionMarker: expectedSessionMarker)
+                ownedProcessExists && Self.processMatchesLaunchedIdentity(
+                    $0,
+                    paths: paths,
+                    sessionMarker: expectedSessionMarker
+                )
             } ?? false
             if ownsRunningEmulator {
                 recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
-                if let telemetry {
+                if let telemetry, runtimeConfiguration.workload == .officialTFT {
                     recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
                 }
+            }
+            if runtimeConfiguration.workload == .ownedVulkanProbe, ownsRunningEmulator {
+                _ = try? Self.adb(
+                    paths: paths,
+                    ["uninstall", "com.flashls1.tftmac.vulkanprobe"],
+                    timeout: 30
+                )
+                telemetry?.recordEvent("OWNED_VULKAN_PROBE_REMOVED", payload: [
+                    "package": "com.flashls1.tftmac.vulkanprobe",
+                    "diagnostic_guest_only": true
+                ])
             }
             telemetry?.endGraphicsRun(reason: "APPLICATION_STOP")
             currentGamePID = nil
@@ -2433,7 +2770,7 @@ actor TFTMACRuntimeService {
             if let ownedPID, ownsRunningEmulator {
                 _ = try? Self.runCommand(
                     paths.adb,
-                    ["-P", "5038", "-s", "emulator-5582", "emu", "kill"],
+                    ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "emu", "kill"],
                     environment: Self.adbEnvironment(paths: paths),
                     timeout: 15
                 )
@@ -2449,7 +2786,7 @@ actor TFTMACRuntimeService {
             }
             telemetry?.recordEvent(
                 emulatorExitConfirmed ? "EMULATOR_EXIT_CONFIRMED" : "EMULATOR_EXIT_TIMEOUT",
-                payload: ["pid": ownedPID ?? 0, "serial": "emulator-5582", "owned": ownsRunningEmulator]
+                payload: ["pid": ownedPID ?? 0, "serial": paths.serial, "owned": ownsRunningEmulator]
             )
         }
         if openProcess?.isRunning == true { openProcess?.terminate() }
@@ -2457,11 +2794,16 @@ actor TFTMACRuntimeService {
         var avdRestoreConfirmed = avdTransaction == nil
         if let transaction = avdTransaction {
             do {
+                guard let paths else {
+                    throw TFTMACRuntimeError("AVD restore was withheld because the launched runtime identity is unavailable.")
+                }
                 guard emulatorExitConfirmed else {
                     throw TFTMACRuntimeError("AVD restore was withheld because the emulator exit was not confirmed.")
                 }
-                guard !Self.anyEmulatorUsingSharedAVD() else {
-                    throw TFTMACRuntimeError("AVD restore was withheld because another TFT_Ultra_Tablet process is active.")
+                guard !Self.anyEmulatorUsingSelectedAVD(paths: paths) else {
+                    throw TFTMACRuntimeError(
+                        "AVD restore was withheld because another \(paths.avdName) process is active."
+                    )
                 }
                 try transaction.restore()
                 avdRestoreConfirmed = true
@@ -2500,7 +2842,10 @@ actor TFTMACRuntimeService {
         let errorHandle = try FileHandle(forWritingTo: errorURL)
         let process = Process()
         process.executableURL = paths.adb
-        process.arguments = ["-P", "5038", "-s", "emulator-5582", "logcat", "-v", "threadtime", "-T", sessionStartSelector]
+        process.arguments = [
+            "-P", "\(paths.adbServerPort)", "-s", paths.serial,
+            "logcat", "-v", "threadtime", "-T", sessionStartSelector
+        ]
         process.environment = Self.adbEnvironment(paths: paths)
         process.standardOutput = outputHandle
         process.standardError = errorHandle
@@ -2559,94 +2904,145 @@ actor TFTMACRuntimeService {
         return false
     }
 
-    private func assertRuntimeUnoccupied(telemetry: TFTMACNativeTelemetry) throws {
+    private func assertRuntimeUnoccupied(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) throws {
+        var definitions = [runtimeConfiguration.selection.definition]
+        if runtimeConfiguration.selection.definition.requiresControlStopped {
+            let control = try runtimeConfiguration.registry.definition(for: .control)
+            if control.mode != runtimeConfiguration.selection.mode { definitions.append(control) }
+        }
         let processOutput = (try? Self.runCommand(
             URL(fileURLWithPath: "/bin/ps"),
             ["-axo", "pid=,command="],
             timeout: 10
         ).output) ?? ""
         let emulatorConflicts = processOutput.split(whereSeparator: \.isNewline).filter { line in
-            line.contains("qemu-system-aarch64")
-                && (line.contains("@TFT_Ultra_Tablet") || line.contains("-port 5582") || line.contains("-grpc 8554"))
+            guard line.contains("qemu-system-aarch64") else { return false }
+            return definitions.contains { definition in
+                line.contains("@\(definition.avdName)")
+                    || line.contains("-port \(definition.consolePort)")
+                    || definition.controllerPort.map { line.contains("-grpc \($0)") } == true
+            }
         }
+        let leasedPorts = Set(definitions.flatMap { definition -> [Int] in
+            [definition.consolePort] + (definition.controllerPort.map { [$0] } ?? [])
+        }).sorted()
+        var listenerArguments = ["-nP"]
+        for port in leasedPorts { listenerArguments.append("-iTCP:\(port)") }
+        listenerArguments.append("-sTCP:LISTEN")
         let listenerOutput = (try? Self.runCommand(
             URL(fileURLWithPath: "/usr/sbin/lsof"),
-            ["-nP", "-iTCP:5582", "-iTCP:8554", "-sTCP:LISTEN"],
+            listenerArguments,
             timeout: 10
         ).output) ?? ""
         let listeners = listenerOutput.split(whereSeparator: \.isNewline).dropFirst()
         guard emulatorConflicts.isEmpty && listeners.isEmpty else {
-            throw TFTMACRuntimeError("The shared TFT_Ultra_Tablet runtime or ports 5582/8554 are already in use. Close the existing emulator before launching TFTMAC.")
+            let modes = definitions.map(\.mode.rawValue).joined(separator: ", ")
+            throw TFTMACRuntimeError(
+                "The selected runtime lease conflicts with an active \(modes) emulator or port listener."
+            )
+        }
+        let checkedIdentities: [[String: Any]] = definitions.map { definition in
+            [
+                "mode": definition.mode.rawValue,
+                "avd": definition.avdName,
+                "console_port": definition.consolePort,
+                "controller_port": definition.controllerPort ?? 0,
+                "serial": definition.serial
+            ]
         }
         telemetry.recordEvent("RUNTIME_OWNERSHIP_PREFLIGHT_PASSED", payload: [
-            "avd": "TFT_Ultra_Tablet",
-            "console_port": 5582,
-            "controller_port": 8554,
+            "selected_mode": paths.mode.rawValue,
+            "checked_identities": checkedIdentities,
             "existing_emulator_count": 0,
             "existing_listener_count": 0
         ])
     }
 
-    private func recordFrozenReceipts(telemetry: TFTMACNativeTelemetry, paths: TFTMACRuntimePaths) {
+    private func recordFrozenReceipts(
+        telemetry: TFTMACNativeTelemetry,
+        paths: TFTMACRuntimePaths
+    ) {
         let experimentReceipt = profile.experimentConfigurationReceipt
         let receipts: [(String, String, String, String)] = [
             ("engine", "Unreal Engine", "user_locked_fact", "LOCKED"),
-            ("runtime_profile_id", profile.identifier, "validated native preferences", "DIRECT"),
+            ("runtime_mode", paths.mode.rawValue, "sealed runtime-mode registry", "DIRECT"),
+            ("runtime_mode_registry_sha256", paths.registrySha256, "bundled signed registry", "DIRECT"),
+            ("runtime_mode_configuration_sha256", paths.configurationSha256, "sealed runtime-mode registry", "DIRECT"),
+            ("runtime_profile_id", profile.identifier, "validated mode profile", "DIRECT"),
             ("runtime_experiment_preset", profile.experimentPreset.rawValue, "named launch experiment", "DIRECT"),
             ("runtime_configuration_sha256", experimentReceipt.sha256, "canonical effective configuration", "DIRECT"),
             ("runtime_configuration_json", experimentReceipt.canonicalJSON, "canonical effective configuration", "DIRECT"),
-            ("launcher_method", "/usr/bin/open -n -W --env ... --args ...", "Mactician donor architecture", "DIRECT"),
+            ("launcher_method", paths.launchStrategy.rawValue, "runtime-mode authority", "DIRECT"),
+            ("native_host_application", paths.hostApplication.path, "signed host authority", "DIRECT"),
             ("macos_game_mode_eligible", "true", "LSSupportsGameMode bundle contract", "DIRECT"),
             ("host_qos_requested", profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default", "named launch experiment", "REQUESTED"),
-            ("adb_server_port", "5038", "known-good donor", "DIRECT"),
-            ("emulator_console_port", "5582", "known-good donor", "DIRECT"),
-            ("adb_serial", "emulator-5582", "known-good donor", "DIRECT"),
-            ("controller_port", "\(profile.controllerPort)", "native authenticated controller", "REQUESTED"),
-            ("adb_vendor_keys", "ABSENT", "launch environment contract", "DIRECT"),
-            ("avd", "TFT_Ultra_Tablet", "installed runtime", "DIRECT"),
-            ("resolution", "\(profile.width)x\(profile.height)", "5 GiB gameplay evidence", "DIRECT"),
-            ("density_dpi", "\(profile.densityDPI)", "5 GiB gameplay evidence", "DIRECT"),
-            ("refresh_hz", "\(profile.refreshHz)", "5 GiB gameplay evidence", "DIRECT"),
-            ("vcpu", "\(profile.vCPU)", "5 GiB gameplay evidence", "DIRECT"),
-            ("ram_mib", "\(profile.ramMiB)", "latest retained 5 GiB runs", "STRONG"),
-            ("gpu_mode", profile.gpuMode, "playable baseline", "DIRECT"),
-            ("audio_backend", profile.audioBackend, "audio health receipt", "DIRECT"),
-            ("graphics_transport_requested", profile.graphicsTransport, "playable baseline", "REQUESTED"),
+            ("adb_server_port", "\(paths.adbServerPort)", "runtime-mode lease", "DIRECT"),
+            ("emulator_console_port", "\(paths.consolePort)", "runtime-mode lease", "DIRECT"),
+            ("adb_serial", paths.serial, "runtime-mode lease", "DIRECT"),
+            ("controller_port", "\(paths.controllerPort)", "runtime-mode lease", "DIRECT"),
+            ("adb_vendor_keys", paths.adbVendorKeysPolicy, "runtime-mode authority", "DIRECT"),
+            ("avd", paths.avdName, "runtime-mode authority", "DIRECT"),
+            ("runtime_root", paths.runtimeRoot.path, "runtime-mode authority", "DIRECT"),
+            ("mode_application_support", paths.applicationSupport.path, "runtime-mode state isolation", "DIRECT"),
+            ("resolution", "\(profile.width)x\(profile.height)", "validated mode profile", "DIRECT"),
+            ("density_dpi", "\(profile.densityDPI)", "validated mode profile", "DIRECT"),
+            ("refresh_hz", "\(profile.refreshHz)", "validated mode profile", "DIRECT"),
+            ("vcpu", "\(profile.vCPU)", "validated mode profile", "DIRECT"),
+            ("ram_mib", "\(profile.ramMiB)", "validated mode profile", "DIRECT"),
+            ("gpu_mode", profile.gpuMode, "validated mode profile", "DIRECT"),
+            ("audio_backend", profile.audioBackend, "validated mode profile", "DIRECT"),
+            ("graphics_transport_requested", profile.graphicsTransport, "validated mode profile", "REQUESTED"),
             ("emulator_features_requested", profile.effectiveEmulatorFeatures.joined(separator: ","), "named launch experiment", "REQUESTED"),
-            ("asg_write_buffer_size", "\(profile.asgWriteBufferSize)", "playable baseline", "REQUESTED"),
-            ("asg_write_step_size", "\(profile.asgWriteStepSize)", "playable baseline", "REQUESTED"),
-            ("asg_data_ring_size", "\(profile.asgDataRingSize)", "playable baseline", "REQUESTED"),
-            ("asg_draw_flush_interval_us", "\(profile.asgDrawFlushInterval)", "playable baseline", "REQUESTED"),
-            ("angle_enabled_requested", profile.angleEnabledFeatures, "playable baseline", "REQUESTED"),
-            ("angle_disabled_requested", profile.angleDisabledFeatures, "playable baseline", "REQUESTED"),
+            ("asg_write_buffer_size", "\(profile.asgWriteBufferSize)", "validated mode profile", "REQUESTED"),
+            ("asg_write_step_size", "\(profile.asgWriteStepSize)", "validated mode profile", "REQUESTED"),
+            ("asg_data_ring_size", "\(profile.asgDataRingSize)", "validated mode profile", "REQUESTED"),
+            ("asg_draw_flush_interval_us", "\(profile.asgDrawFlushInterval)", "validated mode profile", "REQUESTED"),
+            ("angle_enabled_requested", profile.angleEnabledFeatures, "validated mode profile", "REQUESTED"),
+            ("angle_disabled_requested", profile.angleDisabledFeatures, "validated mode profile", "REQUESTED"),
             ("frame_transport", "raw_grpc_rgba8888", "native admission path", "DIRECT"),
             ("raw_logcat_policy", "LOCAL_SENSITIVE_SESSION_SCOPED_NOT_FOR_SHARING", "privacy contract", "LOCKED"),
-            ("sdk_root", paths.sdkRoot.path, "filesystem discovery", "DIRECT")
+            ("sdk_root", paths.sdkRoot.path, "runtime-mode authority", "DIRECT")
         ]
         for receipt in receipts {
             telemetry.recordReceipt(key: receipt.0, value: receipt.1, source: receipt.2, confidence: receipt.3)
         }
     }
 
-    private func startADBServer(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) throws {
+    private func startADBServer(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) throws {
         let result = try Self.runCommand(
             paths.adb,
-            ["-P", "5038", "start-server"],
+            ["-P", "\(paths.adbServerPort)", "start-server"],
             environment: Self.adbEnvironment(paths: paths),
             timeout: 30
         )
         guard result.status == 0 else {
-            throw TFTMACRuntimeError("ADB server 5038 could not start: \(result.output.suffix(1200))")
+            throw TFTMACRuntimeError(
+                "ADB server \(paths.adbServerPort) could not start: \(result.output.suffix(1200))"
+            )
         }
         telemetry.recordEvent("ADB_SERVER_STARTED", payload: [
-            "port": 5038,
-            "serial": "emulator-5582",
-            "adb_vendor_keys_present": false,
+            "port": paths.adbServerPort,
+            "serial": paths.serial,
+            "adb_vendor_keys_policy": paths.adbVendorKeysPolicy,
             "output": result.output.suffix(2000).description
         ])
     }
 
-    private func launchEmulatorHost(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) throws {
+    private func launchEmulatorHost(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) throws {
+        guard paths.launchStrategy == .bundledForwarder || paths.launchStrategy == .externalNativeHost else {
+            throw TFTMACRuntimeModeError(
+                message: "Runtime mode \(paths.mode.rawValue) has no accepted native forwarder launch strategy."
+            )
+        }
         let stdout = telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log")
         let stderr = telemetry.captureDirectory.appendingPathComponent("emulator.stderr.log")
         FileManager.default.createFile(atPath: stdout.path, contents: nil)
@@ -2658,8 +3054,8 @@ actor TFTMACRuntimeService {
         var arguments = [
             "-n", "-W",
             "--env", "TFT_EMULATOR=\(paths.emulator.path)",
-            "--env", "TFT_ADB_SERVER_PORT=5038",
-            "--env", "ANDROID_ADB_SERVER_PORT=5038",
+            "--env", "TFT_ADB_SERVER_PORT=\(paths.adbServerPort)",
+            "--env", "ANDROID_ADB_SERVER_PORT=\(paths.adbServerPort)",
             "--env", "ADB_MDNS_AUTO_CONNECT=",
             "--env", "ADB_SERVER_SOCKET=",
             "--env", "ANDROID_ADB_SERVER_ADDRESS=",
@@ -2676,7 +3072,7 @@ actor TFTMACRuntimeService {
             "--env", "TFT_HOST_STDERR=\(stderr.path)",
             paths.hostApplication.path,
             "--args",
-            "@TFT_Ultra_Tablet", "-id", "TFTMAC", "-port", "5582",
+            "@\(paths.avdName)", "-id", paths.emulatorIdentifier, "-port", "\(paths.consolePort)",
             "-gpu", profile.gpuMode, "-audio", profile.audioBackend,
             "-feature", profile.effectiveEmulatorFeatures.joined(separator: ","),
             "-append-userspace-opt", "androidboot.opengles.version=196610",
@@ -2686,11 +3082,14 @@ actor TFTMACRuntimeService {
             "-vsync-rate", "\(profile.refreshHz)",
             "-dns-server", "1.1.1.1,8.8.8.8",
             "-cores", "\(profile.vCPU)", "-memory", "\(profile.ramMiB)",
-            "-no-hidpi-scaling", "-no-snapshot", "-no-metrics", "-no-boot-anim",
-            "-crash-report-mode", "disabled", "-qt-hide-window",
-            "-grpc", "\(profile.controllerPort)", "-grpc-use-token",
+            "-no-hidpi-scaling", "-no-metrics", "-no-boot-anim",
+            "-qt-hide-window",
+            "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
         ]
+        if paths.expectedEmulatorVersionContains == "37.1.11" {
+            arguments += ["-crash-report-mode", "disabled"]
+        }
         if let zone = TimeZone.current.identifier.addingPercentEncoding(withAllowedCharacters: .alphanumerics), !zone.isEmpty {
             arguments += ["-timezone", TimeZone.current.identifier]
         }
@@ -2705,11 +3104,13 @@ actor TFTMACRuntimeService {
         telemetry.recordEvent("EMULATOR_HOST_LAUNCHED", payload: [
             "method": "/usr/bin/open",
             "flags": ["-n", "-W", "--env", "--args"],
+            "mode": paths.mode.rawValue,
             "host_application": paths.hostApplication.path,
             "open_pid": process.processIdentifier,
-            "adb_vendor_keys_present": false,
+            "adb_vendor_keys_policy": paths.adbVendorKeysPolicy,
             "game_mode_eligible": true,
             "host_qos_requested": profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default",
+            "emulator_features_requested": profile.effectiveEmulatorFeatures,
             "controller_discovery_roots": Self.controllerDiscoveryRoots(paths: paths).map(\.path),
             "emulator_arguments": Array(arguments.suffix(from: arguments.firstIndex(of: "--args") ?? arguments.startIndex).dropFirst())
         ])
@@ -2783,7 +3184,12 @@ actor TFTMACRuntimeService {
                       let token = values["grpc.token"], !token.isEmpty else { continue }
                 let name = candidate.deletingPathExtension().lastPathComponent
                 let pidText = name.dropFirst("pid_".count).prefix(while: \.isNumber)
-                guard let pid = Int32(pidText), Self.processMatchesLaunchedIdentity(pid, sessionMarker: expectedSessionMarker) else { continue }
+                guard let pid = Int32(pidText),
+                      Self.processMatchesLaunchedIdentity(
+                        pid,
+                        paths: paths,
+                        sessionMarker: expectedSessionMarker
+                      ) else { continue }
                 return EmulatorControllerDiscovery(processIdentifier: pid, port: port, token: token, recordPath: candidate.path)
             }
             try await Task.sleep(for: .milliseconds(200))
@@ -2792,14 +3198,14 @@ actor TFTMACRuntimeService {
     }
 
     private func waitForBootAndLaunchGame(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
-        await status("Waiting for the proven ADB identity on emulator-5582…", false)
+        await status("Waiting for the proven ADB identity on \(paths.serial)…", false)
         var lastState = "missing"
         var previouslyLoggedState: String?
         while !stopping {
             try Task.checkCancellation()
             let result = try? Self.runCommand(
                 paths.adb,
-                ["-P", "5038", "-s", "emulator-5582", "get-state"],
+                ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "get-state"],
                 environment: Self.adbEnvironment(paths: paths),
                 timeout: 10
             )
@@ -2817,18 +3223,18 @@ actor TFTMACRuntimeService {
                 telemetry.recordEvent("ADB_STATE_CHANGED", payload: [
                     "previous_state": previouslyLoggedState ?? "none",
                     "current_state": lastState,
-                    "serial": "emulator-5582",
+                    "serial": paths.serial,
                     "diagnostic": String(diagnostic.prefix(800))
                 ])
                 if lastState == "unauthorized" {
                     telemetry.recordEvent("ADB_UNAUTHORIZED_OBSERVED", payload: [
-                        "serial": "emulator-5582",
+                        "serial": paths.serial,
                         "authorization_is_user_controlled": true
                     ])
                 } else if lastState == "offline" {
                     await status("Android is booting; ADB is temporarily offline…", false)
                 } else if lastState == "missing" {
-                    await status("Waiting for emulator-5582 to appear on ADB 5038…", false)
+                    await status("Waiting for \(paths.serial) to appear on ADB \(paths.adbServerPort)…", false)
                 }
                 previouslyLoggedState = lastState
             }
@@ -2837,9 +3243,9 @@ actor TFTMACRuntimeService {
         }
         try Task.checkCancellation()
         guard lastState == "device" else {
-            throw TFTMACRuntimeError("ADB emulator-5582 did not authorize in the logged-in Mac session (last state: \(lastState)).")
+            throw TFTMACRuntimeError("ADB \(paths.serial) did not authorize in the logged-in Mac session (last state: \(lastState)).")
         }
-        telemetry.recordEvent("ADB_DEVICE_AUTHORIZED", payload: ["port": 5038, "serial": "emulator-5582"])
+        telemetry.recordEvent("ADB_DEVICE_AUTHORIZED", payload: ["port": paths.adbServerPort, "serial": paths.serial])
         try startLogcatCapture(paths: paths, telemetry: telemetry)
 
         let bootDeadline = Date().addingTimeInterval(300)
@@ -2858,26 +3264,43 @@ actor TFTMACRuntimeService {
             throw TFTMACRuntimeError("Android did not finish booting before the five-minute deadline.")
         }
         try await establishGuestGameplayPower(paths: paths, telemetry: telemetry)
-        var manualUnlockRequired = false
+        await establishGuestAudioSubsystem(paths: paths, telemetry: telemetry)
+        var automaticUnlockAttempted = false
+        var automaticUnlockAttempts = 0
+        var nextUnlockAttempt = Date.distantPast
         while !stopping {
             try Task.checkCancellation()
             let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
             if user.contains("RUNNING_UNLOCKED") { break }
-            if !manualUnlockRequired {
-                manualUnlockRequired = true
+            if Date() >= nextUnlockAttempt, automaticUnlockAttempts < 2 {
+                automaticUnlockAttempted = true
+                automaticUnlockAttempts += 1
                 telemetry.recordEvent("GUEST_SECURE_UNLOCK_REQUIRED", payload: [
                     "user": 0,
-                    "pin_entry": "manual_only",
-                    "credential_logged": false
+                    "pin_entry": "keychain_emulator_controller",
+                    "attempt": automaticUnlockAttempts,
+                    "credential_logged": false,
+                    "credential_in_process_arguments": false
                 ])
+                inputContinuation?.yield(.secureUnlock(guestUnlockSecret))
+                nextUnlockAttempt = Date().addingTimeInterval(5)
+            } else if automaticUnlockAttempts >= 2, Date() >= nextUnlockAttempt {
+                throw TFTMACRuntimeError("Android rejected automatic secure unlock after two bounded attempts.")
             }
-            try await Task.sleep(for: .seconds(1))
+            try await Task.sleep(for: .milliseconds(250))
         }
         try Task.checkCancellation()
         telemetry.recordEvent("GUEST_UNLOCKED", payload: [
             "user": 0,
-            "manual_unlock_was_required": manualUnlockRequired
+            "automatic_unlock_attempted": automaticUnlockAttempted,
+            "automatic_unlock_attempts": automaticUnlockAttempts,
+            "transport": automaticUnlockAttempted ? "EmulatorController.sendKey" : "already_unlocked",
+            "credential_logged": false
         ])
+        if runtimeConfiguration.workload == .ownedVulkanProbe {
+            try await launchAndMonitorOwnedVulkanProbe(paths: paths, telemetry: telemetry)
+            return
+        }
         let package = "com.riotgames.league.teamfighttactics"
         let packageDump = try Self.adb(paths: paths, ["shell", "dumpsys", "package", package], timeout: 30).output
         guard packageDump.contains("Package [\(package)]") || packageDump.contains("versionName=") else {
@@ -2918,6 +3341,7 @@ actor TFTMACRuntimeService {
             "sql_database": "TFTMAC_NATIVE_RUNTIME.sqlite"
         ])
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "before_tft_launch")
+        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
 
         let resolved = try? Self.adb(
             paths: paths,
@@ -2934,11 +3358,22 @@ actor TFTMACRuntimeService {
             }
         }
         guard launched else { throw TFTMACRuntimeError("Android could not launch the official TFT activity.") }
+
+        for _ in 0..<10 {
+            if let pid = try? Self.readProcessID(paths: paths, packageName: package) {
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(pid)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(pid):-20", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: pid), "nice": -20])
+                break
+            }
+            try await Task.sleep(for: .milliseconds(200))
+        }
+
         telemetry.recordEvent("TFT_READY_FOR_USER", payload: [
             "engine": "Unreal Engine",
-            "resolution": "1920x1080",
+            "resolution": "\(profile.width)x\(profile.height)",
             "refresh_hz": profile.refreshHz,
-            "audio_backend": "coreaudio",
+            "audio_backend": profile.audioBackend,
             "profile_id": profile.identifier
         ])
         telemetry.markRunning()
@@ -2947,6 +3382,164 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             try await Task.sleep(for: .seconds(1))
         }
+    }
+
+    private func launchAndMonitorOwnedVulkanProbe(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async throws {
+        guard paths.mode == .advancedDiagnostics,
+              let experiment = runtimeConfiguration.devExperimentProfile else {
+            throw TFTMACRuntimeError("The owned Vulkan probe is permitted only in a sealed DEV experiment.")
+        }
+        let bundle = Bundle.main
+        guard let apk = bundle.url(forResource: "TFTMACVulkanProbe", withExtension: "apk"),
+              let receiptURL = bundle.url(forResource: "TFTMACVulkanProbe-build-receipt", withExtension: "json"),
+              let manifestURL = bundle.url(forResource: "workload-manifest", withExtension: "json") else {
+            throw TFTMACRuntimeError("TFTMAC DEV is missing its owned Vulkan probe artifacts.")
+        }
+        let apkData = try Data(contentsOf: apk)
+        let manifestData = try Data(contentsOf: manifestURL)
+        let receiptData = try Data(contentsOf: receiptURL)
+        guard let receipt = try JSONSerialization.jsonObject(with: receiptData) as? [String: Any],
+              receipt["state"] as? String == "TFTMAC_VULKAN_PROBE_BUILD_PASS",
+              receipt["package"] as? String == "com.flashls1.tftmac.vulkanprobe",
+              receipt["apk_sha256"] as? String == Self.dataSHA256(apkData),
+              receipt["workload_manifest_sha256"] as? String == Self.dataSHA256(manifestData),
+              experiment.workloadManifestSHA256 == Self.dataSHA256(manifestData),
+              receipt["network_access"] as? Bool == false,
+              receipt["riot_interaction"] as? Bool == false else {
+            throw TFTMACRuntimeError("The bundled Vulkan probe failed its sealed build receipt.")
+        }
+        try validateDevExperimentFeatureReceipt(experiment, telemetry: telemetry)
+        let package = "com.flashls1.tftmac.vulkanprobe"
+        _ = try? Self.adb(paths: paths, ["uninstall", package], timeout: 30)
+        let install = try Self.adb(paths: paths, ["install", apk.path], timeout: 60)
+        guard install.output.contains("Success") else {
+            throw TFTMACRuntimeError("The owned Vulkan probe did not install successfully.")
+        }
+        _ = try Self.adb(
+            paths: paths,
+            ["shell", "setprop", "debug.tftmac.probe.profile", experiment.id.rawValue],
+            timeout: 10
+        )
+        _ = try Self.adb(
+            paths: paths,
+            ["shell", "setprop", "debug.tftmac.probe.smoke", "0"],
+            timeout: 10
+        )
+        _ = try Self.adb(paths: paths, ["logcat", "-c"], timeout: 10)
+        telemetry.recordReceipt(
+            key: "owned_vulkan_probe_apk_sha256",
+            value: Self.dataSHA256(apkData),
+            source: "bundled APK verified before isolated install",
+            confidence: "DIRECT"
+        )
+        telemetry.recordEvent("OWNED_VULKAN_PROBE_INSTALLED", payload: [
+            "package": package,
+            "profile": experiment.id.rawValue,
+            "network_access": false,
+            "riot_interaction": false,
+            "credential_access": false
+        ])
+        let component = "\(package)/android.app.NativeActivity"
+        _ = try Self.adb(paths: paths, ["shell", "am", "start", "-W", "-n", component], timeout: 45)
+        telemetry.recordEvent("OWNED_VULKAN_PROBE_LAUNCHED", payload: [
+            "component": component,
+            "profile": experiment.id.rawValue,
+            "expected_duration_seconds": experiment.durationSeconds
+        ])
+        telemetry.markRunning()
+        await status("Running sealed Vulkan graphics workload…", false)
+
+        var emittedLines = Set<String>()
+        let deadline = Date().addingTimeInterval(TimeInterval(experiment.durationSeconds + 120))
+        while !stopping && Date() < deadline {
+            try Task.checkCancellation()
+            let output = try Self.adb(
+                paths: paths,
+                ["logcat", "-d", "-s", "TFTMAC_VKPROBE:I", "*:S"],
+                timeout: 15
+            ).output
+            for rawLine in output.split(whereSeparator: \.isNewline).map(String.init) {
+                guard let jsonStart = rawLine.firstIndex(of: "{") else { continue }
+                let json = String(rawLine[jsonStart...])
+                guard emittedLines.insert(json).inserted,
+                      let data = json.data(using: .utf8),
+                      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let event = payload["event"] as? String else { continue }
+                telemetry.recordEvent("OWNED_VULKAN_PROBE_\(event.uppercased())", payload: payload)
+                telemetry.recordOwnedProbePayload(payload)
+                if event == "complete" {
+                    guard payload["state"] as? String == "PASS",
+                          payload["profile"] as? String == experiment.id.rawValue,
+                          (payload["errors"] as? NSNumber)?.intValue == 0 else {
+                        throw TFTMACRuntimeError("The owned Vulkan probe reported a failed workload.")
+                    }
+                    telemetry.recordEvent("OWNED_VULKAN_PROBE_RUN_PASS", payload: [
+                        "profile": experiment.id.rawValue,
+                        "logged_probe_records": emittedLines.count,
+                        "cleanup_required": true
+                    ])
+                    telemetry.finishDevExperiment(
+                        profile: experiment,
+                        state: "PASS",
+                        correctnessPassed: true,
+                        result: payload
+                    )
+                    stopping = true
+                    return
+                }
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+        throw TFTMACRuntimeError("The owned Vulkan probe did not complete inside its sealed time boundary.")
+    }
+
+    private func validateDevExperimentFeatureReceipt(
+        _ experiment: DevExperimentProfile,
+        telemetry: TFTMACNativeTelemetry
+    ) throws {
+        guard let log = try? String(
+            contentsOf: telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log"),
+            encoding: .utf8
+        ) else {
+            throw TFTMACRuntimeError("The emulator feature receipt is unavailable.")
+        }
+        var expected = [
+            "VulkanQueueSubmitWithCommands": "enabled",
+            "VulkanVirtualQueue": "enabled",
+            "VirtioGpuFenceContexts": "enabled"
+        ]
+        switch experiment.id {
+        case .queueSubmitInline: expected["VulkanQueueSubmitWithCommands"] = "disabled"
+        case .virtualQueueOff: expected["VulkanVirtualQueue"] = "disabled"
+        case .fenceContextsOff: expected["VirtioGpuFenceContexts"] = "disabled"
+        case .control: break
+        case .retiredCombatLatencyA, .retiredHomeRunA:
+            throw TFTMACRuntimeError("A retired experiment reached the DEV feature gate.")
+        }
+        var effective = [String: String]()
+        for (feature, state) in expected {
+            let pattern = "(?m)^INFO\\s+\\|\\s+\\Q\(feature)\\E:\\s+(enabled|disabled)\\b"
+            guard let observed = Self.firstRegexText(pattern, in: log), observed == state else {
+                telemetry.recordEvent("DEV_EXPERIMENT_FEATURE_RECEIPT_INVALID", payload: [
+                    "profile": experiment.id.rawValue,
+                    "feature": feature,
+                    "expected": state,
+                    "observed": Self.firstRegexText(pattern, in: log) ?? "MISSING",
+                    "substitution_permitted": false
+                ])
+                throw TFTMACRuntimeError("DEV experiment \(experiment.id.rawValue) did not prove \(feature)=\(state).")
+            }
+            effective[feature] = observed
+        }
+        telemetry.recordEvent("DEV_EXPERIMENT_FEATURE_RECEIPT_PASS", payload: [
+            "profile": experiment.id.rawValue,
+            "effective_features": effective,
+            "requested_overrides": experiment.emulatorFeatureOverrides
+        ])
+        telemetry.recordDevFeatureReceipt(effective)
     }
 
     private func establishGuestGameplayPower(
@@ -2960,6 +3553,11 @@ actor TFTMACRuntimeService {
             timeout: 10
         )
         _ = try Self.adb(paths: paths, ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "min_refresh_rate", "60.0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "peak_refresh_rate", "60.0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "service.sf.present_timestamp", "1"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.sf.showupdates", "0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "pm", "disable-user", "--user", "0", "com.google.android.apps.wellbeing"], timeout: 10)
 
         var lastState: GuestPowerState?
         for _ in 0..<12 {
@@ -2993,6 +3591,141 @@ actor TFTMACRuntimeService {
         )
     }
 
+    private func establishGuestAudioSubsystem(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async {
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.stagefright.audio.sink", "1"], timeout: 5)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "af.fast_track_multiplier", "2"], timeout: 5)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "audio.deep_buffer.media", "1"], timeout: 5)
+        telemetry.recordEvent("GUEST_AUDIO_SUBSYSTEM_HARDENED", payload: [
+            "deep_buffer": true,
+            "fast_track_multiplier": 2,
+            "stagefright_sink": 1
+        ])
+    }
+
+    private func provisionTFTDeviceProfiles(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async throws {
+        let iniContent = """
+        [Android_MatchedFragments DeviceProfile]
+        DeviceType=Android
+        BaseProfileName=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.MobileContentScaleFactor=1.0
+        +CVars=r.ScreenPercentage=100
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        [Android_LowPerf_Fragment DeviceProfile]
+        DeviceType=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        [Android_LowPerf_Frontend_Fragment DeviceProfile]
+        DeviceType=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+
+        [Android DeviceProfile]
+        DeviceType=Android
+        BaseProfileName=Mobile
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        """
+        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android"
+        let remoteFile = "\(remoteDir)/DeviceProfiles.ini"
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("DeviceProfiles-\(UUID().uuidString).ini")
+        do {
+            try iniContent.write(to: tempFile, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: tempFile) }
+
+            _ = try Self.adb(paths: paths, ["shell", "mkdir", "-p", remoteDir], timeout: 15)
+            _ = try Self.adb(paths: paths, ["push", tempFile.path, remoteFile], timeout: 15)
+
+            telemetry.recordReceipt(
+                key: "tft_device_profiles_provisioned",
+                value: "60_fps_override",
+                source: "provisionTFTDeviceProfiles",
+                confidence: "DIRECT"
+            )
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISIONED", payload: [
+                "path": remoteFile,
+                "default_framerate_limit": 60,
+                "max_fps": 60,
+                "vsync": 1
+            ])
+        } catch {
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_WARNING", payload: [
+                "error": error.localizedDescription
+            ])
+        }
+    }
+
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {
         var sampleIndex = 0
         while !stopping {
@@ -3007,7 +3740,7 @@ actor TFTMACRuntimeService {
             let rss = pieces.dropFirst().first.flatMap { Int64($0) }
             var gamePID = currentGamePID
             do {
-                gamePID = try Self.readTFTProcessID(paths: paths)
+                gamePID = try Self.readProcessID(paths: paths, packageName: activeWorkloadPackage)
                 observeGameProcess(
                     gamePID,
                     paths: paths,
@@ -3102,7 +3835,7 @@ actor TFTMACRuntimeService {
             if sampleIndex.isMultiple(of: 6) {
                 recordClockSync(paths: paths, telemetry: telemetry)
                 recordThirtySecondRuntimeReceipt(paths: paths, telemetry: telemetry)
-                if gamePID != nil {
+                if gamePID != nil, runtimeConfiguration.workload == .officialTFT {
                     recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "gameplay_periodic")
                     recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "gameplay_periodic")
                 }
@@ -3124,11 +3857,13 @@ actor TFTMACRuntimeService {
         let currentValue: Any = observedGamePID.map { NSNumber(value: $0) } ?? NSNull()
 
         if previousGamePID != nil {
-            recordGraphicsPipelineSnapshot(
-                paths: paths,
-                telemetry: telemetry,
-                label: observedGamePID == nil ? "tft_process_ended" : "tft_process_replaced"
-            )
+            if runtimeConfiguration.workload == .officialTFT {
+                recordGraphicsPipelineSnapshot(
+                    paths: paths,
+                    telemetry: telemetry,
+                    label: observedGamePID == nil ? "tft_process_ended" : "tft_process_replaced"
+                )
+            }
             telemetry.endGraphicsRun(
                 reason: observedGamePID == nil ? "TFT_PROCESS_ENDED" : "TFT_PROCESS_REPLACED"
             )
@@ -3171,16 +3906,25 @@ actor TFTMACRuntimeService {
                 "manual_start_required": false,
                 "target_fps": profile.refreshHz
             ])
-            recordGraphicsPipelineSnapshot(
-                paths: paths,
-                telemetry: telemetry,
-                label: previousGamePID == nil ? "tft_process_started" : "tft_process_replaced_started"
-            )
+            if runtimeConfiguration.workload == .officialTFT {
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(observedGamePID)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(observedGamePID):-20", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: observedGamePID), "nice": -20])
+                recordGraphicsPipelineSnapshot(
+                    paths: paths,
+                    telemetry: telemetry,
+                    label: previousGamePID == nil ? "tft_process_started" : "tft_process_replaced_started"
+                )
+            }
         }
     }
 
     private func sampleGameFrames(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
-        var sampler = GameFrameTelemetrySampler()
+        var sampler = GameFrameTelemetrySampler(
+            requiredLayerIdentity: runtimeConfiguration.workload == .ownedVulkanProbe
+                ? GameFrameTelemetry.ownedProbeSurface
+                : GameFrameTelemetry.tftGameActivitySurface
+        )
         var lastBoundaryNS = DispatchTime.now().uptimeNanoseconds
         var lastCollectorErrorEventNS: UInt64 = 0
         var previousExactLayerName: String?
@@ -3189,19 +3933,26 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             let observedNS = DispatchTime.now().uptimeNanoseconds
             do {
-                let observedGamePID = try Self.readTFTProcessID(paths: paths)
-                observeGameProcess(
-                    observedGamePID,
-                    paths: paths,
-                    telemetry: telemetry,
-                    observer: "ONE_SECOND_GRAPHICS_SAMPLER"
-                )
-                let layers = try Self.adb(
-                    paths: paths,
-                    ["shell", "dumpsys", "SurfaceFlinger", "--list"],
-                    timeout: 10
-                ).output
-                let layerStatus = sampler.updateLayerList(layers)
+                if currentGamePID == nil {
+                    let observedGamePID = try Self.readProcessID(paths: paths, packageName: activeWorkloadPackage)
+                    observeGameProcess(
+                        observedGamePID,
+                        paths: paths,
+                        telemetry: telemetry,
+                        observer: "ONE_SECOND_GRAPHICS_SAMPLER"
+                    )
+                }
+                let layerStatus: GameFrameTelemetryStatus
+                if sampler.selectedLayer == nil {
+                    let layers = try Self.adb(
+                        paths: paths,
+                        ["shell", "dumpsys", "SurfaceFlinger", "--list"],
+                        timeout: 10
+                    ).output
+                    layerStatus = sampler.updateLayerList(layers)
+                } else {
+                    layerStatus = .available
+                }
                 guard case .available = layerStatus, let layer = sampler.selectedLayer else {
                     consecutiveBadGraphicsWindows = 0
                     if let lostLayer = currentExactLayerName {
@@ -3249,11 +4000,13 @@ actor TFTMACRuntimeService {
                             "manual_logger_start_required": false
                         ]
                     )
-                    recordGraphicsPipelineSnapshot(
-                        paths: paths,
-                        telemetry: telemetry,
-                        label: isFirstObservedLayer ? "tft_surface_active" : "tft_surface_replaced"
-                    )
+                    if runtimeConfiguration.workload == .officialTFT {
+                        recordGraphicsPipelineSnapshot(
+                            paths: paths,
+                            telemetry: telemetry,
+                            label: isFirstObservedLayer ? "tft_surface_active" : "tft_surface_replaced"
+                        )
+                    }
                 }
                 previousExactLayerName = layer
 
@@ -3272,6 +4025,42 @@ actor TFTMACRuntimeService {
                     refreshPeriodNS: update.refreshPeriodNS
                 )
                 if let window = update.window {
+                    if window.frameCount == 0, runtimeConfiguration.workload == .officialTFT {
+                        let layers = try? Self.adb(
+                            paths: paths,
+                            ["shell", "dumpsys", "SurfaceFlinger", "--list"],
+                            timeout: 10
+                        ).output
+                        if let layers {
+                            let newStatus = sampler.updateLayerList(layers)
+                            if case .unavailable(let reason) = newStatus {
+                                consecutiveBadGraphicsWindows = 0
+                                if let lostLayer = currentExactLayerName {
+                                    telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                                        "previous_layer": lostLayer,
+                                        "reason": "ZERO_FRAME_STATUS_CHANGE",
+                                        "status_reason": String(describing: reason),
+                                        "graphics_run_remains_open_until_process_exit": true
+                                    ])
+                                    currentExactLayerName = nil
+                                    telemetry.updateGraphicsRunLayer(nil)
+                                }
+                                let unavailable = Self.unavailableGameFrameWindow(
+                                    status: newStatus,
+                                    layerName: nil,
+                                    startedNS: lastBoundaryNS,
+                                    endedNS: observedNS
+                                )
+                                telemetry.recordGameFrameWindow(unavailable)
+                                await gameFrame(unavailable)
+                                latestGameFrameWindow = unavailable
+                                ingestCombatFrameUpdate(nil, window: unavailable)
+                                lastBoundaryNS = observedNS
+                                try await Task.sleep(for: .seconds(1))
+                                continue
+                            }
+                        }
+                    }
                     await gameFrame(window)
                     latestGameFrameWindow = window
                     ingestCombatFrameUpdate(update, window: window)
@@ -3286,15 +4075,20 @@ actor TFTMACRuntimeService {
                     } else {
                         consecutiveBadGraphicsWindows = 0
                     }
-                    if consecutiveBadGraphicsWindows >= 2 {
-                        let traceSequence = requestDiagnosticTrace(
-                           scope: activeCombatBenchmark == nil ? .automaticGraphics : .combatBenchmark,
-                           trigger: "AUTO_GAME_FRAME_DEGRADATION",
-                           automatic: true,
-                           durationSeconds: 15,
-                           bufferMiB: 32,
-                           benchmarkStartTrace: false
-                        )
+                    if consecutiveBadGraphicsWindows >= 2,
+                       runtimeConfiguration.workload == .officialTFT {
+                        let allowAutoTrace = activeCombatBenchmark != nil
+                            || ProcessInfo.processInfo.environment["TFTMAC_ENABLE_AUTO_PERFETTO"] == "1"
+                        let traceSequence = allowAutoTrace
+                            ? requestDiagnosticTrace(
+                               scope: activeCombatBenchmark == nil ? .automaticGraphics : .combatBenchmark,
+                               trigger: "AUTO_GAME_FRAME_DEGRADATION",
+                               automatic: true,
+                               durationSeconds: 15,
+                               bufferMiB: 32,
+                               benchmarkStartTrace: false
+                            )
+                            : nil
                         consecutiveBadGraphicsWindows = 0
                         telemetry.recordEvent("GAME_FRAME_DEGRADATION", payload: [
                             "evidence_level": "SURFACEFLINGER_ACTUAL_PRESENT",
@@ -3322,6 +4116,15 @@ actor TFTMACRuntimeService {
                     }
                 } else if case .unavailable = update.status {
                     consecutiveBadGraphicsWindows = 0
+                    if let lostLayer = currentExactLayerName {
+                        telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                            "previous_layer": lostLayer,
+                            "graphics_run_remains_open_until_process_exit": true
+                        ])
+                        currentExactLayerName = nil
+                        telemetry.updateGraphicsRunLayer(nil)
+                        _ = sampler.updateLayerList("")
+                    }
                     let unavailable = Self.unavailableGameFrameWindow(
                         status: update.status,
                         layerName: update.layerName,
@@ -3338,6 +4141,16 @@ actor TFTMACRuntimeService {
                 throw CancellationError()
             } catch {
                 consecutiveBadGraphicsWindows = 0
+                if let lostLayer = currentExactLayerName {
+                    telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                        "previous_layer": lostLayer,
+                        "graphics_run_remains_open_until_process_exit": true,
+                        "reason": error.localizedDescription
+                    ])
+                    currentExactLayerName = nil
+                    telemetry.updateGraphicsRunLayer(nil)
+                    _ = sampler.updateLayerList("")
+                }
                 let failedAt = DispatchTime.now().uptimeNanoseconds
                 let unavailable = Self.unavailableGameFrameWindow(
                     status: .unavailable(.adbError),
@@ -3360,7 +4173,7 @@ actor TFTMACRuntimeService {
                 await gameFrame(unavailable)
                 lastBoundaryNS = failedAt
             }
-            try await Task.sleep(for: .seconds(1))
+            try await Task.sleep(for: sampler.selectedLayer == nil ? .seconds(1) : .seconds(2))
         }
     }
 
@@ -3704,7 +4517,7 @@ actor TFTMACRuntimeService {
         """
         let trace = try runCommand(
             paths.adb,
-            ["-P", "5038", "-s", "emulator-5582", "shell", "perfetto", "--txt", "-c", "-", "-o", remotePath],
+            ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "perfetto", "--txt", "-c", "-", "-o", remotePath],
             environment: adbEnvironment(paths: paths),
             input: Data(config.utf8),
             timeout: TimeInterval(durationSeconds + 30)
@@ -4383,6 +5196,7 @@ actor TFTMACRuntimeService {
         mailbox: LatestFrameMailbox,
         telemetry: TFTMACNativeTelemetry,
         inputStream: AsyncStream<EmulatorInput>,
+        expectedEmulatorVersionContains: String,
         status: @escaping StatusHandler
     ) async throws {
         let transport = try HTTP2ClientTransport.Posix(
@@ -4401,8 +5215,10 @@ actor TFTMACRuntimeService {
                 serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
                 deserializer: GRPCProtobuf.ProtobufDeserializer<Android_Emulation_Control_EmulatorStatus>()
             )
-            guard emulatorStatus.version.contains("37.1.11") else {
-                throw TFTMACRuntimeError("Unexpected Android Emulator version: \(emulatorStatus.version)")
+            guard emulatorStatus.version.contains(expectedEmulatorVersionContains) else {
+                throw TFTMACRuntimeError(
+                    "Unexpected Android Emulator version: \(emulatorStatus.version); expected \(expectedEmulatorVersionContains)"
+                )
             }
             telemetry.recordEvent("CONTROLLER_AUTHENTICATED", payload: [
                 "version": emulatorStatus.version,
@@ -4524,6 +5340,34 @@ actor TFTMACRuntimeService {
                                 serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_KeyboardEvent>(),
                                 deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
                             )
+                        case .secureUnlock(let secret):
+                            var reveal = Android_Emulation_Control_KeyboardEvent()
+                            reveal.eventType = .keypress
+                            reveal.key = "Enter"
+                            _ = try await client.sendKey(
+                                request: GRPCCore.ClientRequest(message: reveal, metadata: metadata),
+                                serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_KeyboardEvent>(),
+                                deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
+                            )
+                            try await Task.sleep(for: .milliseconds(150))
+                            var digits = Android_Emulation_Control_KeyboardEvent()
+                            digits.eventType = .keypress
+                            digits.text = try secret.transientPIN()
+                            _ = try await client.sendKey(
+                                request: GRPCCore.ClientRequest(message: digits, metadata: metadata),
+                                serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_KeyboardEvent>(),
+                                deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
+                            )
+                            digits.text = ""
+                            try await Task.sleep(for: .milliseconds(150))
+                            var submit = Android_Emulation_Control_KeyboardEvent()
+                            submit.eventType = .keypress
+                            submit.key = "Enter"
+                            _ = try await client.sendKey(
+                                request: GRPCCore.ClientRequest(message: submit, metadata: metadata),
+                                serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_KeyboardEvent>(),
+                                deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
+                            )
                         }
                     }
                 }
@@ -4556,14 +5400,16 @@ actor TFTMACRuntimeService {
         )
     }
 
-    nonisolated private static func adbEnvironment(paths: TFTMACRuntimePaths) -> [String: String] {
+    nonisolated private static func adbEnvironment(
+        paths: TFTMACRuntimePaths
+    ) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         environment.removeValue(forKey: "ADB_VENDOR_KEYS")
         environment.removeValue(forKey: "ADB_SERVER_SOCKET")
         environment.removeValue(forKey: "ANDROID_ADB_SERVER_ADDRESS")
         environment["ANDROID_SDK_ROOT"] = paths.sdkRoot.path
         environment["ANDROID_AVD_HOME"] = paths.avdHome.path
-        environment["ANDROID_ADB_SERVER_PORT"] = "5038"
+        environment["ANDROID_ADB_SERVER_PORT"] = "\(paths.adbServerPort)"
         environment["ADB_MDNS_AUTO_CONNECT"] = ""
         return environment
     }
@@ -4571,7 +5417,7 @@ actor TFTMACRuntimeService {
     nonisolated private static func adb(paths: TFTMACRuntimePaths, _ arguments: [String], timeout: TimeInterval) throws -> ProcessResult {
         let result = try runCommand(
             paths.adb,
-            ["-P", "5038", "-s", "emulator-5582"] + arguments,
+            ["-P", "\(paths.adbServerPort)", "-s", paths.serial] + arguments,
             environment: adbEnvironment(paths: paths),
             timeout: timeout
         )
@@ -4581,12 +5427,15 @@ actor TFTMACRuntimeService {
         return result
     }
 
-    nonisolated private static func readTFTProcessID(paths: TFTMACRuntimePaths) throws -> Int32? {
+    nonisolated private static func readProcessID(
+        paths: TFTMACRuntimePaths,
+        packageName: String
+    ) throws -> Int32? {
         let result = try runCommand(
             paths.adb,
             [
-                "-P", "5038", "-s", "emulator-5582", "shell", "pidof",
-                "com.riotgames.league.teamfighttactics"
+                "-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "pidof",
+                packageName
             ],
             environment: adbEnvironment(paths: paths),
             timeout: 10
@@ -4594,7 +5443,7 @@ actor TFTMACRuntimeService {
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         if result.status != 0 {
             if output.isEmpty { return nil }
-            throw TFTMACRuntimeError("ADB TFT process query failed: \(output.suffix(1200))")
+            throw TFTMACRuntimeError("ADB workload process query failed: \(output.suffix(1200))")
         }
         return output.split(whereSeparator: \.isWhitespace).first.flatMap { Int32($0) }
     }
@@ -4649,6 +5498,7 @@ actor TFTMACRuntimeService {
 
     nonisolated private static func processMatchesLaunchedIdentity(
         _ processIdentifier: Int32,
+        paths: TFTMACRuntimePaths,
         sessionMarker: String? = nil
     ) -> Bool {
         guard processExists(processIdentifier),
@@ -4657,21 +5507,27 @@ actor TFTMACRuntimeService {
                 ["-p", "\(processIdentifier)", "-ww", "-o", "command="],
                 timeout: 5
               ), result.status == 0 else { return false }
-        let baseIdentityMatches = result.output.contains("qemu-system-aarch64")
-            && result.output.contains("@TFT_Ultra_Tablet")
-            && result.output.contains("-port 5582")
+        let baseIdentityMatches = result.output.contains(paths.qemu.lastPathComponent)
+            && result.output.contains("@\(paths.avdName)")
+            && result.output.contains("-port \(paths.consolePort)")
+            && result.output.contains("-grpc \(paths.controllerPort)")
         return baseIdentityMatches && (sessionMarker.map(result.output.contains) ?? true)
     }
 
-    nonisolated private static func findOwnedEmulatorPID(sessionMarker: String) -> Int32? {
+    nonisolated private static func findOwnedEmulatorPID(
+        sessionMarker: String,
+        paths: TFTMACRuntimePaths
+    ) -> Int32? {
         guard let result = try? runCommand(
             URL(fileURLWithPath: "/bin/ps"),
             ["-axo", "pid=,command="],
             timeout: 10
         ), result.status == 0 else { return nil }
         for line in result.output.split(whereSeparator: \.isNewline) {
-            guard line.contains("qemu-system-aarch64"),
-                  line.contains("@TFT_Ultra_Tablet"),
+            guard line.contains(paths.qemu.lastPathComponent),
+                  line.contains("@\(paths.avdName)"),
+                  line.contains("-port \(paths.consolePort)"),
+                  line.contains("-grpc \(paths.controllerPort)"),
                   line.contains(sessionMarker),
                   let pid = line.split(whereSeparator: \.isWhitespace).first.flatMap({ Int32($0) }) else { continue }
             return pid
@@ -4679,14 +5535,18 @@ actor TFTMACRuntimeService {
         return nil
     }
 
-    nonisolated private static func anyEmulatorUsingSharedAVD() -> Bool {
+    nonisolated private static func anyEmulatorUsingSelectedAVD(
+        paths: TFTMACRuntimePaths
+    ) -> Bool {
         guard let result = try? runCommand(
             URL(fileURLWithPath: "/bin/ps"),
             ["-axo", "command="],
             timeout: 10
         ), result.status == 0 else { return true }
         return result.output.split(whereSeparator: \.isNewline).contains { line in
-            line.contains("qemu-system-aarch64") && line.contains("@TFT_Ultra_Tablet")
+            line.contains(paths.qemu.lastPathComponent)
+                && line.contains("@\(paths.avdName)")
+                && line.contains("-port \(paths.consolePort)")
         }
     }
 
@@ -4707,6 +5567,10 @@ actor TFTMACRuntimeService {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: Date())
+    }
+
+    nonisolated private static func dataSHA256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -4752,8 +5616,8 @@ private final class AVDConfigurationTransaction: @unchecked Sendable {
             "hw.gltransport.asg.dataRingSize": "\(profile.asgDataRingSize)",
             "showDeviceFrame": "no",
             "skin.name": "\(profile.width)x\(profile.height)",
-            "fastboot.forceColdBoot": "yes",
-            "fastboot.forceFastBoot": "no"
+            "fastboot.forceColdBoot": "no",
+            "fastboot.forceFastBoot": "yes"
         ]
         for (key, value) in values { config = Self.setting(key: key, value: value, in: config) }
         let applied = Data(config.utf8)
@@ -4843,22 +5707,35 @@ private final class AVDConfigurationTransaction: @unchecked Sendable {
 @MainActor
 final class TFTMACRuntimeController {
     private let service: TFTMACRuntimeService
+    private let completed: @MainActor @Sendable () -> Void
     private var runTask: Task<Void, Never>?
     private(set) var failed = false
 
     init(
-        profile: TFTMACRuntimeProfile,
+        runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
+        guestUnlockSecret: TFTMACGuestUnlockSecret,
         mailbox: LatestFrameMailbox,
         status: @escaping TFTMACRuntimeService.StatusHandler,
-        gameFrame: @escaping TFTMACRuntimeService.GameFrameHandler
+        gameFrame: @escaping TFTMACRuntimeService.GameFrameHandler,
+        completed: @escaping @MainActor @Sendable () -> Void = {}
     ) {
-        service = TFTMACRuntimeService(profile: profile, mailbox: mailbox, status: status, gameFrame: gameFrame)
+        self.completed = completed
+        service = TFTMACRuntimeService(
+            runtimeConfiguration: runtimeConfiguration,
+            guestUnlockSecret: guestUnlockSecret,
+            mailbox: mailbox,
+            status: status,
+            gameFrame: gameFrame
+        )
     }
 
     func start() {
         guard runTask == nil else { return }
         runTask = Task { [service] in
-            do { try await service.run() }
+            do {
+                try await service.run()
+                self.completed()
+            }
             catch is CancellationError { }
             catch {
                 await MainActor.run { self.failed = true }

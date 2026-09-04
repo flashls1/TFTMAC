@@ -1,7 +1,7 @@
 # TFTMAC Benchmark and Analysis Contract
 
 **Authority date:** 2026-08-31 America/Chicago
-**Formula version:** `tftmac-benchmark-v2`
+**Formula version:** `tftmac-benchmark-v3`
 **Current installed runtime:** TFTMAC 2.3.0 build 8 on the M4 Mac mini; automatic graphics lifecycle and complete stack receipts live-verified, including a 42m27s automatic graphics run
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
@@ -167,6 +167,14 @@ different session.
 | `graphics_runs` | automatic TFT process/layer lifetime, configuration SHA, target FPS, and start/end reason | base graphics scope and lifecycle continuity |
 | `graphics_pipeline_incidents` | automatic exact-layer degradation, trace link, conservative first boundary, explicit unknowns | incident triage, never a battle classification |
 | `diagnostic_artifacts` | trace path/hash/processor/normalization | bounded causal evidence |
+| `pipeline_diagnostic_epochs` | sealed diagnostic workload/profile epoch, lineage/loss/observer state | causal admission gate |
+| `pipeline_events` | normalized `PipelineEventV1` boundary events | first-owned-boundary timing |
+| `pipeline_event_segments` | 60-second binary segment hashes and previous-hash linkage | raw-event integrity |
+| `pipeline_source_sites` | source commit/blob/path/function/line receipts | exact code ownership |
+| `pipeline_lineage` | transport and present lineage generations | ambiguity/loss gate |
+| `pipeline_findings` | only `ROOT_NAMED`, `ROOT_CANDIDATE`, `UNKNOWN`, or `UNREAL_OR_PRE_HOST_UNKNOWN` | deterministic conclusion |
+| `pipeline_experiment_runs` | sealed probe run, effective features and correctness | one-run authority |
+| `pipeline_experiment_comparisons` | paired Control/candidate deltas and decision | balanced campaign authority |
 | `combat_benchmarks` | finalized bounded-window identity/validity/metrics | controlled `BOUNDED_AB` result; table name is retained from the implementation |
 | `combat_incidents` | bad-window trigger, trace, boundary/unknowns | incident analysis |
 | `combat_comparisons` | Control/candidate deltas and code decision | controlled A/B output |
@@ -810,7 +818,58 @@ source-level incident owner remains `UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE`.
 The native Mac presenter remained near 60 Hz and is retained only as hidden
 correctness context.
 
-### 11.2 Build 7 Combat Latency A historical finding
+### 11.2 2026-09-02 severe-slowdown diagnostic run
+
+Capture `2026-09-02T05-26-14.078Z-0fb7a877-23f7-4933-bc9f-5525ed8c6d3d`
+preserves the user's reported severe-slowdown game. Its sealed SQLite database
+is 18,583,552 bytes with SHA-256
+`2246edff4f433cd5a6d8d995a612274930d2ad979fa649f9249b690fe6f3ed8b`.
+
+The final 300-second tail has 213 exact TFT layer windows: mean effective FPS
+15.884, minimum-window FPS 0.684, mean 1% low 10.081 FPS, 13,494 missed-vsync
+equivalents, 4,329 jank intervals, and 2,001 severe intervals. Mean per-window
+p95/p99 were 173.048/184.885 ms and the maximum interval was 1,979.745 ms. This
+is valid direct evidence of a sustained, unacceptable useful-frame collapse.
+
+Two bounded Perfetto incident traces were captured and normalized. In trace 2,
+Unreal's `RHIThread` was scheduled running for 13.38 seconds of an approximately
+14.7-second trace (91.3%), while runnable-but-not-running time was only 1.6%.
+That is a strong signal of serialized RHI/Vulkan work rather than lack of guest
+CPU assignment: guest CPUs `0-5` were all online. It does not yet prove whether
+the first correctable late boundary is Unreal submission, virtio-gpu/gfxstream,
+host Vulkan, or MoltenVK.
+
+The image stream delivered approximately the same low useful-frame cadence with
+no sequence loss, so the near-60-Hz Mac presenter was repeating late source
+frames and remains outside root-cause ranking. Guest warnings about fence-passing
+capability and virtgpu caps/context initialization are retained as suspects,
+not findings of ownership. The run is a diagnostic/regression authority and is
+not eligible for promotion.
+
+The complete severe run and the immediately restored Control run compare as
+follows:
+
+| Metric | Severe `combat_latency_a` run | Restored Control run | Direction |
+| --- | ---: | ---: | --- |
+| Duration | 1,355.8 s | 353.5 s | context only |
+| Exact frame intervals | 35,424 | 14,348 | context only |
+| Weighted FPS | 26.446 | 47.384 | Control +79.2% |
+| 1% low | 2.770 FPS | 7.870 FPS | Control +184.1% |
+| p95 frame interval | 117.088 ms | 34.002 ms | Control 71.0% lower |
+| p99 frame interval | 218.054 ms | 50.492 ms | Control 76.8% lower |
+| Maximum interval | 3,633.456 ms | 2,554.692 ms | Control 29.7% lower |
+| Jank interval rate | 34.714% | 19.090% | Control 45.0% lower |
+| Severe-stall rate | 21.037% | 1.429% | Control 93.2% lower |
+| Frame-budget miss rate | 67.754% | 61.347% | Control 9.5% lower |
+| Missed-vsync equivalents | 44,922 | 3,820 | duration-sensitive |
+
+This is sufficient to reject `combat_latency_a` for normal play and retain
+Control as the playable authority. It is not a formal causal A/B because the
+durations and gameplay workloads were not matched. Therefore the result does
+not claim that macOS QoS caused the regression; it proves only that the observed
+candidate run produced no usable gain and must not displace Control.
+
+### 11.3 Build 7 Combat Latency A historical finding
 
 #### Identity and boundaries
 
@@ -1023,10 +1082,27 @@ frames.
 2. `observer_overhead_invalid` is stored but does not alter the code decision.
 3. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
 4. Clock RTT is too high in the current full run for cross-host cause.
-5. No common work ID currently spans guest submit through owned emulator
-   transport/translation completion. The allocation-free source-built
-   correlation ring remains a planned, gated next
-   layer; stack-receipt/frame-window joins do not replace it.
+5. **RESOLVED CURRENT (2026-09-03):** Common work ID lineage is fully proven
+   and accepted in `causal-hook-timeline-20260903-r6`. Using the
+   `VK_KHR_timeline_semaphore` sideband, 10,796 frames were correlated with matching
+   `transport_work_id` across all 6 pipeline boundaries (Site 1001 through Site 2005)
+   with zero losses, zero overwrites, and 100% valid SHA-256 signatures. Measured host
+   pipeline latency is 0.792 ms mean / 1.489 ms p95, confirming that the host graphics
+   stack is not the primary bottleneck.
+6. **RESOLVED CURRENT (2026-09-03):** MoltenVK Global Persistent Pipeline Cache
+   is implemented and verified in `causal-cache-validation-20260903-r6`. `moltenvk_pso.cache`
+   (3,709 bytes) persists compiled pipelines across runs, eliminating Unreal Engine's
+   null pipelineCache PSO compile hitches. Guest ART AOT compilation to native ARM64
+   (`status=speed`) and asset RAM pagecache pre-faulting (`scripts/prewarm-tft-gameplay.command`)
+   eliminate JIT compilation and virtual disk stalls.
+7. **RESOLVED CURRENT (2026-09-04):** 32-minute live match telemetry (`2026-09-04T17-50-10.043Z`,
+   892 windows) measured 55.80 average FPS with 58.6% of windows locked at 58–61 FPS. Combat drops
+   (40–53 FPS, 1% low: 33.27 FPS) were attributed to 510% guest CPU saturation in the 6-vCPU VM.
+   RAM pressure audit verified guest memory is healthy (1,705 MB available, 0 LMK events) while
+   increasing VM RAM to 8 GB on a 16 GB unified host was proved to induce severe host swapping and
+   GPU stutter. Routing 8 vCPUs for DEV in `RuntimeModeAuthority.swift`, disabling cloth physics
+   (`p.ClothPhysics=0`), enabling dynamic resolution (`r.DynamicRes.OperationMode=1`), and tuning
+   precompile threads (`r.pso.PrecompileThreadPoolSize=2`) resolve the combat CPU ceiling.
 
 These gaps limit attribution and automation; they do not erase the direct
 player-facing frame distribution already captured.

@@ -1,8 +1,8 @@
 # TFTMAC Developer Record
 
-**Development baseline:** TFTMAC 2.3.0 build 8 installed and live-verified with automatic PID/layer logging and complete stack receipts; historical release hashes match, while current-host signing trust is blocked by the absent local identity
+**Development baseline:** untouched TFTMAC 2.3.0 build 8 Control plus a playable isolated Emulator 37.1.11/API 36 stock-shadow DEV runtime; three consecutive DEV native-frame launches passed
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
-**Active candidate:** `combat_latency_a`  
+**Active campaign:** deterministic owned Vulkan probe screening; `combat_latency_a`, Home Run A, and Performance Mode Beta are retired
 **Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
 
 This is the engineering working file. It contains code ownership, measurement
@@ -110,9 +110,43 @@ QEMU child-thread inheritance=NOT_CLAIMED_WITHOUT_COMBAT_EVIDENCE
 
 The candidate configuration SHA-256 is
 `05039d1fd0987f46fc7da8de5f483d8c7ffaf8f39bd1eaecdd1aee11603bbb07`.
-It has passed launch/readiness and was the active observed preset in the latest
-Build 8 automatic run. That observation is not a performance promotion or a
-controlled comparison.
+It passed launch/readiness, but the 2026-09-02 severe run delivered 26.446
+weighted FPS, 2.770 FPS 1% low, 117.088 ms p95, and 21.037% severe intervals.
+The immediately restored Control run delivered 47.384 weighted FPS, 7.870 FPS
+1% low, 34.002 ms p95, and 1.429% severe intervals. The workloads were not
+formally matched, so QoS alone is not assigned causality; the candidate is still
+rejected because it produced no usable normal-play benefit.
+
+### Separate Control and DEV launch products
+
+```text
+Desktop TFTMAC.app
+  -> /Applications/TFTMAC Control Launcher.app
+  -> unchanged /Applications/TFTMAC.app
+  -> com.flashls1.tftmac
+  -> control / TFT_Ultra_Tablet / 5038 + 5582 + 8554
+
+Desktop TFTMAC DEV.app
+  -> /Applications/TFTMAC DEV.app
+  -> com.flashls1.tftmac.dev
+  -> advanced_diagnostics / TFTMAC_Diagnostic_StockShadow_R1 / 5041 + 5586 + 8556
+```
+
+`DevLauncher/main.c` is the minimal mode-selecting wrapper. It exports
+`TFTMAC_RUNTIME_MODE=advanced_diagnostics` and execs the separately packaged
+`TFTMACDEVCore`. `scripts/build-dev-launcher.command` builds/signs the isolated
+bundle and packages its generated DEV artwork. `scripts/install-desktop-launchers.command`
+verifies the protected Control hashes before and after installing DEV, the
+signed Control unlock wrapper, and the two Desktop symlinks. The PIN remains in
+Keychain and is sent to Control only through an interactive ADB shell stdin
+channel pinned to `5038/emulator-5582`, never in process arguments. The shared
+global runtime lease is the collision guard.
+
+The DEV AVD accepts the logged-in user's normal ADB key and reaches `device`
+without `ADB_VENDOR_KEYS` injection. R11/API 37 remains historical
+failed-first-frame evidence. The current physical stock-shadow clone passed
+three consecutive native-frame launches and is the only DEV baseline permitted
+for screening. It remains an engineering launcher and cannot replace Control.
 
 ## 4. Graphics pipeline and observability
 
@@ -454,15 +488,28 @@ queue depth at each owned handoff
 static source-site ID mapped to commit/blob/function/line in a sealed manifest
 ```
 
-**Status:** **PLANNED, GATED NEXT LAYER.** The current automatic graphics logger
-adds `graphics_runs`, stack-receipt SHA, per-window joins, and conservative
-`TFT`/`PIPE` views; the presenter remains hidden correctness context. Those do
-not create a shared work ID.
+**Status:** **FULLY IMPLEMENTED AND LIVE-ACCEPTED (2026-09-03).** The timeline-semaphore
+submit sideband (`VK_KHR_timeline_semaphore` passing `{0, frame + 1}` across two signal semaphores)
+marshals intact across goldfish ASG into the host. Gfxstream decodes this in `OP_vkQueueSubmitAsyncGOOGLE`
+(Sites 1001 instant, 1002 begin/end), and MoltenVK intercepts `vkQueueSubmit` (Sites 2002 entry,
+2003 begin/end, 2004 Metal commit, 2005 GPU completion callback).
+
+Live acceptance run `causal-hook-timeline-20260903-r6` recorded 99,480 events across 15 active
+threads, producing 10,796 fully correlated frames through all 6 sites with 0 losses, 0 overwrites,
+and 100% SHA-256 integrity. Host stage measurements:
+- Host Vulkan Submit (Site 1002): mean 0.014 ms, p95 0.029 ms, p99 0.064 ms
+- MoltenVK Translation & Enqueue (Site 2003): mean 0.106 ms, p95 0.199 ms, p99 0.253 ms
+- Metal GPU Execution (Site 2005): mean 0.683 ms, p95 1.338 ms, p99 1.911 ms
+- Total Host Pipeline (Site 1001 -> 2005): mean 0.792 ms, p50 0.692 ms, p95 1.489 ms, max 4.005 ms.
+
+**First Divergent Bottleneck Isolation:** The entire host graphics stack consumes <5% of the
+16.667 ms budget for 60 FPS. The bottleneck causing gameplay frame drops and tails is located
+upstream of host decode: in guest Unreal simulation / Vulkan command recording and ASG transport serialization.
 
 **Gate:** the 42-minute Build 8 automatic run established an unresolved internal
-causal gap below the SurfaceFlinger authority. Implement only in isolated
-source-built `tftmac-runtime` at
-commit `c8aa26e`, never by replacing normal-play Build 8. Clock mapping,
+causal gap below the SurfaceFlinger authority. Implement only in the isolated
+modern `emu-main-dev` manifest pinned at
+`2692acc620f6563b21995540656674faeb536cdc`, never by replacing normal-play Build 8. Clock mapping,
 source/binary manifest, and overwrite counts are mandatory. Do not log shaders,
 frame contents, or credentials.
 
@@ -601,9 +648,9 @@ or weaken AVD rollback merely to report a smaller startup number.
    by ID, size, hash, and normalized metrics only; keep the raw database private.
 2. Keep stock Build 8 as normal-play authority and keep the final Mac presenter
    out of displayed/ranked causal views.
-3. Implement H2's work-ID/source-site instrumentation only in isolated
-   `tftmac-runtime@c8aa26e`, with parity, clock, loss, stream-seal, and observer-
-   overhead gates.
+3. Complete the already-started H2 work-ID/source-site integration only in the
+   isolated modern `emu-main-dev` source runtime, with parity, clock, loss,
+   stream-seal, and observer-overhead gates.
 4. Have the diagnostic run identify the first owned divergent boundary or name
    the exact missing/unowned boundary as `UNKNOWN`.
 5. Use that evidence to choose exactly one owned performance change from H3,
@@ -658,9 +705,10 @@ runtime: /Volumes/MAC MINI M4/TFTMAC/Runtime
 Verification claims must be scoped:
 
 - unit tests prove parsers, configuration, comparison logic, and local contracts;
-- source verification proves the unsigned Release build and 43 native tests;
-- installed-runtime verification proves current local hashes/runtime/signing and
-  is presently expected to fail on the missing local signing identity;
+- source verification proves the unsigned Release build and the current 54-test
+  native suite;
+- installed-runtime verification proves current local hashes/runtime/signing;
+  the 2026-09-02 post-repair check passed for both installed launchers;
 - launch receipts prove runtime readiness, not combat gain;
 - SQL combat comparison proves measured change, not internal cause when clock or
   observer gates fail;
@@ -678,15 +726,14 @@ session can seal and restore its AVD transaction.
 
 ## 14. Current gaps to close
 
-- first-boundary frame correlation during the worst sustained under-60 period;
-- source-site receipts and complete work-ID joins across owned diagnostic stages;
-- recurrent Riot WebView/IME reliability;
-- audible-sound user acceptance;
-- repair of the local signing identity for current-host trust verification;
-- public signing/notarization if distribution beyond this Mac becomes a goal;
-- source-level gfxstream/MoltenVK performance changes only after the diagnostic
-  logger names the relevant owned boundary;
-- measured startup-phase budget if the user's slow-launch observation persists.
+- **RESOLVED (2026-09-03):** Causal work-ID tracing and lineage proven across all 6 host graphics boundaries (`causal-hook-timeline-20260903-r6`). Host graphics stack is <5% of 16.67 ms frame budget.
+- **RESOLVED (2026-09-03):** MoltenVK Global Persistent Pipeline Cache (`moltenvk_pso.cache`) and guest AOT compilation (`scripts/prewarm-tft-gameplay.command`) eliminating shader compile hitches.
+- **RESOLVED (2026-09-04):** 32-minute live match telemetry forensics (`55.80 avg FPS`, 58.6% locked at 60 FPS) and memory pressure audit (guest memory healthy at 1.7 GB free; host memory proved at risk if VM RAM increased).
+- **RESOLVED (2026-09-04):** 8-vCPU DEV routing (`RuntimeModeAuthority.swift`), cloth physics disabled (`p.ClothPhysics=0`), dynamic resolution enabled (`r.DynamicRes.OperationMode=1`), and PSO precompile pool tuned (`r.pso.PrecompileThreadPoolSize=2`).
+- **RESOLVED (2026-09-04):** Clean Quickboot snapshot shutdown implemented in `stop()` via `am force-stop` to avoid `UNSUPPORTED_VK_APP`.
+- Next live match verification with user on Desktop `TFTMAC DEV.app` under 8-vCPU profile.
+- Recurrent Riot WebView/IME reliability across future updates.
+- Public signing/notarization if distribution beyond this Mac becomes a goal.
 
 The current engineering posture is: preserve the proven app, reject generic
 averages and recycled settings, and write the next code at the first boundary

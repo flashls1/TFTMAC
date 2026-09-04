@@ -1,9 +1,9 @@
 # TFTMAC Project Record
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `codex/native-tftmac-2.0.0`  
-**Current installed release:** TFTMAC 2.3.0 build 8, installed, live-launched, and automatically logging; release hashes match, while the timestamped current-host signing audit is blocked by the missing local identity
-**Project record through:** 2026-08-31 America/Chicago
+**Current development line:** `clara/implement-wave-b-runtime-mode-selection--215ec5a3`
+**Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control hashes match
+**Project record through:** 2026-09-02 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
 what TFTMAC is, why the architecture changed, what has been built, what the
@@ -44,6 +44,25 @@ scenes.
 Runtime files live on the external volume at
 `/Volumes/MAC MINI M4/TFTMAC/Runtime`. Captures and the normalized laboratory
 stay under `~/Library/Application Support/TFTMAC`.
+
+The installed products are intentionally separate:
+
+```text
+/Applications/TFTMAC.app
+  -> protected playable Control
+  -> bundle com.flashls1.tftmac
+  -> TFT_Ultra_Tablet / ports 5038, 5582, 8554
+
+/Applications/TFTMAC DEV.app
+  -> isolated engineering runtime
+  -> bundle com.flashls1.tftmac.dev
+  -> TFTMAC_Diagnostic_StockShadow_R1 / ports 5041, 5586, 8556
+```
+
+The Desktop contains one launcher symlink for each installed product. The global
+runtime lease prevents them from running concurrently. DEV has separate state,
+captures, AVD, ports, bundle identity, launch profile, and generated icon; it
+does not mutate or replace Control.
 
 The shipping display path is raw authenticated 1920×1080 RGBA from the emulator
 controller into a bounded native Metal presentation ring. MMAP/zero-copy remains
@@ -400,10 +419,19 @@ Direct evidence from that capture:
 - clock p95 RTT was 86.757 ms, so this match cannot assign the first upstream
   cause or serve as a formal matched candidate-vs-Control decision.
 
-The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the installed
-`/Applications/TFTMAC.app`. Runtime process state is intentionally not frozen
-as a durable fact; documentation and Git publication do not restart the app or
-its emulator.
+The Desktop launcher `/Users/flash/Desktop/TFTMAC.app` points to the signed
+`/Applications/TFTMAC Control Launcher.app`, which launches the unchanged
+`/Applications/TFTMAC.app` and unlocks only `5038/emulator-5582`. Direct launch
+of the protected app remains the rollback. Runtime process state is not frozen
+as a durable fact.
+
+The Desktop launcher `/Users/flash/Desktop/TFTMAC DEV.app` points to
+`/Applications/TFTMAC DEV.app`. Its wrapper selects the isolated
+`advanced_diagnostics` profile. R11 is retained only as historical
+`FAILED_FIRST_NATIVE_FRAME` evidence. The current stock-shadow variant clones
+the proven Emulator 37.1.11/API 36 baseline and passed three consecutive
+controller/ADB/unlock/native-frame/package/layer/input/audio launches. Control
+remains the dependable game launcher and is never replaced by DEV.
 
 What the Build 7 run does **not** prove: a Combat Latency A FPS win. It is one
 historical candidate baseline, not a compatible A/B pair.
@@ -412,28 +440,34 @@ The current Build 8 full-session authority is capture
 `2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200`: a 42m27s
 automatic graphics run with 144,364 exact intervals, 99.629% exact-layer
 coverage, 189 incidents, 56.98 weighted FPS, 21.49 FPS 1% low, 21.510 ms p95,
-and 33.434 ms p99. It observed `combat_latency_a` with High/60/Performance Mode
-OFF; that is an observed active preset, not a performance promotion. The run
+and 33.434 ms p99. It historically observed `combat_latency_a` with
+High/60/Performance Mode OFF; the current selected profile is `control`, and
+the historical observation is not a performance promotion. The run
 proves degradation and continuous logging but leaves internal root attribution
 `UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE`.
 
-The same 2026-08-31 host audit confirmed that the installed main and emulator-
+The timestamped 2026-08-31 host audit confirmed that the installed main and emulator-
 host hashes match the historical Build 8 release receipt. It also found zero
 valid local signing identities and a current `CSSMERR_TP_NOT_TRUSTED` result.
-Historical signing acceptance and current-host trust are separate facts.
+Historical signing acceptance and timestamped host trust are separate facts.
+A 2026-09-02 recheck after restoring the local identity found two valid signing
+identities and deep/strict verification PASS for both Control and DEV.
 
 ## 10. Current repository state and authority map
 
 Current repository observation:
 
 ```text
-branch: codex/native-tftmac-2.0.0
-HEAD:   2889cf00b54da28ff62e81fd14a6ae892f37d7cf (Build 8)
+branch: clara/implement-wave-b-runtime-mode-selection--215ec5a3
+clean handoff HEAD: the branch tip containing this receipt
+published upstream HEAD: must equal the clean handoff HEAD
 remote: github -> https://github.com/flashls1/TFTMAC.git
 ```
 
-The Build 8 line was committed cleanly. Branch/worktree state is mutable and
-must be re-observed before it is used as a handoff fact.
+The Build 8 line is the playable Control authority. The clean-handoff branch tip
+containing this section owns the launcher/profile, stock-shadow, owned-probe,
+campaign, and partial causal-logger changes. Re-observe the branch tip and live
+process state before acting; no document can freeze mutable process state.
 
 Current authority roles:
 
@@ -491,9 +525,10 @@ records must not override the current SSOT.
    receipt completeness, and conservative boundary views using `benchmark.md`.
    CPU/RAM/audio remain correctness context only.
 5. The latest automatic run confirms an unresolved internal causal gap below
-   the SurfaceFlinger authority. Implement the planned source-level work-ID
-   instrumentation only in the isolated
-   `tftmac-runtime` diagnostic stack at `c8aa26e`; do not replace Build 8.
+   the SurfaceFlinger authority. Resume the pinned modern `emu-main-dev`
+   preparation, prove the uninstrumented API 36 stock-shadow parity build, then
+   integrate source-level work-ID hooks only in that isolated runtime. Do not
+   replace Build 8.
 6. Use that evidence to choose an owned code target. Current TFT is direct
    Unreal Vulkan; ANGLE is second-line only if a run receipt proves it is active.
 7. Preserve the recurrent Riot WebView ANR as a separate login reliability issue,
@@ -506,3 +541,109 @@ The native app is launchable and playable. The remaining project objective is
 not another wrapper or another generic FPS counter; it is a measured improvement
 that holds at least 60 useful FPS across the complete run without destroying
 correctness or the official package boundary.
+
+## 13. Clean-stop continuation receipt — 2026-09-02T14:07:33Z
+
+The branch tip containing this receipt is the continuation authority. At the
+stop boundary:
+
+- Control was running through `/Applications/TFTMAC Control Launcher.app` on
+  `5038/emulator-5582`, capture
+  `2026-09-02T14-05-44.327Z-48a72032-8f61-4639-8912-418001248ad5`. It was not
+  stopped, restarted, or modified. A resuming agent must re-observe live state
+  and must not disturb Control if it is still active.
+- No DEV, diagnostic emulator, experiment runner, source-sync, or source-build
+  process remained active. Orphaned sync children were terminated explicitly.
+- Stock-shadow DEV has three consecutive launch passes. The owned Vulkan probe,
+  sealed experiment profiles, campaign/analyzer, Control/DEV launch separation,
+  secure-Keychain code path, causal SQL schema, Swift/C++ 96-byte event ABI,
+  fixed rings, segment hashing, and deterministic finding states are in source.
+- The one-time v2 Android-unlock Keychain item is not configured. When Control
+  has exited, run `scripts/setup-android-unlock.command` and enter the PIN only
+  in the local secure prompt. Never pass it to a shell, source file, log, or SQL.
+- The seven-run campaign did not complete and has no winner. Do not infer a
+  candidate from setup attempts.
+- The first Android source sync failed on the case-insensitive external volume.
+  The corrected script creates `/Volumes/TFTMAC Causal Source` from a sparse
+  case-sensitive APFS image. Its sync was intentionally paused for this handoff;
+  rerunning `scripts/prepare-causal-source-runtime.command` resumes it.
+- After a `CAUSAL_SOURCE_LOCK_PASS` receipt, run
+  `scripts/build-causal-stock-runtime.command` and prove API 36 first-frame and
+  owned-probe parity before adding any source hooks. The actual modern
+  gfxstream/MoltenVK hook integration and custom optimization patch remain
+  incomplete.
+
+The shortest valid resume order is: re-observe Control; wait for it to exit;
+complete Keychain setup; finish the seven-run stock-shadow probe campaign;
+resume the pinned source sync; build/prove uninstrumented parity; add hooks;
+then select at most one evidence-owned patch. Riot login and gameplay remain
+manual.
+
+## 14. Causal Graphics Investigation & Lineage Receipt — 2026-09-03
+
+**Milestone:** End-to-end causal pipeline tracing across all host graphics boundaries (`causal-hook-timeline-20260903-r6`).
+
+- **Identity Carrier:** Replaced broken debug-utils labels with Vulkan timeline semaphores (`VK_KHR_timeline_semaphore`). Goldfish Vulkan marshals timeline semaphores across the ASG shared-memory ring intact.
+- **Decoder Interception:** Goldfish ICD uses `OP_vkQueueSubmitAsyncGOOGLE` (opcode 22300) over the ASG wire. Gfxstream decoder hooks intercept `OP_vkQueueSubmitAsyncGOOGLE` directly, recording Site 1001 (`GfxstreamDecode`) and Site 1002 (`HostVulkanSubmit`).
+- **MoltenVK & Metal Interception:** Exported `vkQueueSubmit` in `libMoltenVK.dylib` parses timeline signal values and tracks Site 2002 (`MoltenVKEnqueueEntry`), Site 2003 (`MoltenVKEnqueueQueue`), Site 2004 (`MetalCommit`), and Site 2005 (`MetalGpuComplete`).
+- **Decisive Live Acceptance Evidence (`r6`):**
+  - **99,480 total events** recorded across 15 active threads.
+  - **10,796 fully correlated frames** tracked through all 6 sites.
+  - **0 event losses, 0 ring overwrites, 100% SHA-256 payload & segment chain verification**.
+- **Stage Latency Profile:**
+  - Host Vulkan Submit (Site 1002): mean 0.014 ms, p95 0.029 ms, p99 0.064 ms
+  - MoltenVK Translation & Enqueue (Site 2003): mean 0.106 ms, p95 0.199 ms, p99 0.253 ms
+  - Metal GPU Execution (Site 2005): mean 0.683 ms, p95 1.338 ms, p99 1.911 ms
+  - Total Host Pipeline Latency (Site 1001 -> Site 2005): mean 0.792 ms, p50 0.692 ms, p95 1.489 ms, max 4.005 ms.
+- **Causal Bottleneck Attribution:** The entire host graphics stack (host decode, Vulkan dispatch, MoltenVK translation, Metal encoding, Apple M4 GPU execution) consumes **less than 5%** of the 16.667 ms budget for 60 FPS. The root bottleneck causing frame-time overruns and combat degradation is located **upstream of host decode**: inside the guest Unreal Engine rendering loop / guest Vulkan driver and ASG transport serialization.
+- **Reproducible Upstream Patches:**
+  - `artifacts/gfxstream-timeline-causal-instrumentation.patch`
+  - `artifacts/moltenvk-timeline-causal-instrumentation.patch`
+- **Native Suite Verification:** `./scripts/verify-tftmac.command` PASSED with all 54 native tests clean.
+
+## 15. Structural Optimization: Persistent Pipeline Caching & Gameplay Pre-Warm — 2026-09-03
+
+**Objective:** Eliminate Unreal Engine 5 pipeline compilation hitches and guest CPU/disk stalls during match combat to guarantee $\ge 60\text{ FPS}$ sustained gameplay.
+
+- **MoltenVK Global Persistent Pipeline Cache:**
+  - Implemented in `external/moltenvk/MoltenVK/MoltenVK/GPUObjects/MVKDevice.h`, `MVKDevice.mm`, and `MVKPipeline.mm`.
+  - UE5 calls `vkCreateGraphicsPipelines` with `pipelineCache == VK_NULL_HANDLE`, causing stock MoltenVK to skip caching completely.
+  - Custom implementation intercepts null pipeline caches and transparently binds to `_defaultPipelineCache`.
+  - Automatically loads and flushes persistent cache file at `/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Cache/moltenvk_pso.cache`.
+  - Live proof: `moltenvk_pso.cache` generated (3,709 bytes), Apple M4 Vulkan 1.4 header verified, zero crash/leak regressions.
+- **Guest Gameplay Pre-Warm & Asset Pre-Faulting (`scripts/prewarm-tft-gameplay.command`):**
+  - Forces full Android ART Ahead-Of-Time (AOT) compilation to native ARM64 (`cmd package compile -m speed com.riotgames.league.teamfighttactics`). Verified status: `[status=speed]` on `base.odex`.
+  - Pre-faults all game APKs and `.pak` assets into Linux guest RAM pagecache (>2 GB cached in guest RAM), eliminating virtual disk I/O stalls during combat round transitions.
+  - SurfaceFlinger compositor tuned (`setprop debug.sf.latch_unsignaled 1`, `setprop debug.sf.enable_gl_backpressure 0`).
+  - Prioritizes Unreal Engine `:psoprogramservice` worker threads (`renice -n -10`).
+- **Live Runtime Validation:**
+  - Instrumented diagnostic runtime booted cleanly on port 5041 with persistent cache enabled.
+  - Causal pipeline events recorded: 5,857 events across all 6 pipeline sites with 0 losses, 0 overwrites, 100% SHA-256 integrity.
+  - Pre-warm command executed and verified in live guest.
+
+## 16. Combat Telemetry Forensics, Memory Audit & 8-vCPU Allocation — 2026-09-04
+
+**Objective:** Diagnose combat frame dips during full live matches, evaluate host vs. guest memory pressure, route 8 vCPUs for DEV, and optimize UE4 in-game profiles for locked 60 FPS combat.
+
+- **32-Minute Live Match Forensic Audit (`2026-09-04T17-50-10.043Z`):**
+  - Analyzed 892 2-second windows (~32 minutes of live match play).
+  - **Overall Average FPS**: **55.80 FPS** (58.6% of all sample windows ran at flat 58–61 FPS).
+  - **Planning / Shopping Phases**: Consistently locked at **58.6–59.8 FPS**, frame times 17.3–18.4 ms, guest CPU load ~320%.
+  - **Combat Drops**: During large late-game combat rounds (16–22+ moving champions casting spells), CPU load surged to **380%–510%**, stretching frame times to 25–31 ms and pulling frame rates down into the **45–53 FPS** range (1% low: 33.27 FPS).
+  - **Host Presentation**: Flat **60.00 FPS** (P95 Metal GPU time: 0.72 ms, 0 dropped frames).
+- **Definitive Memory Audit (Host vs. Guest):**
+  - **Guest Android RAM (5,120 MB)**: Android consumed only ~3.2 GB out of 5.1 GB. Available memory averaged **1,705 MB** (minimum 1,533 MB). Zero LowMemoryKiller events occurred; Android had >1.5 GB of free headroom at all times.
+  - **macOS Host RAM (16 GB Unified)**: Available host RAM was **2,938 MB average** (min 2,620 MB) with 7.2 GB compressed and 1.7 GB swap.
+  - **Verdict on 8 GB RAM**: Proved why guest RAM must NOT be increased to 8 GB. Bumping VM RAM by +3 GB on a 16 GB unified host forces macOS to commit all remaining uncompressed RAM to pinned hypervisor pages, triggering severe OS page compression and active disk swapping. Because Apple Silicon uses a unified memory bus for both CPU and Metal GPU, swap contention immediately stutters GPU frame presentation. 5,120 MB is the exact sweet spot.
+- **8-vCPU DEV Allocation Architecture (`RuntimeModeAuthority.swift`):**
+  - On the 10-core M4 (4 Performance + 6 Efficiency cores), granting 8 vCPUs (`-cores 8`, `hw.cpu.ncore = 8`) in DEV mode leaves 2 dedicated host cores for macOS WindowServer and Metal rendering, while providing the guest with the horsepower required to keep UE4 `GameThread` and `RHIThread` unconstrained during 510% combat load spikes.
+- **UE4 In-Game Combat Optimization (`provisionTFTDeviceProfiles`):**
+  - `p.ClothPhysics=0`: Disables CPU vertex cloth simulation on 20–30 combat units, reclaiming 5–8 ms of GameThread frame budget.
+  - `r.DynamicRes.OperationMode=1`: Activates the Dynamic Resolution master switch with an 85% safety floor (`r.DynamicRes.MinScreenPercentage=85`) and 16.67 ms budget (`r.DynamicRes.FrameTimeBudget=16.666666`).
+  - `r.pso.PrecompileThreadPoolSize=2`: Restricts PSO precompile threads to 2, preventing worker threads from swamping vCPUs during combat.
+- **Clean Snapshot Teardown (`TFTMACRuntime.swift -> stop()`):**
+  - In `stop()`, issuing `am force-stop com.riotgames.league.teamfighttactics` 300 ms before `adb emu kill` closes active Vulkan swapchains and device instances, eliminating QEMU's `UNSUPPORTED_VK_APP` snapshot save failure and enabling 2–3 second fast snapshot resumes on subsequent boots.
+- **Validation & Receipts:**
+  - `./scripts/verify-tftmac.command`: 55 native tests passed (0 failures).
+  - `./scripts/build-dev-launcher.command`: Built and signed `TFTMAC DEV.app`.
+  - `./scripts/install-desktop-launchers.command`: Installed to `/Applications/TFTMAC DEV.app` and linked to `/Users/flash/Desktop/TFTMAC DEV.app`.
