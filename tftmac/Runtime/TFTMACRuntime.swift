@@ -1952,6 +1952,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             return ("UNAVAILABLE", "MALFORMED_LATENCY")
         case .unavailable(.adbError):
             return ("UNAVAILABLE", "ADB_ERROR")
+        case .unavailable(.loginPromptActive):
+            return ("UNAVAILABLE", "LOGIN_PROMPT_ACTIVE")
         }
     }
 
@@ -2704,6 +2706,15 @@ actor TFTMACRuntimeService {
         if let paths,
            let ownedPID = discovery?.processIdentifier,
            Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker) {
+            if runtimeConfiguration.workload == .officialTFT {
+                _ = try? Self.runCommand(
+                    paths.adb,
+                    ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "am", "force-stop", "com.riotgames.league.teamfighttactics"],
+                    environment: Self.adbEnvironment(paths: paths),
+                    timeout: 5
+                )
+                try? await Task.sleep(for: .milliseconds(300))
+            }
             telemetry?.recordEvent("EMULATOR_STOP_SIGNAL_SENT", payload: [
                 "pid": ownedPID,
                 "serial": paths.serial,
@@ -3071,7 +3082,7 @@ actor TFTMACRuntimeService {
             "-vsync-rate", "\(profile.refreshHz)",
             "-dns-server", "1.1.1.1,8.8.8.8",
             "-cores", "\(profile.vCPU)", "-memory", "\(profile.ramMiB)",
-            "-no-hidpi-scaling", "-no-snapshot", "-no-metrics", "-no-boot-anim",
+            "-no-hidpi-scaling", "-no-metrics", "-no-boot-anim",
             "-qt-hide-window",
             "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
@@ -3253,6 +3264,7 @@ actor TFTMACRuntimeService {
             throw TFTMACRuntimeError("Android did not finish booting before the five-minute deadline.")
         }
         try await establishGuestGameplayPower(paths: paths, telemetry: telemetry)
+        await establishGuestAudioSubsystem(paths: paths, telemetry: telemetry)
         var automaticUnlockAttempted = false
         var automaticUnlockAttempts = 0
         var nextUnlockAttempt = Date.distantPast
@@ -3329,6 +3341,7 @@ actor TFTMACRuntimeService {
             "sql_database": "TFTMAC_NATIVE_RUNTIME.sqlite"
         ])
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "before_tft_launch")
+        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
 
         let resolved = try? Self.adb(
             paths: paths,
@@ -3345,6 +3358,17 @@ actor TFTMACRuntimeService {
             }
         }
         guard launched else { throw TFTMACRuntimeError("Android could not launch the official TFT activity.") }
+
+        for _ in 0..<10 {
+            if let pid = try? Self.readProcessID(paths: paths, packageName: package) {
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(pid)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(pid):-20", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: pid), "nice": -20])
+                break
+            }
+            try await Task.sleep(for: .milliseconds(200))
+        }
+
         telemetry.recordEvent("TFT_READY_FOR_USER", payload: [
             "engine": "Unreal Engine",
             "resolution": "\(profile.width)x\(profile.height)",
@@ -3529,6 +3553,11 @@ actor TFTMACRuntimeService {
             timeout: 10
         )
         _ = try Self.adb(paths: paths, ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "min_refresh_rate", "60.0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "peak_refresh_rate", "60.0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "service.sf.present_timestamp", "1"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.sf.showupdates", "0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "pm", "disable-user", "--user", "0", "com.google.android.apps.wellbeing"], timeout: 10)
 
         var lastState: GuestPowerState?
         for _ in 0..<12 {
@@ -3560,6 +3589,141 @@ actor TFTMACRuntimeService {
         throw TFTMACRuntimeError(
             "Android did not confirm powered, stay-awake gameplay state before secure unlock."
         )
+    }
+
+    private func establishGuestAudioSubsystem(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async {
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.stagefright.audio.sink", "1"], timeout: 5)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "af.fast_track_multiplier", "2"], timeout: 5)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "audio.deep_buffer.media", "1"], timeout: 5)
+        telemetry.recordEvent("GUEST_AUDIO_SUBSYSTEM_HARDENED", payload: [
+            "deep_buffer": true,
+            "fast_track_multiplier": 2,
+            "stagefright_sink": 1
+        ])
+    }
+
+    private func provisionTFTDeviceProfiles(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async throws {
+        let iniContent = """
+        [Android_MatchedFragments DeviceProfile]
+        DeviceType=Android
+        BaseProfileName=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.MobileContentScaleFactor=1.0
+        +CVars=r.ScreenPercentage=100
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        [Android_LowPerf_Fragment DeviceProfile]
+        DeviceType=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        [Android_LowPerf_Frontend_Fragment DeviceProfile]
+        DeviceType=Android
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+
+        [Android DeviceProfile]
+        DeviceType=Android
+        BaseProfileName=Mobile
+        +CVars=tft.DefaultFrameRateLimit=60
+        +CVars=t.MaxFPS=60
+        +CVars=r.VSync=1
+        +CVars=r.DynamicRes.OperationMode=1
+        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
+        +CVars=r.DynamicRes.MinScreenPercentage=85
+        +CVars=a.StripFramesOnCompression=0
+        +CVars=a.StripOddFramesWhenFrameStripping=0
+        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.Streaming.PoolSize=1000
+        +CVars=r.Streaming.PoolSizeForMeshes=250
+        +CVars=r.RenderTargetPoolMin=100
+        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=tft.Audio.DeviceTier=High
+        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
+        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=p.ClothPhysics=0
+        +CVars=grass.Enable=1
+        +CVars=r.MaterialQualityLevel=1
+
+        """
+        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android"
+        let remoteFile = "\(remoteDir)/DeviceProfiles.ini"
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("DeviceProfiles-\(UUID().uuidString).ini")
+        do {
+            try iniContent.write(to: tempFile, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: tempFile) }
+
+            _ = try Self.adb(paths: paths, ["shell", "mkdir", "-p", remoteDir], timeout: 15)
+            _ = try Self.adb(paths: paths, ["push", tempFile.path, remoteFile], timeout: 15)
+
+            telemetry.recordReceipt(
+                key: "tft_device_profiles_provisioned",
+                value: "60_fps_override",
+                source: "provisionTFTDeviceProfiles",
+                confidence: "DIRECT"
+            )
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISIONED", payload: [
+                "path": remoteFile,
+                "default_framerate_limit": 60,
+                "max_fps": 60,
+                "vsync": 1
+            ])
+        } catch {
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_WARNING", payload: [
+                "error": error.localizedDescription
+            ])
+        }
     }
 
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {
@@ -3743,6 +3907,9 @@ actor TFTMACRuntimeService {
                 "target_fps": profile.refreshHz
             ])
             if runtimeConfiguration.workload == .officialTFT {
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(observedGamePID)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(observedGamePID):-20", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: observedGamePID), "nice": -20])
                 recordGraphicsPipelineSnapshot(
                     paths: paths,
                     telemetry: telemetry,
@@ -3766,19 +3933,26 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             let observedNS = DispatchTime.now().uptimeNanoseconds
             do {
-                let observedGamePID = try Self.readProcessID(paths: paths, packageName: activeWorkloadPackage)
-                observeGameProcess(
-                    observedGamePID,
-                    paths: paths,
-                    telemetry: telemetry,
-                    observer: "ONE_SECOND_GRAPHICS_SAMPLER"
-                )
-                let layers = try Self.adb(
-                    paths: paths,
-                    ["shell", "dumpsys", "SurfaceFlinger", "--list"],
-                    timeout: 10
-                ).output
-                let layerStatus = sampler.updateLayerList(layers)
+                if currentGamePID == nil {
+                    let observedGamePID = try Self.readProcessID(paths: paths, packageName: activeWorkloadPackage)
+                    observeGameProcess(
+                        observedGamePID,
+                        paths: paths,
+                        telemetry: telemetry,
+                        observer: "ONE_SECOND_GRAPHICS_SAMPLER"
+                    )
+                }
+                let layerStatus: GameFrameTelemetryStatus
+                if sampler.selectedLayer == nil {
+                    let layers = try Self.adb(
+                        paths: paths,
+                        ["shell", "dumpsys", "SurfaceFlinger", "--list"],
+                        timeout: 10
+                    ).output
+                    layerStatus = sampler.updateLayerList(layers)
+                } else {
+                    layerStatus = .available
+                }
                 guard case .available = layerStatus, let layer = sampler.selectedLayer else {
                     consecutiveBadGraphicsWindows = 0
                     if let lostLayer = currentExactLayerName {
@@ -3851,6 +4025,42 @@ actor TFTMACRuntimeService {
                     refreshPeriodNS: update.refreshPeriodNS
                 )
                 if let window = update.window {
+                    if window.frameCount == 0, runtimeConfiguration.workload == .officialTFT {
+                        let layers = try? Self.adb(
+                            paths: paths,
+                            ["shell", "dumpsys", "SurfaceFlinger", "--list"],
+                            timeout: 10
+                        ).output
+                        if let layers {
+                            let newStatus = sampler.updateLayerList(layers)
+                            if case .unavailable(let reason) = newStatus {
+                                consecutiveBadGraphicsWindows = 0
+                                if let lostLayer = currentExactLayerName {
+                                    telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                                        "previous_layer": lostLayer,
+                                        "reason": "ZERO_FRAME_STATUS_CHANGE",
+                                        "status_reason": String(describing: reason),
+                                        "graphics_run_remains_open_until_process_exit": true
+                                    ])
+                                    currentExactLayerName = nil
+                                    telemetry.updateGraphicsRunLayer(nil)
+                                }
+                                let unavailable = Self.unavailableGameFrameWindow(
+                                    status: newStatus,
+                                    layerName: nil,
+                                    startedNS: lastBoundaryNS,
+                                    endedNS: observedNS
+                                )
+                                telemetry.recordGameFrameWindow(unavailable)
+                                await gameFrame(unavailable)
+                                latestGameFrameWindow = unavailable
+                                ingestCombatFrameUpdate(nil, window: unavailable)
+                                lastBoundaryNS = observedNS
+                                try await Task.sleep(for: .seconds(1))
+                                continue
+                            }
+                        }
+                    }
                     await gameFrame(window)
                     latestGameFrameWindow = window
                     ingestCombatFrameUpdate(update, window: window)
@@ -3867,14 +4077,18 @@ actor TFTMACRuntimeService {
                     }
                     if consecutiveBadGraphicsWindows >= 2,
                        runtimeConfiguration.workload == .officialTFT {
-                        let traceSequence = requestDiagnosticTrace(
-                           scope: activeCombatBenchmark == nil ? .automaticGraphics : .combatBenchmark,
-                           trigger: "AUTO_GAME_FRAME_DEGRADATION",
-                           automatic: true,
-                           durationSeconds: 15,
-                           bufferMiB: 32,
-                           benchmarkStartTrace: false
-                        )
+                        let allowAutoTrace = activeCombatBenchmark != nil
+                            || ProcessInfo.processInfo.environment["TFTMAC_ENABLE_AUTO_PERFETTO"] == "1"
+                        let traceSequence = allowAutoTrace
+                            ? requestDiagnosticTrace(
+                               scope: activeCombatBenchmark == nil ? .automaticGraphics : .combatBenchmark,
+                               trigger: "AUTO_GAME_FRAME_DEGRADATION",
+                               automatic: true,
+                               durationSeconds: 15,
+                               bufferMiB: 32,
+                               benchmarkStartTrace: false
+                            )
+                            : nil
                         consecutiveBadGraphicsWindows = 0
                         telemetry.recordEvent("GAME_FRAME_DEGRADATION", payload: [
                             "evidence_level": "SURFACEFLINGER_ACTUAL_PRESENT",
@@ -3902,6 +4116,15 @@ actor TFTMACRuntimeService {
                     }
                 } else if case .unavailable = update.status {
                     consecutiveBadGraphicsWindows = 0
+                    if let lostLayer = currentExactLayerName {
+                        telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                            "previous_layer": lostLayer,
+                            "graphics_run_remains_open_until_process_exit": true
+                        ])
+                        currentExactLayerName = nil
+                        telemetry.updateGraphicsRunLayer(nil)
+                        _ = sampler.updateLayerList("")
+                    }
                     let unavailable = Self.unavailableGameFrameWindow(
                         status: update.status,
                         layerName: update.layerName,
@@ -3918,6 +4141,16 @@ actor TFTMACRuntimeService {
                 throw CancellationError()
             } catch {
                 consecutiveBadGraphicsWindows = 0
+                if let lostLayer = currentExactLayerName {
+                    telemetry.recordEvent("TFT_SURFACE_LAYER_LOST", payload: [
+                        "previous_layer": lostLayer,
+                        "graphics_run_remains_open_until_process_exit": true,
+                        "reason": error.localizedDescription
+                    ])
+                    currentExactLayerName = nil
+                    telemetry.updateGraphicsRunLayer(nil)
+                    _ = sampler.updateLayerList("")
+                }
                 let failedAt = DispatchTime.now().uptimeNanoseconds
                 let unavailable = Self.unavailableGameFrameWindow(
                     status: .unavailable(.adbError),
@@ -3940,7 +4173,7 @@ actor TFTMACRuntimeService {
                 await gameFrame(unavailable)
                 lastBoundaryNS = failedAt
             }
-            try await Task.sleep(for: .seconds(1))
+            try await Task.sleep(for: sampler.selectedLayer == nil ? .seconds(1) : .seconds(2))
         }
     }
 
@@ -5383,8 +5616,8 @@ private final class AVDConfigurationTransaction: @unchecked Sendable {
             "hw.gltransport.asg.dataRingSize": "\(profile.asgDataRingSize)",
             "showDeviceFrame": "no",
             "skin.name": "\(profile.width)x\(profile.height)",
-            "fastboot.forceColdBoot": "yes",
-            "fastboot.forceFastBoot": "no"
+            "fastboot.forceColdBoot": "no",
+            "fastboot.forceFastBoot": "yes"
         ]
         for (key, value) in values { config = Self.setting(key: key, value: value, in: config) }
         let applied = Data(config.utf8)

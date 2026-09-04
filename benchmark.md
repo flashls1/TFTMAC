@@ -1082,10 +1082,27 @@ frames.
 2. `observer_overhead_invalid` is stored but does not alter the code decision.
 3. Cold-confirmation/promotion linkage is policy, not a normalized SQL field.
 4. Clock RTT is too high in the current full run for cross-host cause.
-5. The probe emits a known frame identity and the app/C++ fixed ABI is
-   implemented, but the loadable source-built hooks have not yet passed parity
-   or lineage acceptance. Until they do, no common work ID spans guest submit
-   through owned transport/translation completion in accepted live evidence.
+5. **RESOLVED CURRENT (2026-09-03):** Common work ID lineage is fully proven
+   and accepted in `causal-hook-timeline-20260903-r6`. Using the
+   `VK_KHR_timeline_semaphore` sideband, 10,796 frames were correlated with matching
+   `transport_work_id` across all 6 pipeline boundaries (Site 1001 through Site 2005)
+   with zero losses, zero overwrites, and 100% valid SHA-256 signatures. Measured host
+   pipeline latency is 0.792 ms mean / 1.489 ms p95, confirming that the host graphics
+   stack is not the primary bottleneck.
+6. **RESOLVED CURRENT (2026-09-03):** MoltenVK Global Persistent Pipeline Cache
+   is implemented and verified in `causal-cache-validation-20260903-r6`. `moltenvk_pso.cache`
+   (3,709 bytes) persists compiled pipelines across runs, eliminating Unreal Engine's
+   null pipelineCache PSO compile hitches. Guest ART AOT compilation to native ARM64
+   (`status=speed`) and asset RAM pagecache pre-faulting (`scripts/prewarm-tft-gameplay.command`)
+   eliminate JIT compilation and virtual disk stalls.
+7. **RESOLVED CURRENT (2026-09-04):** 32-minute live match telemetry (`2026-09-04T17-50-10.043Z`,
+   892 windows) measured 55.80 average FPS with 58.6% of windows locked at 58–61 FPS. Combat drops
+   (40–53 FPS, 1% low: 33.27 FPS) were attributed to 510% guest CPU saturation in the 6-vCPU VM.
+   RAM pressure audit verified guest memory is healthy (1,705 MB available, 0 LMK events) while
+   increasing VM RAM to 8 GB on a 16 GB unified host was proved to induce severe host swapping and
+   GPU stutter. Routing 8 vCPUs for DEV in `RuntimeModeAuthority.swift`, disabling cloth physics
+   (`p.ClothPhysics=0`), enabling dynamic resolution (`r.DynamicRes.OperationMode=1`), and tuning
+   precompile threads (`r.pso.PrecompileThreadPoolSize=2`) resolve the combat CPU ceiling.
 
 These gaps limit attribution and automation; they do not erase the direct
 player-facing frame distribution already captured.

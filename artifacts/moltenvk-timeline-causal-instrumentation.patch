@@ -1,0 +1,349 @@
+diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKDevice.h b/MoltenVK/MoltenVK/GPUObjects/MVKDevice.h
+index 3811663..0fb6f13 100644
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKDevice.h
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKDevice.h
+@@ -662,6 +662,10 @@ public:
+     void destroyPipeline(MVKPipeline* mvkPPL,
+                          const VkAllocationCallbacks* pAllocator);
+ 
++	MVKPipelineCache* getOrCreateDefaultPipelineCache();
++	void saveDefaultPipelineCache();
++	void onPipelineCacheDirty();
++
+ 	MVKSampler* createSampler(const VkSamplerCreateInfo* pCreateInfo,
+ 							  const VkAllocationCallbacks* pAllocator);
+ 	void destroySampler(MVKSampler* mvkSamp,
+@@ -972,6 +976,10 @@ protected:
+     std::mutex _perfLock;
+ 	std::mutex _vizLock;
+ 	std::string _capturePipeFileName;
++	MVKPipelineCache* _defaultPipelineCache = nullptr;
++	std::string _persistentPipelineCachePath;
++	std::mutex _defaultPipelineCacheLock;
++	std::atomic<uint32_t> _newPipelinesSinceSave{0};
+     id<MTLBuffer> _globalVisibilityResultMTLBuffer = nil;
+ 	id<MTLSamplerState> _defaultMTLSamplerState = nil;
+ 	id<MTLBuffer> _dummyBlitMTLBuffer = nil;
+diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm b/MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm
+index f87bdb8..02306bb 100644
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm
+@@ -4630,6 +4630,92 @@ static uint32_t mvkGetEntryProperty(io_registry_entry_t entry, CFStringRef prope
+ 	if (mvkPLL) { mvkPLL->destroy(); }
+ }
+ 
++MVKPipelineCache* MVKDevice::getOrCreateDefaultPipelineCache() {
++	std::lock_guard<std::mutex> lock(_defaultPipelineCacheLock);
++	if (_defaultPipelineCache) {
++		return _defaultPipelineCache;
++	}
++
++	const char* envPath = getenv("TFTMAC_MVK_PIPELINE_CACHE_PATH");
++	if (!envPath || !*envPath) {
++		envPath = "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Cache/moltenvk_pso.cache";
++	}
++	_persistentPipelineCachePath = envPath;
++
++	std::vector<uint8_t> initialData;
++	FILE* file = fopen(_persistentPipelineCachePath.c_str(), "rb");
++	if (file) {
++		fseek(file, 0, SEEK_END);
++		long fileSize = ftell(file);
++		if (fileSize > 0) {
++			fseek(file, 0, SEEK_SET);
++			initialData.resize(static_cast<size_t>(fileSize));
++			size_t bytesRead = fread(initialData.data(), 1, initialData.size(), file);
++			if (bytesRead != initialData.size()) {
++				initialData.clear();
++			}
++		}
++		fclose(file);
++	}
++
++	VkPipelineCacheCreateInfo createInfo{};
++	createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++	if (!initialData.empty()) {
++		createInfo.initialDataSize = initialData.size();
++		createInfo.pInitialData = initialData.data();
++	}
++
++	_defaultPipelineCache = new MVKPipelineCache(this, &createInfo);
++	MVKLogInfo("TFTMAC: Initialized default persistent pipeline cache from '%s' (%zu bytes loaded).",
++			   _persistentPipelineCachePath.c_str(), initialData.size());
++	return _defaultPipelineCache;
++}
++
++void MVKDevice::saveDefaultPipelineCache() {
++	std::lock_guard<std::mutex> lock(_defaultPipelineCacheLock);
++	if (!_defaultPipelineCache || _persistentPipelineCachePath.empty()) {
++		return;
++	}
++
++	size_t dataSize = 0;
++	VkResult res = _defaultPipelineCache->writeData(&dataSize, nullptr);
++	if (res != VK_SUCCESS || dataSize == 0) {
++		return;
++	}
++
++	std::vector<uint8_t> data(dataSize);
++	res = _defaultPipelineCache->writeData(&dataSize, data.data());
++	if (res != VK_SUCCESS) {
++		return;
++	}
++
++	std::string dir = _persistentPipelineCachePath;
++	size_t lastSlash = dir.find_last_of('/');
++	if (lastSlash != std::string::npos) {
++		dir = dir.substr(0, lastSlash);
++		char cmd[PATH_MAX];
++		snprintf(cmd, sizeof(cmd), "/bin/mkdir -p '%s'", dir.c_str());
++		system(cmd);
++	}
++
++	std::string tmpPath = _persistentPipelineCachePath + ".tmp";
++	FILE* file = fopen(tmpPath.c_str(), "wb");
++	if (file) {
++		fwrite(data.data(), 1, data.size(), file);
++		fclose(file);
++		rename(tmpPath.c_str(), _persistentPipelineCachePath.c_str());
++		MVKLogInfo("TFTMAC: Saved %zu bytes to persistent pipeline cache '%s'.",
++				   data.size(), _persistentPipelineCachePath.c_str());
++	}
++}
++
++void MVKDevice::onPipelineCacheDirty() {
++	if (++_newPipelinesSinceSave >= 25) {
++		_newPipelinesSinceSave = 0;
++		saveDefaultPipelineCache();
++	}
++}
++
+ template<typename PipelineType, typename PipelineInfoType>
+ VkResult MVKDevice::createPipelines(VkPipelineCache pipelineCache,
+                                     uint32_t count,
+@@ -4639,6 +4725,9 @@ static uint32_t mvkGetEntryProperty(io_registry_entry_t entry, CFStringRef prope
+ 	bool ignoreFurtherPipelines = false;
+     VkResult rslt = VK_SUCCESS;
+     MVKPipelineCache* mvkPLC = (MVKPipelineCache*)pipelineCache;
++    if (!mvkPLC) {
++        mvkPLC = getOrCreateDefaultPipelineCache();
++    }
+ 
+ 	@autoreleasepool {
+ 		for (uint32_t plIdx = 0; plIdx < count; plIdx++) {
+@@ -5856,6 +5945,12 @@ static uint32_t mvkGetEntryProperty(io_registry_entry_t entry, CFStringRef prope
+ 
+ 	mvkDestroyContainerContents(_privateDataSlots);
+ 
++	saveDefaultPipelineCache();
++	if (_defaultPipelineCache) {
++		_defaultPipelineCache->destroy();
++		_defaultPipelineCache = nullptr;
++	}
++
+ 	MVKLogInfo("Destroyed VkDevice on GPU %s with %d Vulkan extensions enabled.",
+ 			   getName(), _enabledExtensions.getEnabledCount());
+ }
+diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKPipeline.mm b/MoltenVK/MoltenVK/GPUObjects/MVKPipeline.mm
+index 33db654..e47300a 100644
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKPipeline.mm
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKPipeline.mm
+@@ -2705,6 +2705,9 @@ static MTLVertexFormat mvkAdjustFormatVectorToSize(MTLVertexFormat format, uint3
+ // Mark the cache as dirty, so that existing streaming info is released
+ void MVKPipelineCache::markDirty() {
+ 	_dataSize = 0;
++	if (_device) {
++		_device->onPipelineCacheDirty();
++	}
+ }
+ 
+ VkResult MVKPipelineCache::mergePipelineCaches(uint32_t srcCacheCount, const VkPipelineCache* pSrcCaches) {
+diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKQueue.h b/MoltenVK/MoltenVK/GPUObjects/MVKQueue.h
+index a69ebb0..f7b24b6 100644
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKQueue.h
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKQueue.h
+@@ -213,6 +213,7 @@ public:
+ 					   const VkPipelineStageFlags* pWaitDstStageMask);
+ 
+ 	~MVKQueueSubmission() override;
++	uint64_t getTFTMACTransportWorkId() const { return _tftmacTransportWorkId; }
+ 
+ protected:
+ 	friend class MVKQueue;
+@@ -223,6 +224,7 @@ protected:
+ 	MVKQueue* _queue;
+ 	MVKSmallVector<MVKSemaphoreSubmitInfo> _waitSemaphores;
+ 	uint64_t _creationTime;
++	uint64_t _tftmacTransportWorkId = 0;
+ };
+ 
+ 
+@@ -319,4 +321,3 @@ protected:
+ 
+ 	MVKSmallVector<MVKImagePresentInfo, 4> _presentInfo;
+ };
+-
+diff --git a/MoltenVK/MoltenVK/GPUObjects/MVKQueue.mm b/MoltenVK/MoltenVK/GPUObjects/MVKQueue.mm
+index 4440042..39ced20 100644
+--- a/MoltenVK/MoltenVK/GPUObjects/MVKQueue.mm
++++ b/MoltenVK/MoltenVK/GPUObjects/MVKQueue.mm
+@@ -24,6 +24,7 @@
+ #include "MVKFoundation.h"
+ #include "MVKOSExtensions.h"
+ #include "MVKGPUCapture.h"
++#include "/private/tmp/tftmac-causal-runtime/PipelineEventV1.h"
+ 
+ using namespace std;
+ 
+@@ -69,7 +70,26 @@
+ 
+ // Execute the queue submission under an autoreleasepool to ensure transient Metal objects are autoreleased.
+ // This is critical for apps that don't use standard OS autoreleasing runloop threading.
+-static inline VkResult execute(MVKQueueSubmission* qSubmit) { @autoreleasepool { return qSubmit->execute(); } }
++static inline VkResult execute(MVKQueueSubmission* qSubmit) {
++	uint64_t workId = qSubmit->getTFTMACTransportWorkId();
++	uint64_t startedNs = 0;
++	if (workId != 0) {
++		tftmac::causal::SetThreadTransportWorkId(workId);
++		startedNs = tftmac::causal::MonotonicTimestampNS();
++		tftmac::causal::Record(tftmac::causal::EventKind::kBegin,
++							 tftmac::causal::Boundary::kMoltenVKEnqueue, 2003);
++	}
++	VkResult rslt;
++	@autoreleasepool { rslt = qSubmit->execute(); }
++	if (workId != 0) {
++		tftmac::causal::Record(tftmac::causal::EventKind::kEnd,
++							 tftmac::causal::Boundary::kMoltenVKEnqueue, 2003,
++							 tftmac::causal::MonotonicTimestampNS() - startedNs,
++							 0, rslt == VK_SUCCESS ? 0 : 1);
++		tftmac::causal::ClearThreadTransportWorkId();
++	}
++	return rslt;
++}
+ 
+ // Executes the submmission, either immediately, or by dispatching to an execution queue.
+ // Submissions to the execution queue are wrapped in a dedicated autoreleasepool.
+@@ -84,6 +104,14 @@
+ 	// Submit regardless of config result, to ensure submission semaphores and fences are signalled.
+ 	// The submissions will ensure a misconfiguration will be safe to execute.
+ 	VkResult rslt = qSubmit->getConfigurationResult();
++	uint64_t submittedWorkId = qSubmit->getTFTMACTransportWorkId();
++	if (submittedWorkId != 0) {
++		uint64_t priorWorkId = tftmac::causal::CurrentThreadTransportWorkId();
++		tftmac::causal::SetThreadTransportWorkId(submittedWorkId);
++		tftmac::causal::Record(tftmac::causal::EventKind::kInstant,
++							 tftmac::causal::Boundary::kMoltenVKEnqueue, 2002);
++		tftmac::causal::SetThreadTransportWorkId(priorWorkId);
++	}
+ 	if (_execQueue) {
+ 		std::unique_lock lock(_execQueueMutex);
+ 		_execQueueJobCount++;
+@@ -442,7 +470,8 @@
+ 									   uint32_t waitSemaphoreInfoCount,
+ 									   const VkSemaphoreSubmitInfo* pWaitSemaphoreSubmitInfos) : 
+ 	MVKBaseDeviceObject(queue->getDevice()),
+-	_queue(queue) {
++	_queue(queue),
++	_tftmacTransportWorkId(tftmac::causal::CurrentThreadTransportWorkId()) {
+ 
+ 	_queue->retain();	// Retain here and release in destructor. See note for MVKQueueCommandBufferSubmission::finish().
+ 	_creationTime = getPerformanceTimestamp();
+@@ -458,7 +487,8 @@
+ 									   const VkSemaphore* pWaitSemaphores,
+ 									   const VkPipelineStageFlags* pWaitDstStageMask) :
+ 	MVKBaseDeviceObject(queue->getDevice()),
+-	_queue(queue) {
++	_queue(queue),
++	_tftmacTransportWorkId(tftmac::causal::CurrentThreadTransportWorkId()) {
+ 
+ 	_queue->retain();	// Retain here and release in destructor. See note for MVKQueueCommandBufferSubmission::finish().
+ 	_creationTime = getPerformanceTimestamp();
+@@ -554,13 +584,27 @@
+ 	_activeMTLCommandBuffer = nil;
+ 
+ 	uint64_t startTime = getPerformanceTimestamp();
++	uint64_t tftmacStartedNs = tftmac::causal::MonotonicTimestampNS();
++	uint64_t tftmacWorkId = _tftmacTransportWorkId;
+ 	[mtlCmdBuff addCompletedHandler: ^(id<MTLCommandBuffer> mtlCB) {
++		if (tftmacWorkId != 0) {
++			tftmac::causal::SetThreadTransportWorkId(tftmacWorkId);
++			tftmac::causal::Record(tftmac::causal::EventKind::kEnd,
++								 tftmac::causal::Boundary::kMetalGpuComplete, 2005,
++								 tftmac::causal::MonotonicTimestampNS() - tftmacStartedNs);
++			tftmac::causal::ClearThreadTransportWorkId();
++		}
+ 		addPerformanceInterval(getPerformanceStats().queue.mtlCommandBufferExecution, startTime);
+ 		if (signalCompletion) { this->finish(); }	// Must be the last thing the completetion callback does.
+ 	}];
+ 
+ 	// Retrieve the result before committing MTLCommandBuffer, because finish() will destroy this instance.
+ 	VkResult rslt = mtlCmdBuff ? getConfigurationResult() : VK_ERROR_OUT_OF_POOL_MEMORY;
++	if (tftmacWorkId != 0) {
++		tftmac::causal::SetThreadTransportWorkId(tftmacWorkId);
++		tftmac::causal::Record(tftmac::causal::EventKind::kInstant,
++							 tftmac::causal::Boundary::kMetalCommit, 2004);
++	}
+ 	[mtlCmdBuff commit];
+ 	[mtlCmdBuff release];		// retained
+ 
+@@ -858,4 +902,3 @@
+ 		setConfigurationResult(scRslt);
+ 	}
+ }
+-
+diff --git a/MoltenVK/MoltenVK/Utility/MVKFoundation.cpp b/MoltenVK/MoltenVK/Utility/MVKFoundation.cpp
+index 6d718ba..2beb073 100644
+--- a/MoltenVK/MoltenVK/Utility/MVKFoundation.cpp
++++ b/MoltenVK/MoltenVK/Utility/MVKFoundation.cpp
+@@ -62,6 +62,10 @@ const char* mvkVkCommandName(MVKCommandUse cmdUse) {
+ 	}
+ }
+ 
++// TFTMAC diagnostic recorder. This is compiled into the MoltenVK dylib only in
++// the pinned causal source worktree; recording remains runtime opt-in.
++#include "/private/tmp/tftmac-causal-runtime/PipelineEventV1.cpp"
++
+ const char* mvkVkResultName(VkResult vkResult) {
+ 	switch (vkResult) {
+ 
+@@ -156,4 +160,3 @@ void mvkFlipVertically(void* rowMajorData, uint32_t rowCount, size_t bytesPerRow
+ 	}
+ }
+ 
+-
+diff --git a/MoltenVK/MoltenVK/Vulkan/vulkan.mm b/MoltenVK/MoltenVK/Vulkan/vulkan.mm
+index 3754956..db94e3a 100644
+--- a/MoltenVK/MoltenVK/Vulkan/vulkan.mm
++++ b/MoltenVK/MoltenVK/Vulkan/vulkan.mm
+@@ -41,6 +41,7 @@
+ #include "MVKSurface.h"
+ #include "MVKFoundation.h"
+ #include "MVKOSExtensions.h"
++#include "/private/tmp/tftmac-causal-runtime/PipelineEventV1.h"
+ 
+ #include <pthread.h>
+ 
+@@ -436,8 +437,18 @@ MVK_PUBLIC_VULKAN_SYMBOL VkResult vkQueueSubmit(
+ 	VkFence                                     fence) {
+ 
+ 	MVKTraceVulkanCallStart();
++	uint64_t tftmacTransportWorkId = 0;
++	if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
++		tftmac::causal::ParseOwnedProbeTimelineWorkId(2, pSubmits[0].pNext, &tftmacTransportWorkId);
++	}
++	if (tftmacTransportWorkId != 0) {
++		tftmac::causal::SetThreadTransportWorkId(tftmacTransportWorkId);
++	}
+ 	MVKQueue* mvkQ = MVKQueue::getMVKQueue(queue);
+ 	VkResult rslt = mvkQ->submit(submitCount, pSubmits, fence, kMVKCommandUseQueueSubmit);
++	if (tftmacTransportWorkId != 0) {
++		tftmac::causal::ClearThreadTransportWorkId();
++	}
+ 	MVKTraceVulkanCallEnd();
+ 	return rslt;
+ }
+@@ -4477,4 +4488,3 @@ MVK_PUBLIC_SYMBOL PFN_vkVoidFunction vk_icdGetPhysicalDeviceProcAddr(
+ 	MVKTraceVulkanCallEnd();
+ 	return func;
+ }
+-

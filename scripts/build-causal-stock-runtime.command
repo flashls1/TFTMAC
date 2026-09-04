@@ -2,7 +2,7 @@
 set -euo pipefail
 unsetopt BG_NICE
 
-readonly SOURCE_MOUNT="/Volumes/TFTMAC Causal Source"
+readonly SOURCE_MOUNT="/Volumes/TFTMAC-Causal-Source"
 readonly SOURCE_ROOT="${SOURCE_MOUNT}/emu-main-dev-2692acc6"
 readonly RECEIPT_ROOT="/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Manifests/causal-source-20260902"
 readonly BUILD_ROOT="${SOURCE_MOUNT}/Build/causal-stock-20260902"
@@ -11,7 +11,6 @@ readonly REBUILD="${SOURCE_ROOT}/external/qemu/android/rebuild.sh"
 
 fail() { print -u2 "TFTMAC causal stock build failed: $*"; exit 1; }
 
-[[ -x "${REBUILD}" ]] || fail "prepared modern emulator source is unavailable"
 [[ -d "${SOURCE_MOUNT}" ]] || fail "case-sensitive source volume is not mounted"
 [[ "$(/usr/bin/jq -r '.state' "${RECEIPT_ROOT}/source-receipt.json")" == "CAUSAL_SOURCE_LOCK_PASS" ]] \
   || fail "modern source receipt is not accepted"
@@ -19,7 +18,9 @@ if /bin/ps -axo command | /usr/bin/grep -E '/Applications/TFTMAC( DEV)?\.app/Con
   fail "Control or DEV is running; source build is intentionally deferred"
 fi
 
-export DEVELOPER_DIR="/Applications/Xcode-26.6.0.app/Contents/Developer"
+[[ -x "${REBUILD}" ]] || fail "prepared modern emulator source is unavailable"
+
+export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 export CMAKE_BUILD_PARALLEL_LEVEL=4
 /bin/mkdir -p "${BUILD_ROOT}" "${INSTALL_ROOT}"
 "${REBUILD}" \

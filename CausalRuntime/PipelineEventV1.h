@@ -71,8 +71,22 @@ static_assert(sizeof(PipelineEventV1) == 96, "PipelineEventV1 ABI drift");
 // TFTMAC/<profile>/<workload>/<unsigned-decimal-frame-id>
 bool ParseOwnedProbeTransportLabel(const char* label, uint64_t* transport_work_id);
 
+// Exact parser for timeline semaphore submit sideband emitted by the owned probe:
+// signal_semaphore_count == 2, signalSemaphoreValueCount == 2, values: [0, transport_work_id > 0]
+bool ParseOwnedProbeTimelineWorkId(
+    uint32_t signal_semaphore_count,
+    const void* p_next,
+    uint64_t* transport_work_id);
+
+// Register the calling producer before measured work begins. Registration may
+// allocate, open the private segment file, and start its off-path drain thread.
+// Record() itself performs only fixed-record ring writes.
+bool InitializeCurrentThreadRecorder();
+uint64_t MonotonicTimestampNS();
+
 void SetThreadTransportWorkId(uint64_t transport_work_id);
 void ClearThreadTransportWorkId();
+uint64_t CurrentThreadTransportWorkId();
 void SetThreadPresentLineage(uint64_t present_lineage_id, uint32_t generation);
 void ClearThreadPresentLineage();
 

@@ -6,6 +6,7 @@ enum GameFrameTelemetryUnavailable: Sendable, Equatable {
     case noTimestamps
     case malformedLatency
     case adbError
+    case loginPromptActive
 }
 
 enum GameFrameTelemetryStatus: Sendable, Equatable {
@@ -68,11 +69,23 @@ struct GameFrameTelemetryUpdate: Sendable, Equatable {
 
 enum GameFrameTelemetry {
     static let tftGameActivitySurface = "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)"
+    static let tftMobileFREActivity = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
     static let ownedProbeSurface = "SurfaceView[com.flashls1.tftmac.vulkanprobe/android.app.NativeActivity]"
     static let maxLatencyHistoryFrames = 128
 
+    static func hasActiveLoginPrompt(in output: String) -> Bool {
+        output.split(whereSeparator: \.isNewline).contains { rawLine in
+            let line = String(rawLine)
+            guard line.contains(tftMobileFREActivity) else { return false }
+            return !line.contains("ActivityRecord") && !line.contains("SnapshotStartingWindow")
+        }
+    }
+
     static func selectTFTSurfaceViewLayer(from output: String) -> GameFrameLayerSelection {
-        selectSurfaceViewLayer(from: output, containing: tftGameActivitySurface)
+        if hasActiveLoginPrompt(in: output) {
+            return .unavailable(.loginPromptActive)
+        }
+        return selectSurfaceViewLayer(from: output, containing: tftGameActivitySurface)
     }
 
     static func selectSurfaceViewLayer(
@@ -157,6 +170,13 @@ struct GameFrameTelemetrySampler: Sendable {
     }
 
     mutating func updateLayerList(_ output: String) -> GameFrameTelemetryStatus {
+        if requiredLayerIdentity == GameFrameTelemetry.tftGameActivitySurface,
+           GameFrameTelemetry.hasActiveLoginPrompt(in: output) {
+            selectedLayer = nil
+            status = .unavailable(.loginPromptActive)
+            resetTimingState()
+            return status
+        }
         switch GameFrameTelemetry.selectSurfaceViewLayer(from: output, containing: requiredLayerIdentity) {
         case .selected(let layer):
             if selectedLayer != layer { reset(layer: layer) }

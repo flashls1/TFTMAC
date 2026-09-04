@@ -11,6 +11,8 @@ tft_resolve_android_sdk_root() {
         "$explicit_root" \
         "${ANDROID_SDK_ROOT:-}" \
         "${ANDROID_HOME:-}" \
+        "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK" \
+        "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK" \
         "$HOME/Library/Android/sdk"; do
         if [[ -n "$candidate" && -d "$candidate" ]]; then
             print -r -- "$candidate"

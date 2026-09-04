@@ -410,18 +410,29 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
 
     private func updatePerformanceOverlay() {
         let guestLine: String
+        let isLoginPrompt = gameFrameWindow?.status == .unavailable(.loginPromptActive)
         if let gameFrameWindow, case .available = gameFrameWindow.status {
             let low = gameFrameWindow.onePercentLowFPS.map { String(format: "%.0f", $0) } ?? "—"
             let p99 = gameFrameWindow.p99MS.map { String(format: "%.1f", $0) } ?? "—"
             guestLine = String(format: "TFT %.0f · 1%% %@ · P99 %@ms", gameFrameWindow.effectiveFPS, low, p99)
+        } else if isLoginPrompt {
+            guestLine = "TFT LOGIN (IDLE)"
         } else {
             guestLine = "TFT —"
         }
         let gpu = lastHostGPUTimeP95MS.map { String(format: "%.1f", $0) } ?? "—"
+        let pipeText: String
+        if lastSourceFPS >= 45 {
+            pipeText = String(format: "%.0f", lastSourceFPS)
+        } else if isLoginPrompt || lastSourceFPS < 5 {
+            pipeText = lastSourceFPS == 0 ? "IDLE" : String(format: "%.0f (IDLE)", lastSourceFPS)
+        } else {
+            pipeText = String(format: "%.0f", lastSourceFPS)
+        }
         fpsLabel.stringValue = String(
-            format: "%@\nPIPE %.0f · MAC %.0f · GPU %@ms",
+            format: "%@\nPIPE %@ · MAC %.0f · GPU %@ms",
             guestLine,
-            lastSourceFPS,
+            pipeText,
             lastPresentationFPS,
             gpu
         )

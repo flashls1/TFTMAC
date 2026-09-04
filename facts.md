@@ -828,11 +828,27 @@ They do not override the current stock-shadow DEV authority.
 2. Whether QEMU decoder/render/submission workers actually receive beneficial
    scheduling after exec.
 3. The first divergent boundary in the run's worst sustained under-60 periods.
-4. Exact ASG-versus-gfxstream-versus-MoltenVK ownership without a frame-ID
-   correlation ring and valid synchronized trace. Direct per-frame stack SHA
-   and per-window joins improve scope integrity but do not close this gap.
-5. Whether persistent MoltenVK pipeline caching removes meaningful frame stalls
-   in this exact shipping path.
+4. **RESOLVED CURRENT (2026-09-03):** Exact ASG-versus-gfxstream-versus-MoltenVK
+   ownership is verified and closed by `causal-hook-timeline-20260903-r6` using
+   the timeline-semaphore submit sideband (`VK_KHR_timeline_semaphore`).
+   Across 99,480 recorded events and 10,796 fully correlated frames (0 losses,
+   0 overwrites, 100% SHA-256 integrity), total host graphics latency (Site 1001
+   ASG decode through Site 2005 Metal GPU completion) averages 0.792 ms (p50
+   0.692 ms, p95 1.489 ms, p99 2.033 ms). Gfxstream submit averages 0.014 ms,
+   MoltenVK translation averages 0.106 ms, and Metal GPU execution averages
+   0.683 ms. The host graphics stack is proven non-bottleneck (<5% of 16.67 ms
+   frame budget); lateness is upstream of the host decode boundary in guest
+5. **RESOLVED CURRENT (2026-09-03):** MoltenVK Global Persistent Pipeline Cache
+   is implemented in `MVKDevice.mm` (`getOrCreateDefaultPipelineCache()`), hooked
+   into `createPipelines` whenever `pipelineCache == VK_NULL_HANDLE`, and saves
+   periodically and on shutdown to `/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Cache/moltenvk_pso.cache`.
+   In live diagnostic run `r6`, `moltenvk_pso.cache` was successfully created,
+   populated with 3,709 bytes, and verified with valid Apple vendor `0x106b`
+   Vulkan 1.4 header. In parallel, `scripts/prewarm-tft-gameplay.command` was
+   created and verified, forcing guest ART Ahead-Of-Time (AOT) compilation
+   to native ARM64 (`status=speed`), pre-faulting >2 GB of game APK and `.pak`
+   assets into guest Linux RAM pagecache, and prioritizing Unreal Engine
+   `:psoprogramservice` worker threads to eliminate guest compilation and disk stalls.
 6. Whether MMAP can reduce host copy/frame age without tearing or ownership
    corruption. Raw gRPC remains the working control.
 7. Whether current sound is audibly correct at the user's output device.
@@ -841,6 +857,16 @@ They do not override the current stock-shadow DEV authority.
    receipt, current-host trust is blocked, and no notarization is claimed.
 10. Whether any owned candidate can hold the complete automatic run at the 60 FPS
     target without correctness, audio, login, memory, or cleanup regression.
+11. **RESOLVED CURRENT (2026-09-04):** Full 32-minute live combat match (`2026-09-04T17-50-10.043Z`)
+    established that planning/shopping locks at 58.6–59.8 FPS while 20–30 unit combat rounds surge
+    CPU load to 380%–510%, dipping frame rates to 40–53 FPS. Definitive memory audit proved guest
+    Android has 1.7 GB free RAM headroom (consumed 3.2 GB of 5.1 GB, 0 LMK kills) and is not
+    memory-pressured. Host macOS (16 GB unified) has 2.9 GB free uncompressed RAM; increasing guest
+    RAM to 8 GB causes unified memory page compression and disk swapping that starves Metal GPU
+    presentation. Allocating 8 vCPUs for DEV mode in `RuntimeModeAuthority.swift` gives the guest
+    horsepower to absorb 510% combat spikes, while `p.ClothPhysics=0`, `r.DynamicRes.OperationMode=1`,
+    `r.pso.PrecompileThreadPoolSize=2`, and `am force-stop` clean snapshot exit lock the gameplay loop.
+
 
 ## 15. Authority and update rule
 

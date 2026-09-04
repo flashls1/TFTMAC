@@ -237,13 +237,17 @@ struct TFTMACRuntimeModeAuthority: Sendable {
                     message: "Runtime mode \(selection.mode.rawValue) is missing its fixed profile."
                 )
             }
+            let devVCPUOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_VCPU"].flatMap(Int.init) ?? 8)
+                : locked.vcpu
+            let effectiveVCPU = TFTMACRuntimeProfile.supportedVCPU.contains(devVCPUOverride) ? devVCPUOverride : locked.vcpu
             return TFTMACRuntimeProfile(
                 identifier: locked.identifier,
                 width: locked.width,
                 height: locked.height,
                 densityDPI: locked.densityDpi,
                 refreshHz: locked.refreshHz,
-                vCPU: locked.vcpu,
+                vCPU: effectiveVCPU,
                 ramMiB: locked.ramMib,
                 gpuMode: locked.gpuMode,
                 audioBackend: locked.audioBackend,

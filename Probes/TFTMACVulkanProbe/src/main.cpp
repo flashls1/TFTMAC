@@ -85,6 +85,10 @@ struct VulkanProbe {
     VkPhysicalDeviceProperties physicalProperties{};
     PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginLabel = nullptr;
     PFN_vkCmdEndDebugUtilsLabelEXT cmdEndLabel = nullptr;
+    PFN_vkQueueBeginDebugUtilsLabelEXT queueBeginLabel = nullptr;
+    PFN_vkQueueEndDebugUtilsLabelEXT queueEndLabel = nullptr;
+    VkSemaphore timelineSemaphore = VK_NULL_HANDLE;
+    bool timelineSemaphoreAvailable = false;
     bool hasTimestamps = false;
     bool textureInitialized = false;
     uint64_t textureGeneration = 0;
@@ -521,12 +525,32 @@ bool initialize(VulkanProbe& probe) {
     queue.queueFamilyIndex = probe.queueFamily;
     queue.queueCount = 1;
     queue.pQueuePriorities = &queuePriority;
-    const char* deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    uint32_t deviceExtensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(probe.physicalDevice, nullptr, &deviceExtensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableDeviceExtensions(deviceExtensionCount);
+    vkEnumerateDeviceExtensionProperties(probe.physicalDevice, nullptr, &deviceExtensionCount, availableDeviceExtensions.data());
+
+    std::vector<const char*> deviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    bool timelineExtensionSupported = false;
+    for (const auto& extension : availableDeviceExtensions) {
+        if (std::strcmp(extension.extensionName, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0) {
+            timelineExtensionSupported = true;
+            break;
+        }
+    }
+    if (timelineExtensionSupported) {
+        deviceExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+    }
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
+    timelineFeatures.timelineSemaphore = VK_TRUE;
+
     VkDeviceCreateInfo device{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    device.pNext = timelineExtensionSupported ? &timelineFeatures : nullptr;
     device.queueCreateInfoCount = 1;
     device.pQueueCreateInfos = &queue;
-    device.enabledExtensionCount = 1;
-    device.ppEnabledExtensionNames = deviceExtensions;
+    device.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    device.ppEnabledExtensionNames = deviceExtensions.data();
     if (!check(probe, vkCreateDevice(probe.physicalDevice, &device, nullptr, &probe.device), "vkCreateDevice")) return false;
     vkGetDeviceQueue(probe.device, probe.queueFamily, 0, &probe.queue);
     probe.cmdBeginLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
@@ -534,6 +558,12 @@ bool initialize(VulkanProbe& probe) {
     );
     probe.cmdEndLabel = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
         vkGetInstanceProcAddr(probe.instance, "vkCmdEndDebugUtilsLabelEXT")
+    );
+    probe.queueBeginLabel = reinterpret_cast<PFN_vkQueueBeginDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(probe.instance, "vkQueueBeginDebugUtilsLabelEXT")
+    );
+    probe.queueEndLabel = reinterpret_cast<PFN_vkQueueEndDebugUtilsLabelEXT>(
+        vkGetInstanceProcAddr(probe.instance, "vkQueueEndDebugUtilsLabelEXT")
     );
 
     VkCommandPoolCreateInfo pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -632,6 +662,17 @@ bool initialize(VulkanProbe& probe) {
     VkSemaphoreCreateInfo semaphore{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     if (!check(probe, vkCreateSemaphore(probe.device, &semaphore, nullptr, &probe.imageAvailable), "vkCreateSemaphore(image)")) return false;
     if (!check(probe, vkCreateSemaphore(probe.device, &semaphore, nullptr, &probe.renderFinished), "vkCreateSemaphore(render)")) return false;
+    if (timelineExtensionSupported) {
+        VkSemaphoreTypeCreateInfo timelineTypeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+        timelineTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineTypeInfo.initialValue = 0;
+
+        VkSemaphoreCreateInfo timelineSemInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        timelineSemInfo.pNext = &timelineTypeInfo;
+        if (check(probe, vkCreateSemaphore(probe.device, &timelineSemInfo, nullptr, &probe.timelineSemaphore), "vkCreateSemaphore(timeline)")) {
+            probe.timelineSemaphoreAvailable = true;
+        }
+    }
     VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     if (!check(probe, vkCreateFence(probe.device, &fence, nullptr, &probe.frameFence), "vkCreateFence")) return false;
@@ -645,14 +686,16 @@ bool initialize(VulkanProbe& probe) {
     }
 
     PROBE_LOG(
-        "{\"event\":\"initialized\",\"device\":\"%s\",\"api_version\":%u,\"driver_version\":%u,\"width\":%u,\"height\":%u,\"timestamp_period_ns\":%.6f,\"debug_labels_available\":%s}",
+        "{\"event\":\"initialized\",\"device\":\"%s\",\"api_version\":%u,\"driver_version\":%u,\"width\":%u,\"height\":%u,\"timestamp_period_ns\":%.6f,\"debug_labels_available\":%s,\"queue_labels_available\":%s,\"timeline_semaphore_available\":%s}",
         probe.physicalProperties.deviceName,
         probe.physicalProperties.apiVersion,
         probe.physicalProperties.driverVersion,
         probe.extent.width,
         probe.extent.height,
         probe.physicalProperties.limits.timestampPeriod,
-        (probe.cmdBeginLabel && probe.cmdEndLabel) ? "true" : "false"
+        (probe.cmdBeginLabel && probe.cmdEndLabel) ? "true" : "false",
+        (probe.queueBeginLabel && probe.queueEndLabel) ? "true" : "false",
+        probe.timelineSemaphoreAvailable ? "true" : "false"
     );
     return true;
 }
@@ -662,6 +705,7 @@ void destroy(VulkanProbe& probe) {
     if (probe.stagingMap) vkUnmapMemory(probe.device, probe.stagingMemory);
     if (probe.timestampPool) vkDestroyQueryPool(probe.device, probe.timestampPool, nullptr);
     if (probe.frameFence) vkDestroyFence(probe.device, probe.frameFence, nullptr);
+    if (probe.timelineSemaphore) vkDestroySemaphore(probe.device, probe.timelineSemaphore, nullptr);
     if (probe.renderFinished) vkDestroySemaphore(probe.device, probe.renderFinished, nullptr);
     if (probe.imageAvailable) vkDestroySemaphore(probe.device, probe.imageAvailable, nullptr);
     if (probe.descriptorPool) vkDestroyDescriptorPool(probe.device, probe.descriptorPool, nullptr);
@@ -804,9 +848,35 @@ bool renderFrame(
     submit.pWaitDstStageMask = &waitStage;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &probe.commandBuffer;
-    submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores = &probe.renderFinished;
-    if (!check(probe, vkQueueSubmit(probe.queue, 1, &submit, probe.frameFence), "vkQueueSubmit(frame)")) return false;
+
+    const uint64_t transportWorkId = frame + 1;
+    const VkSemaphore signalSemaphores[2] = {probe.renderFinished, probe.timelineSemaphore};
+    const uint64_t signalValues[2] = {0, transportWorkId};
+
+    VkTimelineSemaphoreSubmitInfo timelineSubmitInfo{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+    timelineSubmitInfo.signalSemaphoreValueCount = 2;
+    timelineSubmitInfo.pSignalSemaphoreValues = signalValues;
+
+    if (probe.timelineSemaphoreAvailable) {
+        submit.pNext = &timelineSubmitInfo;
+        submit.signalSemaphoreCount = 2;
+        submit.pSignalSemaphores = signalSemaphores;
+    } else {
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores = &probe.renderFinished;
+    }
+    if (probe.queueBeginLabel && probe.queueEndLabel) {
+        VkDebugUtilsLabelEXT queueLabel{VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+        queueLabel.pLabelName = label.c_str();
+        queueLabel.color[0] = 0.91F;
+        queueLabel.color[1] = 0.31F;
+        queueLabel.color[2] = 0.44F;
+        queueLabel.color[3] = 1.0F;
+        probe.queueBeginLabel(probe.queue, &queueLabel);
+    }
+    const VkResult submitted = vkQueueSubmit(probe.queue, 1, &submit, probe.frameFence);
+    if (probe.queueBeginLabel && probe.queueEndLabel) probe.queueEndLabel(probe.queue);
+    if (!check(probe, submitted, "vkQueueSubmit(frame)")) return false;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     present.waitSemaphoreCount = 1;
     present.pWaitSemaphores = &probe.renderFinished;

@@ -10,6 +10,7 @@
 *.plist text eol=lf
 *.strings text eol=lf
 *.ini text eol=lf
+*.patch -whitespace
 
 *.png binary
 *.icns binary

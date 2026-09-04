@@ -2,7 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 function fail(message) {
@@ -61,8 +61,18 @@ function summarizeRun(receipt) {
     receipt.database,
     "SELECT experiment_profile_id,state,correctness_passed,event_loss_count,effective_feature_receipt_json FROM pipeline_experiment_runs LIMIT 1"
   )[0];
-  if (!runRow) fail(`missing pipeline_experiment_runs row in ${receipt.database}`);
-  return { ...receipt, ...runRow, workloads };
+  if (!runRow && receipt.state === "PASS") {
+    fail(`missing pipeline_experiment_runs row for passing run ${receipt.database}`);
+  }
+  return {
+    ...receipt,
+    experiment_profile_id: runRow?.experiment_profile_id ?? receipt.profile,
+    state: runRow?.state ?? receipt.state,
+    correctness_passed: runRow?.correctness_passed ?? (receipt.correctness_passed ? 1 : 0),
+    event_loss_count: runRow?.event_loss_count ?? receipt.event_loss_count ?? 0,
+    effective_feature_receipt_json: runRow?.effective_feature_receipt_json ?? null,
+    workloads,
+  };
 }
 
 const runs = runReceipts.map(summarizeRun);
@@ -124,11 +134,11 @@ for (const candidateIndex of [1, 3, 5]) {
     && Object.values(candidate.workloads).every((workload) => workload.error_count === 0);
   let decision = "REJECT";
   let reason = "THRESHOLDS_NOT_MET";
-  if (!valid || !focusDelta) {
+  if (!correctness) {
+    reason = "CORRECTNESS_OR_EVENT_LOSS_FAILURE";
+  } else if (!valid || !focusDelta) {
     decision = "INVALID";
     reason = "MISSING_OR_INSUFFICIENT_WORKLOAD_WINDOWS";
-  } else if (!correctness) {
-    reason = "CORRECTNESS_OR_EVENT_LOSS_FAILURE";
   } else if (
     focusDelta.one_percent_low_delta_percent >= 10
     && focusDelta.relevant_pipeline_p99_improvement_percent >= 10
@@ -224,6 +234,7 @@ for (const comparison of comparisons) {
   ].map(quote).join(",")});\n`;
 }
 const campaignDatabase = join(campaignDirectory, "TFTMAC_VULKAN_CAMPAIGN.sqlite");
+rmSync(campaignDatabase, { force: true });
 execFileSync("/usr/bin/sqlite3", [campaignDatabase], { input: sql });
 const databaseHash = createHash("sha256").update(readFileSync(campaignDatabase)).digest("hex");
 writeFileSync(

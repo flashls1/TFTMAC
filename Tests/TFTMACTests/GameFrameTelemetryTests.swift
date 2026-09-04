@@ -95,6 +95,30 @@ final class GameFrameTelemetryTests: XCTestCase {
         XCTAssertEqual(poll.samples, [GameFrameLatencySample(desiredPresentNS: 1, actualPresentNS: 2, frameReadyNS: 3)])
     }
 
+    func testLoginPromptReturnsUnavailableLoginPromptActive() {
+        let layersWithFreOnly = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity#0\nStatusBar#0"
+        XCTAssertEqual(
+            GameFrameTelemetry.selectTFTSurfaceViewLayer(from: layersWithFreOnly),
+            .unavailable(.loginPromptActive)
+        )
+        let layersWithFreAndGame = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity#0\n\(layer)\nStatusBar#0"
+        XCTAssertEqual(
+            GameFrameTelemetry.selectTFTSurfaceViewLayer(from: layersWithFreAndGame),
+            .unavailable(.loginPromptActive)
+        )
+        var sampler = GameFrameTelemetrySampler()
+        XCTAssertEqual(sampler.updateLayerList(layersWithFreAndGame), .unavailable(.loginPromptActive))
+        XCTAssertNil(sampler.selectedLayer)
+
+        let dormantLeashAndGame = "ActivityRecord{142815349 u0 com.riotgames.league.teamfighttactics/com.riotgames.platformui.mobilefre.MobileFREWebViewActivity}/@0xe6778e9\n\(layer)\nStatusBar#0"
+        XCTAssertEqual(
+            GameFrameTelemetry.selectTFTSurfaceViewLayer(from: dormantLeashAndGame),
+            .selected(layer)
+        )
+        XCTAssertEqual(sampler.updateLayerList(dormantLeashAndGame), .available)
+        XCTAssertEqual(sampler.selectedLayer, layer)
+    }
+
     private func timestamps(count: Int, start: UInt64 = 16_666_667) -> [UInt64] {
         (0..<count).map { start + UInt64($0) * refresh }
     }
