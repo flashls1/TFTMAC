@@ -18,7 +18,7 @@ require_command() {
 # /Applications/TFTMAC.app, the external emulator runtime, a signing identity,
 # user credentials, or a private capture. Those checks belong to the separate
 # local-only verify-installed-runtime.command contract.
-for tool in git jq node plutil rg shasum xcodebuild zsh; do
+for tool in git jq node plutil rg shasum sips xcodebuild zsh; do
   require_command "$tool"
 done
 
@@ -36,6 +36,7 @@ for required in \
   "$PROTO_SOURCE" \
   tftmac/Assets/TFTMAC-Official-Icon.png \
   tftmac/Assets/TFTMAC-DEV-Icon.png \
+  tftmac/Assets/TFTMAC-Splash-1920x1080.png \
   ControlLauncher/Info.plist \
   ControlLauncher/main.swift \
   CausalRuntime/PipelineEventV1.h \
@@ -236,13 +237,20 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "55" ]] || fail "native test inventory drifted: expected 55, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "67" ]] || fail "native test inventory drifted: expected 67, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
   || fail "official TFTMAC icon source hash drifted"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-DEV-Icon.png | awk '{print $1}')" == "660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945" ]] \
   || fail "TFTMAC DEV icon source hash drifted"
+readonly SPLASH="tftmac/Assets/TFTMAC-Splash-1920x1080.png"
+[[ "$(shasum -a 256 "$SPLASH" | awk '{print $1}')" == "533236b335d46616402fb64d4d35b0aff55308d4df9e891d837719b43bced6a2" ]] \
+  || fail "startup splash source hash drifted"
+[[ "$(sips -g pixelWidth "$SPLASH" | awk '/pixelWidth:/ {print $2}')" == "1920" ]] \
+  || fail "startup splash width is not 1920"
+[[ "$(sips -g pixelHeight "$SPLASH" | awk '/pixelHeight:/ {print $2}')" == "1080" ]] \
+  || fail "startup splash height is not 1080"
 jq -e '
   .default_mode == "control" and
   .modes.control.application_bundle_id == "com.flashls1.tftmac" and
@@ -349,6 +357,11 @@ cmp -s ssot/runtime-modes.json "${RELEASE_APP}/Contents/Resources/runtime-modes.
   || fail "unsigned Release app did not package the exact runtime-mode registry"
 cmp -s ssot/runtime-authority.json "${RELEASE_APP}/Contents/Resources/runtime-authority.json" \
   || fail "unsigned Release app did not package the exact control authority"
+cmp -s "$SPLASH" "${RELEASE_APP}/Contents/Resources/TFTMAC-Splash-1920x1080.png" \
+  || fail "unsigned Release app did not package the exact startup splash"
+/usr/bin/xcrun --sdk macosx swift -e 'import AppKit; precondition(NSImage(contentsOfFile: CommandLine.arguments[1]) != nil)' \
+  "${RELEASE_APP}/Contents/Resources/TFTMAC-Splash-1920x1080.png" >/dev/null \
+  || fail "bundled startup splash is not loadable by NSImage"
 node .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 
 /bin/zsh scripts/test-native-app.command
@@ -359,4 +372,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 55 native tests; diagnostic mode source authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; 67 native tests; startup splash bundled; diagnostic mode source authority PASS)"

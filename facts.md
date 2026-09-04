@@ -1,7 +1,7 @@
 # TFTMAC Facts
 
-**Authority date:** 2026-09-02 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-02T13:32:00Z
+**Authority date:** 2026-09-04 America/Chicago
+**Observed runtime/source evidence through:** 2026-09-04T21:55:24Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 This file separates durable product facts from mutable observations and historical
@@ -83,6 +83,15 @@ must never be presented as measurements of this M4 Mac mini.
   local identity was repaired. The later 2026-09-02 recheck records two valid
   identities and deep/strict verification PASS for both installed apps. Neither
   observation rewrites the historical release acceptance result.
+
+### 2.1 Development / release-promotion doctrine
+
+- **LOCKED USER POLICY:** `/Applications/TFTMAC.app` is the protected stable **Control** launcher/runtime. Normal engineering work must not rebuild, patch, overwrite, replace, or install development artifacts over this app.
+- **LOCKED USER POLICY:** active feature development targets the isolated **DEV / `advanced_diagnostics`** product at `/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`, with its separate AVD, ports, state, captures, and launcher.
+- **LOCKED USER POLICY:** Control exists as the always-available known-good rollback/playable launcher while DEV changes are being developed and validated.
+- **LOCKED USER POLICY:** moving accepted DEV functionality into a full production release is a separate, explicit release-promotion operation. Until Flash explicitly authorizes that promotion and its acceptance gates pass, DEV work must not mutate the installed Control artifact.
+- **LOCKED:** build/install scripts and agent workflows must fail closed if a DEV operation would overwrite or drift the protected Control executable, emulator-host identity, AVD, ports, or launcher.
+- **OPERATIONAL NOTE:** because Control and DEV use an exclusive runtime lease, one may need to be cleanly closed before the other launches; this does not authorize changing the Control artifact or configuration.
 
 ## 3. Launch and ADB architecture
 

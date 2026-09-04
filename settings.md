@@ -4,6 +4,8 @@ Current as of September 2026.
 **Hardware Target**: Apple Silicon M4 Mac mini (`Mac16,10`, 16 GB unified RAM, macOS 15.6.2).
 **Purpose**: Comprehensive catalog of all discovered, exposed, tunable, and hard-locked settings across the entire TFTMAC graphics, audio, virtualization, and runtime pipeline, along with the discovery knowledge base explaining how each telemetry signal was unlocked.
 
+> **DEVELOPMENT TARGET LOCK — 2026-09-04:** The protected Control app at `/Applications/TFTMAC.app` is the stable known-good launcher and is not a development target. All new settings, UI, graphics, runtime, and experiment changes go to `/Applications/TFTMAC DEV.app` / `advanced_diagnostics` first. DEV may be promoted into a full production release only through a separate explicit Flash-authorized release process after acceptance. Until then, no DEV build/install step may overwrite or mutate Control.
+
 ---
 
 ## 1. Pipeline Architecture Overview

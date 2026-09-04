@@ -6,6 +6,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var runtimeController: TFTMACRuntimeController?
     private var settingsWindowController: RuntimeSettingsWindowController?
+    private var startupCurtain = StartupCurtainReducer()
     private var activeProfile: TFTMACRuntimeProfile = .playable
     private var activeApplicationSupport = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
@@ -15,7 +16,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         let controller = MainWindowController(mailbox: mailbox)
         mainWindowController = controller
         controller.showWindow(nil)
-        controller.window?.makeFirstResponder(controller.emulatorView)
+        controller.focusStartupCurtain()
         NSApp.activate(ignoringOtherApps: true)
 
         do {
@@ -25,6 +26,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             )
             activeProfile = runtimeConfiguration.profile
             activeApplicationSupport = runtimeConfiguration.applicationSupport
+            startupCurtain.configure(workload: runtimeConfiguration.workload)
+            renderStartupCurtain(on: controller, animated: false)
+
             let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
                 applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC"
             )
@@ -37,11 +41,24 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
                 runtimeConfiguration: runtimeConfiguration,
                 guestUnlockSecret: unlockSecret,
                 mailbox: mailbox,
-                status: { [weak controller] text, isError in
-                    controller?.emulatorView.setStatus(text, isError: isError)
+                status: { [weak self, weak controller] text, isError in
+                    guard let self, let controller else { return }
+                    if isError, self.startupCurtain.state.isVisuallyCovered {
+                        self.startupCurtain.fail(text)
+                        self.renderStartupCurtain(on: controller)
+                    } else {
+                        controller.emulatorView.setStatus(text, isError: isError)
+                    }
                 },
-                gameFrame: { [weak controller] window in
-                    controller?.emulatorView.setGameFrameWindow(window)
+                gameFrame: { [weak self, weak controller] window in
+                    guard let self, let controller else { return }
+                    controller.emulatorView.setGameFrameWindow(window)
+                    guard let status = window?.status else { return }
+                    self.startupCurtain.observeGameFrameStatus(
+                        status,
+                        currentPresentedSequence: controller.emulatorView.latestSuccessfullyPresentedSourceSequence
+                    )
+                    self.renderStartupCurtain(on: controller)
                 },
                 completed: {
                     if runtimeConfiguration.workload == .ownedVulkanProbe {
@@ -65,9 +82,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             controller.emulatorView.onHostPresentationWindow = { [weak runtime] sample in
                 runtime?.recordHostPresentation(sample)
             }
+            controller.emulatorView.onSourceFramePresented = { [weak self, weak controller] sequence in
+                guard let self, let controller else { return }
+                self.startupCurtain.sourceFramePresented(sequence)
+                self.renderStartupCurtain(on: controller)
+            }
             runtime.start()
         } catch {
-            controller.emulatorView.setStatus(error.localizedDescription, isError: true)
+            startupCurtain.fail(error.localizedDescription)
+            renderStartupCurtain(on: controller)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak controller] in
@@ -116,6 +139,17 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
 
     private func recordMarker(_ marker: String) {
         runtimeController?.recordMarker(marker)
+    }
+
+    private func renderStartupCurtain(on controller: MainWindowController, animated: Bool = true) {
+        switch startupCurtain.state {
+        case .covered, .eligible:
+            controller.showStartupCurtain()
+        case .failed(let message):
+            controller.showStartupCurtainError(message)
+        case .revealed:
+            controller.revealStartupCurtain(animated: animated)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -1,9 +1,9 @@
 # TFTMAC Project Record
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `clara/implement-wave-b-runtime-mode-selection--215ec5a3`
-**Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control hashes match
-**Project record through:** 2026-09-02 America/Chicago
+**Current development line:** `master` is the merged authority; new product work is developed in isolated Clara managed changes against the DEV / `advanced_diagnostics` product first.
+**Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control executable SHA-256 `d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2` was restored and re-verified on 2026-09-04.
+**Project record through:** 2026-09-04 America/Chicago
 
 This is the continuity document for a new developer or a new chat. It records
 what TFTMAC is, why the architecture changed, what has been built, what the
@@ -63,6 +63,24 @@ The Desktop contains one launcher symlink for each installed product. The global
 runtime lease prevents them from running concurrently. DEV has separate state,
 captures, AVD, ports, bundle identity, launch profile, and generated icon; it
 does not mutate or replace Control.
+
+### Development and release-promotion doctrine
+
+**Control is the protected stable launcher; DEV is the engineering target.** All
+normal feature implementation, UI work, graphics experiments, runtime tuning,
+and acceptance work must be built into `/Applications/TFTMAC DEV.app` /
+`com.flashls1.tftmac.dev` first. Agents must not use `/Applications/TFTMAC.app`
+as a convenient test install target and must not overwrite, rebuild, patch, or
+otherwise mutate the protected Control app during development.
+
+Control is deliberately retained as the known-good playable rollback while DEV
+moves forward. A DEV build may replace only the DEV install. Promotion of an
+accepted DEV state into a full production release is a **separate explicit
+release operation** requiring Flash's authorization and release acceptance. Until
+that promotion is requested and proven, the installed Control artifact remains
+unchanged. The exclusive runtime lease may require one app to be cleanly closed
+before the other runs; that operational shutdown never grants permission to
+change Control's files, AVD, ports, or configuration.
 
 The shipping display path is raw authenticated 1920×1080 RGBA from the emulator
 controller into a bounded native Metal presentation ring. MMAP/zero-copy remains

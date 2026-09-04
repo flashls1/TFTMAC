@@ -156,6 +156,8 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     var onKeyboardInput: ((String?, String?) -> Void)?
     var onPresentationSample: ((PresentationSample) -> Void)?
     var onHostPresentationWindow: ((HostPresentationWindow) -> Void)?
+    var onSourceFramePresented: ((UInt32) -> Void)?
+    private(set) var latestSuccessfullyPresentedSourceSequence: UInt32?
 
     private let mailbox: LatestFrameMailbox
     private let commandQueue: MTLCommandQueue
@@ -163,6 +165,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     private let gpuState = PresenterGPUState()
     private let hostPresentationTelemetry = HostPresentationTelemetry()
     private var textures: [MTLTexture?] = [nil, nil, nil]
+    private var sourceSequences: [UInt32?] = [nil, nil, nil]
     private var currentTextureSlot: Int?
     private var lastPresentedSequence: UInt32?
     private var lastSampleTime = CACurrentMediaTime()
@@ -274,9 +277,16 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         gpuState.beginPresentation(slot: slot)
         let state = gpuState
         let telemetry = hostPresentationTelemetry
-        buffer.addCompletedHandler { commandBuffer in
+        let presentedSequence = sourceSequences[slot]
+        buffer.addCompletedHandler { [weak self] commandBuffer in
             state.completePresentation(slot: slot)
             telemetry.recordCompletion(submittedMonotonicNS: submittedMonotonicNS, commandBuffer: commandBuffer)
+            guard commandBuffer.status == .completed,
+                  commandBuffer.error == nil,
+                  let presentedSequence else { return }
+            Task { @MainActor [weak self] in
+                self?.recordSuccessfullyPresentedSourceSequence(presentedSequence)
+            }
         }
         buffer.present(drawable)
         buffer.commit()
@@ -345,9 +355,16 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
                 bytesPerRow: frame.width * FrameContract.bytesPerPixel
             )
         }
+        sourceSequences[slot] = frame.sequence
         currentTextureSlot = slot
         lastPresentedSequence = frame.sequence
         return true
+    }
+
+    private func recordSuccessfullyPresentedSourceSequence(_ sequence: UInt32) {
+        guard latestSuccessfullyPresentedSourceSequence != sequence else { return }
+        latestSuccessfullyPresentedSourceSequence = sequence
+        onSourceFramePresented?(sequence)
     }
 
     private func androidPoint(for event: NSEvent) -> TouchPoint? {

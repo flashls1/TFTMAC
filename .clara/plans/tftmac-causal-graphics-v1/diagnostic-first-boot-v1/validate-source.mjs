@@ -106,7 +106,7 @@ assert(tests.includes('testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndReje
 const testCount = fs.readdirSync(absolute('Tests/TFTMACTests'))
   .filter((name) => name.endsWith('.swift'))
   .reduce((total, name) => total + (readText(`Tests/TFTMACTests/${name}`).match(/^    func test/gm) ?? []).length, 0);
-assert(testCount === 55, `expected 55 native tests, found ${testCount}`);
+assert(testCount === 67, `expected 67 native tests, found ${testCount}`);
 
 console.log(JSON.stringify({
   state: 'DIAGNOSTIC_FIRST_BOOT_SOURCE_PASS',
