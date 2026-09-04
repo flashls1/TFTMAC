@@ -1,0 +1,67 @@
+{
+  "applicability": "APPLICABLE",
+  "change_id": "e10d952c-93d3-42d2-b983-b7ccc492a36d",
+  "decision": "PROCEED_TO_IMPLEMENTATION_WHEN_AUTHORIZED",
+  "execution_scope_lock": "Implement only the native startup curtain, bundle/resource wiring, presenter freshness seam, coordinator state wiring, focused tests, and acceptance telemetry described by the plan. No Android/AVD/runtime tuning, unlock-policy change, new polling loop, dependency update, unrelated refactor, or timeout reveal.",
+  "final_score": 96.0,
+  "gate": "TFTMAC_STARTUP_CURTAIN_ZENGATE",
+  "hard_gates": {
+    "material_ambiguity": "PASS",
+    "project_constraints": "PASS",
+    "safety_reversibility": "PASS",
+    "source_of_truth": "PASS",
+    "validation_integrity": "PASS",
+    "win_condition": "PASS",
+    "zenmc_qualification": "PASS"
+  },
+  "implementation_plan_sha256": "141ff5b1e7e59f5be835151f7b05a345897bbb4197cb2c9ff79f6df20ca6bf3d",
+  "observed_at": "2026-09-04T20:34:00Z",
+  "preflight_sha256": "314477484532ffdbe1f64636da62c285b2e36a74199e996719e65f1bcf791205",
+  "project_id": "tftmac",
+  "remediation_mode": "NONE",
+  "request_class": "PLAN",
+  "residual_accepted_risks": [
+    "Existing one-second GameFrameTelemetry windowing may keep the splash visible slightly longer than the earliest possible TFT frame; this is accepted because it favors hiding startup noise over premature reveal.",
+    "A user-facing retry button is intentionally not included because current runtime restart semantics are outside this requested scope."
+  ],
+  "result": "PASS",
+  "risk_penalty": 1.0,
+  "risks": [
+    {
+      "mitigation": "Capture current successfully presented source sequence at eligibility and require a strictly newer successfully completed source presentation before reveal.",
+      "risk": "GameActivity eligibility races a stale Android frame already in the host presenter."
+    },
+    {
+      "mitigation": "Treat active MobileFREWebViewActivity as an explicit eligible manual-auth exception, still requiring fresh-frame proof.",
+      "risk": "Manual Riot login is hidden forever while waiting for GameActivity."
+    },
+    {
+      "mitigation": "StartupSplashView stays topmost, captures pointer input, and owns first-responder focus until reveal.",
+      "risk": "Mouse/keyboard clicks pass through artwork to hidden Android/PIN."
+    },
+    {
+      "mitigation": "Timeout is non-revealing by invariant; terminal failure remains covered with a native error.",
+      "risk": "A timeout exposes Android to avoid an apparent hang."
+    },
+    {
+      "mitigation": "Curtain is installed before showWindow and constrained to the same root container through resize/fullscreen.",
+      "risk": "Fullscreen transition briefly exposes EmbeddedEmulatorView."
+    },
+    {
+      "mitigation": "Consumer curtain applies only to officialTFT workload; ownedVulkanProbe retains existing diagnostic behavior.",
+      "risk": "Diagnostic owned-probe workflow is broken by waiting for TFT GameActivity."
+    },
+    {
+      "mitigation": "Scope lock forbids AVD, emulator, PIN policy, renderer, package, dependency, and unrelated changes.",
+      "risk": "Feature grows into runtime/guest orchestration changes."
+    }
+  ],
+  "schema": 1,
+  "scope_lock_sha256": "11f0b8bf7c06ba3454534ea98c655c2f176c70b458e013985c95b02f9df19dae",
+  "user_scope_change": "EXPLICIT_SAME_FEATURE_EXPANSION",
+  "version": "1.0",
+  "weighted_quality": 97.0,
+  "win_condition": "TFTMAC's first visible content is the approved splash; Android/SystemUI/PIN startup remains hidden; normal reveal occurs only after exact TFT GameActivity eligibility plus a strictly newer successfully presented source frame; active Riot login is the only manual-auth exception; input is blocked while covered; failure remains covered; no guest/runtime configuration is changed.",
+  "zenmc_receipt_sha256": "c4a0e26bc416fa90332b575caff490b74529d238f3a8a12adb10bc725e6a4b9f",
+  "zenmc_result": "PASS"
+}

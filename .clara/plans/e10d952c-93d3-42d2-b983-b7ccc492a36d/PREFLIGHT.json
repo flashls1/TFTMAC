@@ -1,0 +1,67 @@
+{
+  "asset": {
+    "bundled_in_xcode_resources": false,
+    "fts_received": true,
+    "path": "tftmac/Assets/TFTMAC-Splash-1920x1080.png",
+    "present_in_change": true,
+    "sha256": "588258b9bdc1d602e33eeef20209901d1d9acb763817ee5a70bee3a5c911b879"
+  },
+  "change_id": "e10d952c-93d3-42d2-b983-b7ccc492a36d",
+  "design_decisions": [
+    "Use a native AppKit overlay within the same NSWindow, not a second splash window.",
+    "Show the curtain before showWindow(nil) can expose EmbeddedEmulatorView.",
+    "Use the existing GameFrameTelemetry callback as eligibility authority.",
+    "Require a source frame newer than the eligibility baseline to complete host presentation before reveal.",
+    "Reveal on GameActivity in the normal path; active Riot login is the only pre-GameActivity interactive exception.",
+    "No elapsed-time fallback may reveal Android/SystemUI/PIN.",
+    "The curtain captures input and becomes first responder until reveal; then focus transfers to EmbeddedEmulatorView.",
+    "Once revealed, the state is latched for the session.",
+    "On pre-reveal runtime failure, keep artwork visible and show a native error above it.",
+    "Do not create a retry feature unless separately requested; preserve the current relaunch recovery behavior.",
+    "Do not alter guest/emulator/runtime configuration."
+  ],
+  "git": {
+    "base_master_sha": "74c74c48e75db9dc04e105d8e6f2574002fb787d",
+    "branch": "clara/add-generated-tftmac-splash-screen-asset-e10d952c",
+    "change_head_sha": "1e544845352547093d600a0e00fdfd1dac3fa88b",
+    "clean": true,
+    "published": true
+  },
+  "next_safe_action": "Persist the implementation plan, ZenMC receipt, scope lock, and ZenGate receipt; do not mutate product source yet.",
+  "observed_at": "2026-09-04T20:34:00Z",
+  "project_id": "tftmac",
+  "request_class": "PLAN",
+  "schema": 1,
+  "source_evidence": {
+    "TFTMAC.xcodeproj/project.pbxproj": "7129ccad75c359a6ef92a8ed39725aa8430e1be8a8bd912a7bc855056fc577fb",
+    "facts.md": "817bc992ad854f512e9ef6dd572790afb18fb06699a5c3bb970f0c3e9995820b",
+    "tftmac/App/AppCoordinator.swift": "0fb89af25716a5c474ba56b5aa79435c0b4d70ce100766884af3ecca132df20e",
+    "tftmac/App/MainWindowController.swift": "9a3a320a64590c44b4b6d6e309e3bb2bce4a99c2d13396431a8faff3fbf75c75",
+    "tftmac/Presentation/EmbeddedEmulatorView.swift": "167a0caf45daeee1edaebe2b272d70802cf59ef944cca69769eab883439ecd61",
+    "tftmac/Runtime/GameFrameTelemetry.swift": "79a42a5b900d4fa105db3a07664f456cb8cff0ed6a9fe0c4af465e7fee3f8e8c"
+  },
+  "state": "READY_FOR_STARTUP_CURTAIN_PLAN",
+  "user_scope_change": {
+    "classification": "USER_SCOPE_CHANGE_SAME_FEATURE",
+    "from": "Save approved splash asset only; no runtime behavior change.",
+    "to": "Implement a native startup curtain using that asset to hide Android/emulator/PIN startup noise until official TFT is visibly ready."
+  },
+  "verified_facts": [
+    "AppCoordinator shows MainWindowController before runtime startup.",
+    "MainWindowController currently uses EmbeddedEmulatorView as the entire content view.",
+    "EmbeddedEmulatorView receives Android frames immediately and therefore exposes boot/SystemUI/PIN noise today.",
+    "Informational runtime status is already suppressed; only errors are shown over the emulator view.",
+    "GameFrameTelemetry already distinguishes exact TFT GameActivity SurfaceView from active Riot MobileFREWebViewActivity.",
+    "Current code has a one-second GameFrameTelemetryWindow path that can be reused without new Android polling.",
+    "EmbeddedEmulatorView already knows the source-frame sequence it uploads/presents and can expose a bounded successful-present callback.",
+    "The splash image exists in the change but is not yet in the Xcode Resources build phase.",
+    "The host window enters native fullscreen about 0.6s after launch; the curtain must survive that resize without flashing underlying Android content."
+  ],
+  "zenmc_qualification": "ZENMC_REQUIRED",
+  "zenmc_reason": [
+    "Asynchronous event ordering between GameFrameTelemetry and Metal frame completion.",
+    "Failure/recovery combinations can otherwise expose Android or deadlock the curtain.",
+    "Input gating and one-way reveal are safety/UX invariants.",
+    "Manual Riot login is an interacting alternate path."
+  ]
+}
