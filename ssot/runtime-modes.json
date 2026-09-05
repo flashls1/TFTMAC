@@ -50,7 +50,7 @@
         "density_dpi": 320,
         "refresh_hz": 60,
         "vcpu": 6,
-        "ram_mib": 5120,
+        "ram_mib": 6144,
         "gpu_mode": "host",
         "audio_backend": "coreaudio",
         "graphics_transport": "virtio-gpu-asg",

@@ -30,7 +30,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             renderStartupCurtain(on: controller, animated: false)
 
             let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
-                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC"
+                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC",
+                runtimeMode: runtimeConfiguration.selection.mode
             )
             if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
                 controller.emulatorView.setStatus("Automatic Android unlock is stored securely.", isError: false)

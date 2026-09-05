@@ -1,5 +1,50 @@
 import Foundation
 
+enum RiotANRRecoveryAction: String, Equatable, Sendable {
+    case closeApp = "close_app"
+    case wait = "wait"
+}
+
+struct RiotANRRecoveryTarget: Equatable, Sendable {
+    let action: RiotANRRecoveryAction
+    let x: Int
+    let y: Int
+}
+
+enum RiotANRRecovery {
+    static func preferredTarget(in uiHierarchy: String) -> RiotANRRecoveryTarget? {
+        var waitTarget: RiotANRRecoveryTarget?
+        for fragment in uiHierarchy.components(separatedBy: "<node") {
+            guard let text = attribute("text", in: fragment),
+                  let bounds = attribute("bounds", in: fragment),
+                  let center = center(ofBounds: bounds) else { continue }
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "close app" {
+                return RiotANRRecoveryTarget(action: .closeApp, x: center.x, y: center.y)
+            }
+            if normalized == "wait" {
+                waitTarget = RiotANRRecoveryTarget(action: .wait, x: center.x, y: center.y)
+            }
+        }
+        return waitTarget
+    }
+
+    private static func attribute(_ name: String, in fragment: String) -> String? {
+        let marker = name + "=\""
+        guard let startRange = fragment.range(of: marker) else { return nil }
+        let valueStart = startRange.upperBound
+        guard let end = fragment[valueStart...].firstIndex(of: "\"") else { return nil }
+        return String(fragment[valueStart..<end])
+    }
+
+    private static func center(ofBounds bounds: String) -> (x: Int, y: Int)? {
+        let numbers = bounds.split { !$0.isNumber }.compactMap { Int($0) }
+        guard numbers.count == 4,
+              numbers[2] >= numbers[0], numbers[3] >= numbers[1] else { return nil }
+        return ((numbers[0] + numbers[2]) / 2, (numbers[1] + numbers[3]) / 2)
+    }
+}
+
 enum GameFrameTelemetryUnavailable: Sendable, Equatable {
     case noTFTSurfaceView
     case multipleTFTSurfaceViews

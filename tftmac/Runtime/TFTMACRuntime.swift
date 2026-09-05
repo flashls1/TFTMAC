@@ -2282,6 +2282,9 @@ actor TFTMACRuntimeService {
     private var benchmarkDeadlineTask: Task<Void, Never>?
     private var latestGameFrameWindow: GameFrameTelemetryWindow?
     private var tftPackageVersion = "unknown"
+    private var riotLoginIMEConfigured = false
+    private var lastRiotANRProbeNS: UInt64 = 0
+    private var riotANRRecoveryAttempts = 0
     private var stopping = false
 
     private var activeWorkloadPackage: String {
@@ -2707,6 +2710,19 @@ actor TFTMACRuntimeService {
            let ownedPID = discovery?.processIdentifier,
            Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker) {
             if runtimeConfiguration.workload == .officialTFT {
+                if runtimeConfiguration.selection.mode == .advancedDiagnostics {
+                    let sync = try? Self.runCommand(
+                        paths.adb,
+                        ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "sync"],
+                        environment: Self.adbEnvironment(paths: paths),
+                        timeout: 10
+                    )
+                    telemetry?.recordEvent("RIOT_SESSION_STATE_SYNC_REQUESTED", payload: [
+                        "phase": "normal_dev_shutdown",
+                        "command_status": sync?.status ?? -1,
+                        "credential_data_observed": false
+                    ])
+                }
                 _ = try? Self.runCommand(
                     paths.adb,
                     ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "am", "force-stop", "com.riotgames.league.teamfighttactics"],
@@ -3615,89 +3631,71 @@ actor TFTMACRuntimeService {
         BaseProfileName=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.MobileContentScaleFactor=1.0
-        +CVars=r.ScreenPercentage=100
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         [Android_LowPerf_Fragment DeviceProfile]
         DeviceType=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         [Android_LowPerf_Frontend_Fragment DeviceProfile]
         DeviceType=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
-        +CVars=r.VSync=1
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
-        +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
-        +CVars=tft.Audio.DeviceTier=High
-        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
-        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=sg.ResolutionQuality=100
 
         [Android DeviceProfile]
         DeviceType=Android
         BaseProfileName=Mobile
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         """
-        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android"
+        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Config/Android"
         let remoteFile = "\(remoteDir)/DeviceProfiles.ini"
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("DeviceProfiles-\(UUID().uuidString).ini")
         do {
@@ -3706,23 +3704,31 @@ actor TFTMACRuntimeService {
 
             _ = try Self.adb(paths: paths, ["shell", "mkdir", "-p", remoteDir], timeout: 15)
             _ = try Self.adb(paths: paths, ["push", tempFile.path, remoteFile], timeout: 15)
+            let remoteSHA = try? Self.adb(paths: paths, ["shell", "sha256sum", remoteFile], timeout: 10).output
 
             telemetry.recordReceipt(
                 key: "tft_device_profiles_provisioned",
-                value: "60_fps_override",
+                value: "6gb_highperf_v1",
                 source: "provisionTFTDeviceProfiles",
                 confidence: "DIRECT"
             )
             telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISIONED", payload: [
                 "path": remoteFile,
+                "profile": "6gb_highperf_v1",
                 "default_framerate_limit": 60,
-                "max_fps": 60,
-                "vsync": 1
+                "resolution_quality": 100,
+                "streaming_pool_mb": 1000,
+                "mesh_pool": -1,
+                "render_target_pool_min_mb": 350,
+                "animation_budget_ms": 6.0,
+                "remote_sha256": remoteSHA?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "UNKNOWN"
             ])
         } catch {
-            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_WARNING", payload: [
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_FAILED", payload: [
+                "path": remoteFile,
                 "error": error.localizedDescription
             ])
+            throw error
         }
     }
 
@@ -3919,6 +3925,102 @@ actor TFTMACRuntimeService {
         }
     }
 
+    private func maintainRiotLoginReliability(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async {
+        guard runtimeConfiguration.selection.mode == .advancedDiagnostics,
+              runtimeConfiguration.workload == .officialTFT else { return }
+
+        let nowNS = DispatchTime.now().uptimeNanoseconds
+        if lastRiotANRProbeNS != 0, nowNS - lastRiotANRProbeNS < 750_000_000 { return }
+        lastRiotANRProbeNS = nowNS
+
+        guard let windows = try? Self.adb(
+            paths: paths,
+            ["shell", "dumpsys", "window", "windows"],
+            timeout: 10
+        ).output else { return }
+
+        let loginFocused = windows.split(whereSeparator: \.isNewline).contains { rawLine in
+            let line = String(rawLine)
+            return line.contains(GameFrameTelemetry.tftMobileFREActivity)
+                && (line.contains("mCurrentFocus=") || line.contains("mFocusedApp="))
+        }
+
+        if loginFocused, !riotLoginIMEConfigured {
+            let result = try? Self.adb(
+                paths: paths,
+                ["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
+                timeout: 10
+            )
+            if result?.status == 0 {
+                riotLoginIMEConfigured = true
+            }
+            telemetry.recordEvent("RIOT_LOGIN_IME_RECOVERY_STATE_APPLIED", payload: [
+                "show_ime_with_hard_keyboard": 0,
+                "command_status": result?.status ?? -1,
+                "credential_data_observed": false
+            ])
+        }
+
+        let package = "com.riotgames.league.teamfighttactics"
+        guard windows.contains("Application Not Responding: \(package)"),
+              riotANRRecoveryAttempts < 3 else { return }
+
+        telemetry.recordEvent("RIOT_WEBVIEW_ANR_DIALOG_DETECTED", payload: [
+            "activity": GameFrameTelemetry.tftMobileFREActivity,
+            "attempt": riotANRRecoveryAttempts + 1,
+            "credential_data_observed": false
+        ])
+
+        let remotePath = "/sdcard/tftmac-anr-window.xml"
+        _ = try? Self.adb(paths: paths, ["shell", "rm", "-f", remotePath], timeout: 5)
+        guard let dump = try? Self.adb(
+            paths: paths,
+            ["shell", "uiautomator", "dump", remotePath],
+            timeout: 10
+        ), dump.status == 0,
+        let xml = try? Self.adb(paths: paths, ["shell", "cat", remotePath], timeout: 10).output,
+        let target = RiotANRRecovery.preferredTarget(in: xml) else {
+            telemetry.recordEvent("RIOT_ANR_RECOVERY_TARGET_UNAVAILABLE", payload: [
+                "credential_data_observed": false,
+                "input_remains_enabled": true
+            ])
+            return
+        }
+
+        let tap = try? Self.adb(
+            paths: paths,
+            ["shell", "input", "tap", "\(target.x)", "\(target.y)"],
+            timeout: 10
+        )
+        guard tap?.status == 0 else {
+            telemetry.recordEvent("RIOT_ANR_RECOVERY_TAP_FAILED", payload: [
+                "action": target.action.rawValue,
+                "credential_data_observed": false,
+                "input_remains_enabled": true
+            ])
+            return
+        }
+
+        riotANRRecoveryAttempts += 1
+        telemetry.recordEvent("RIOT_ANR_RECOVERY_ACTION_SELECTED", payload: [
+            "action": target.action.rawValue,
+            "attempt": riotANRRecoveryAttempts,
+            "x": target.x,
+            "y": target.y,
+            "input_remains_enabled": true,
+            "credential_data_observed": false
+        ])
+
+        // Control's proven recovery is Android-dialog-driven. A Close app action
+        // lets ActivityManager finish the failed Riot WebView, replace the TFT
+        // process and preserve the emulator/task. Wait remains the exact Control
+        // fallback when Android does not expose Close app.
+        try? await Task.sleep(for: .milliseconds(2_500))
+    }
+
     private func sampleGameFrames(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         var sampler = GameFrameTelemetrySampler(
             requiredLayerIdentity: runtimeConfiguration.workload == .ownedVulkanProbe
@@ -3942,6 +4044,7 @@ actor TFTMACRuntimeService {
                         observer: "ONE_SECOND_GRAPHICS_SAMPLER"
                     )
                 }
+                await maintainRiotLoginReliability(paths: paths, telemetry: telemetry)
                 let layerStatus: GameFrameTelemetryStatus
                 if sampler.selectedLayer == nil {
                     let layers = try Self.adb(

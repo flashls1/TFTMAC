@@ -237,7 +237,7 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "67" ]] || fail "native test inventory drifted: expected 67, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "70" ]] || fail "native test inventory drifted: expected 70, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
@@ -269,6 +269,10 @@ rg -q -F 'process.arguments = ["-P", adbPort, "-s", serial, "shell"]' ControlLau
   || fail "Control unlock wrapper does not keep the PIN out of process arguments"
 rg -q -F 'setenv("TFTMAC_RUNTIME_MODE", kRuntimeMode, 1)' DevLauncher/main.c \
   || fail "DEV launcher does not enforce its runtime mode"
+rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/setup-android-unlock.command \
+  || fail "DEV unlock setup does not use the isolated DEV Keychain service"
+rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/run-vulkan-experiment-campaign.command \
+  || fail "DEV experiment campaign does not use the isolated DEV Keychain service"
 
 readonly PROTO_SHA="$(shasum -a 256 "$PROTO" | awk '{print $1}')"
 readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"
@@ -372,4 +376,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 67 native tests; startup splash bundled; diagnostic mode source authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; 70 native tests; startup splash bundled; DEV Keychain isolation + Control-faithful Riot ANR recovery; diagnostic mode source authority PASS)"

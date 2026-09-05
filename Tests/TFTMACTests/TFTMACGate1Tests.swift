@@ -357,6 +357,39 @@ final class TFTMACGate1Tests: XCTestCase {
         )
     }
 
+    func testGuestUnlockKeychainNamespacesKeepControlFrozenAndDEVSeparate() {
+        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .control), "com.flashls1.tftmac.android-unlock.v2")
+        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics), "com.flashls1.tftmac.dev.android-unlock.v1")
+        XCTAssertNotEqual(TFTMACGuestUnlockSecretStore.service(for: .control), TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics))
+    }
+
+    func testRiotANRRecoveryPrefersCloseAppWhenAndroidOffersBothActions() {
+        let xml = """
+        <hierarchy>
+          <node text="Wait" bounds="[700,600][900,700]" />
+          <node text="Close app" bounds="[1000,600][1300,700]" />
+        </hierarchy>
+        """
+        XCTAssertEqual(
+            RiotANRRecovery.preferredTarget(in: xml),
+            RiotANRRecoveryTarget(action: .closeApp, x: 1150, y: 650)
+        )
+    }
+
+    func testRiotANRRecoveryFallsBackToControlWaitActionAndRejectsMalformedBounds() {
+        let xml = """
+        <hierarchy>
+          <node text="Close app" bounds="malformed" />
+          <node text="Wait" bounds="[600,500][800,620]" />
+        </hierarchy>
+        """
+        XCTAssertEqual(
+            RiotANRRecovery.preferredTarget(in: xml),
+            RiotANRRecoveryTarget(action: .wait, x: 700, y: 560)
+        )
+        XCTAssertNil(RiotANRRecovery.preferredTarget(in: "<node text=\"Continue\" bounds=\"[1,2][3,4]\" />"))
+    }
+
     private func runtimeModeRegistryData() throws -> Data {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
