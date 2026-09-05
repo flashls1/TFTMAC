@@ -4417,7 +4417,10 @@ actor TFTMACRuntimeService {
                 await gameFrame(unavailable)
                 lastBoundaryNS = failedAt
             }
-            try await Task.sleep(for: sampler.selectedLayer == nil ? .seconds(1) : .seconds(2))
+            // DEV must poll within SurfaceFlinger's 127-frame retention at 60Hz.
+            let pollSeconds = runtimeConfiguration.selection.mode == .advancedDiagnostics
+                || sampler.selectedLayer == nil ? 1 : 2
+            try await Task.sleep(for: .seconds(pollSeconds))
         }
     }
 

@@ -116,7 +116,8 @@ enum GameFrameTelemetry {
     static let tftGameActivitySurface = "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)"
     static let tftMobileFREActivity = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
     static let ownedProbeSurface = "SurfaceView[com.flashls1.tftmac.vulkanprobe/android.app.NativeActivity]"
-    static let maxLatencyHistoryFrames = 128
+    // SurfaceFlinger omits the current slot of its 128-slot history.
+    static let maxLatencyHistoryFrames = 127
 
     static func hasActiveLoginPrompt(in output: String) -> Bool {
         output.split(whereSeparator: \.isNewline).contains { rawLine in
@@ -284,9 +285,10 @@ struct GameFrameTelemetrySampler: Sendable {
         }
 
         var intervals = [GameFramePresentInterval]()
-        if poll.historyTruncated, !previousWasRetained, !newSamples.isEmpty {
-            // More frames arrived than the SurfaceFlinger ring retained. Do
-            // not collapse the missing history into one fabricated interval.
+        if !previousWasRetained, !newSamples.isEmpty {
+            // Disjoint histories cannot prove adjacent frames, even when
+            // pending/sentinel records leave fewer than 127 valid samples.
+            // Retain the coverage gap rather than inventing a long frame.
             previousActualPresentNS = newSamples.first?.actualPresentNS
             windowHistoryTruncated = true
         }

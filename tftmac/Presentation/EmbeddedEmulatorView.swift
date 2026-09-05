@@ -428,7 +428,9 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     private func updatePerformanceOverlay() {
         let guestLine: String
         let isLoginPrompt = gameFrameWindow?.status == .unavailable(.loginPromptActive)
-        if let gameFrameWindow, case .available = gameFrameWindow.status {
+        if gameFrameWindow?.historyTruncated == true {
+            guestLine = "TFT HISTORY GAP"
+        } else if let gameFrameWindow, case .available = gameFrameWindow.status {
             let low = gameFrameWindow.onePercentLowFPS.map { String(format: "%.0f", $0) } ?? "—"
             let p99 = gameFrameWindow.p99MS.map { String(format: "%.1f", $0) } ?? "—"
             guestLine = String(format: "TFT %.0f · 1%% %@ · P99 %@ms", gameFrameWindow.effectiveFPS, low, p99)
