@@ -63,6 +63,7 @@ readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing
 readonly MACOS_DIR="${DIST}/Contents/MacOS"
 readonly RESOURCES_DIR="${DIST}/Contents/Resources"
 readonly INFO="${DIST}/Contents/Info.plist"
+/usr/bin/ditto "${ROOT}/tftmac/Assets/DEVHighPerf" "${RESOURCES_DIR}/DEVHighPerf"
 /bin/mv "${MACOS_DIR}/TFTMAC" "${MACOS_DIR}/TFTMACDEVCore"
 /usr/bin/xcrun --sdk macosx clang \
   -Os -arch arm64 -mmacosx-version-min=15.0 \

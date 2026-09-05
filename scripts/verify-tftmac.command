@@ -376,4 +376,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 70 native tests; startup splash bundled; DEV Keychain isolation + Control-faithful Riot ANR recovery; diagnostic mode source authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; 70 native tests; startup splash bundled; DEV startup + diagnostic source authority; diagnostic mode source authority PASS)"

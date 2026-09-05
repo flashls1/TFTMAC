@@ -328,8 +328,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     private var activeDevFeatureReceiptJSON = "{}"
     private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    init(profile: TFTMACRuntimeProfile, applicationSupport: URL) throws {
-        configurationSHA256 = profile.experimentConfigurationReceipt.sha256
+    init(profile: TFTMACRuntimeProfile, applicationSupport: URL, configurationReceipt: RuntimeExperimentConfigurationReceipt? = nil) throws {
+        configurationSHA256 = (configurationReceipt ?? profile.experimentConfigurationReceipt).sha256
         targetFPS = profile.refreshHz
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -2286,6 +2286,51 @@ actor TFTMACRuntimeService {
     private var lastRiotANRProbeNS: UInt64 = 0
     private var riotANRRecoveryAttempts = 0
     private var stopping = false
+    private var highPerfOperationInProgress = false
+    private var highPerfTransactionPending = false
+    private var highPerfRestoreConfirmed = true
+    private var highPerfRestorationInProgress = false
+
+    private var usesPrivateHighPerf: Bool {
+        runtimeConfiguration.selection.mode == .advancedDiagnostics && runtimeConfiguration.workload == .officialTFT
+    }
+
+    private static let highPerfHashes = [
+        "debug-ramdisk.img": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
+        "DeviceProfiles.ini": "441dfa8e8b8726b444af487c1a10e60add88149b8d7b77c5822e2b28e5e6cca2",
+        "profile-transaction.sh": "64379421eb31876308be165042eb0c4e857a163f26ff4160377a2071f7bfb5ff"
+    ]
+
+    private func highPerfReceipt(_ base: RuntimeExperimentConfigurationReceipt) -> RuntimeExperimentConfigurationReceipt {
+        guard usesPrivateHighPerf else { return base }
+        let value: [String: Any] = ["base_configuration": base.canonicalJSON,
+                                   "dev_private_highperf": Self.highPerfHashes, "android_hwui_renderer": "skiagl", "schema": 1]
+        let data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        return RuntimeExperimentConfigurationReceipt(canonicalJSON: String(decoding: data, as: UTF8.self),
+            sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+    }
+
+    private var effectiveConfigurationReceipt: RuntimeExperimentConfigurationReceipt {
+        highPerfReceipt(profile.experimentConfigurationReceipt)
+    }
+
+    private var effectiveComparisonSHA256: String {
+        highPerfReceipt(profile.with(experimentPreset: .control).experimentConfigurationReceipt).sha256
+    }
+
+    private func highPerfAssets() throws -> URL {
+        guard usesPrivateHighPerf, let resources = Bundle.main.resourceURL else {
+            throw TFTMACRuntimeError("Private HighPerf assets are available only to the DEV game runtime.")
+        }
+        let directory = resources.appendingPathComponent("DEVHighPerf", isDirectory: true)
+        for (name, expected) in Self.highPerfHashes {
+            let data = try Data(contentsOf: directory.appendingPathComponent(name))
+            guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == expected else {
+                throw TFTMACRuntimeError("DEV HighPerf asset failed its integrity check: \(name)")
+            }
+        }
+        return directory
+    }
 
     private var activeWorkloadPackage: String {
         runtimeConfiguration.workload == .ownedVulkanProbe
@@ -2315,7 +2360,8 @@ actor TFTMACRuntimeService {
             self.paths = paths
             let telemetry = try TFTMACNativeTelemetry(
                 profile: profile,
-                applicationSupport: paths.applicationSupport
+                applicationSupport: paths.applicationSupport,
+                configurationReceipt: effectiveConfigurationReceipt
             )
             self.telemetry = telemetry
             labStore = try CombatBenchmarkLabStore(applicationSupport: paths.applicationSupport)
@@ -2518,13 +2564,13 @@ actor TFTMACRuntimeService {
         }
 
         let nowNS = DispatchTime.now().uptimeNanoseconds
-        let receipt = profile.experimentConfigurationReceipt
+        let receipt = effectiveConfigurationReceipt
         activeCombatBenchmark = ActiveCombatBenchmark(
             benchmarkID: UUID().uuidString.lowercased(),
             sessionID: telemetry.sessionIdentifier,
             presetID: profile.experimentPreset,
             configurationSHA256: receipt.sha256,
-            comparisonIdentitySHA256: profile.comparisonConfigurationSHA256,
+            comparisonIdentitySHA256: effectiveComparisonSHA256,
             configurationJSON: receipt.canonicalJSON,
             tftPackageVersion: tftPackageVersion,
             performanceModeConfirmed: performanceModeConfirmed,
@@ -2706,6 +2752,7 @@ actor TFTMACRuntimeService {
         if activeCombatBenchmark != nil { endCombatBenchmark(reason: "APPLICATION_STOP") }
         await status("Sealing SQL telemetry and stopping Android…", false)
         inputContinuation?.finish()
+        while highPerfOperationInProgress { try? await Task.sleep(for: .milliseconds(100)) }
         if let paths,
            let ownedPID = discovery?.processIdentifier,
            Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker) {
@@ -2731,6 +2778,7 @@ actor TFTMACRuntimeService {
                 )
                 try? await Task.sleep(for: .milliseconds(300))
             }
+            await restorePrivateHighPerf(paths: paths)
             telemetry?.recordEvent("EMULATOR_STOP_SIGNAL_SENT", payload: [
                 "pid": ownedPID,
                 "serial": paths.serial,
@@ -2763,6 +2811,7 @@ actor TFTMACRuntimeService {
                 )
             } ?? false
             if ownsRunningEmulator {
+                await restorePrivateHighPerf(paths: paths)
                 recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
                 if let telemetry, runtimeConfiguration.workload == .officialTFT {
                     recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
@@ -2833,7 +2882,7 @@ actor TFTMACRuntimeService {
             await traceCaptureTask.value
             self.traceCaptureTask = nil
         }
-        let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed ? "STOPPED" : "FAILED"
+        let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed && highPerfRestoreConfirmed ? "STOPPED" : "FAILED"
         telemetry?.finish(status: sealedStatus)
         runtimeLease?.release()
         runtimeLease = nil
@@ -2981,7 +3030,7 @@ actor TFTMACRuntimeService {
         telemetry: TFTMACNativeTelemetry,
         paths: TFTMACRuntimePaths
     ) {
-        let experimentReceipt = profile.experimentConfigurationReceipt
+        let experimentReceipt = effectiveConfigurationReceipt
         let receipts: [(String, String, String, String)] = [
             ("engine", "Unreal Engine", "user_locked_fact", "LOCKED"),
             ("runtime_mode", paths.mode.rawValue, "sealed runtime-mode registry", "DIRECT"),
@@ -3103,6 +3152,19 @@ actor TFTMACRuntimeService {
             "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
         ]
+        if usesPrivateHighPerf {
+            let assets = try highPerfAssets()
+            let stock = paths.sdkRoot.appendingPathComponent("system-images/android-36/google_apis_playstore/arm64-v8a/ramdisk.img")
+            let stockData = try Data(contentsOf: stock)
+            guard SHA256.hash(data: stockData).map({ String(format: "%02x", $0) }).joined()
+                    == "93164613a195fff34efac0517eaa4640b43b7578925f2f96726c260d43503aaa" else {
+                throw TFTMACRuntimeError("DEV Android image changed; the HighPerf debug boot needs revalidation.")
+            }
+            arguments += ["-ramdisk", assets.appendingPathComponent("debug-ramdisk.img").path,
+                          "-append-userspace-opt", "androidboot.verifiedbootstate=orange", "-no-snapshot"]
+            telemetry.recordEvent("DEV_HIGHPERF_BOOT_ASSETS_VERIFIED", payload: ["sha256": Self.highPerfHashes,
+                "cold_boot": true, "adb_authentication": "required", "configuration_sha256": effectiveConfigurationReceipt.sha256])
+        }
         if paths.expectedEmulatorVersionContains == "37.1.11" {
             arguments += ["-crash-report-mode", "disabled"]
         }
@@ -3349,6 +3411,7 @@ actor TFTMACRuntimeService {
             "version_code_line": versionCodeLine,
             "signing_line": signingLine
         ])
+        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
         try await Task.sleep(for: .milliseconds(750))
         guard logcatProcess?.isRunning == true,
               Self.fileSize(telemetry.captureDirectory.appendingPathComponent("logcat.raw.txt")) > 0 else {
@@ -3360,8 +3423,8 @@ actor TFTMACRuntimeService {
             "sql_database": "TFTMAC_NATIVE_RUNTIME.sqlite"
         ])
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "before_tft_launch")
-        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
 
+        let highPerfLaunchEpoch = usesPrivateHighPerf ? try Self.adb(paths: paths, ["shell", "date +%s"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines) : "0"
         let resolved = try? Self.adb(
             paths: paths,
             ["shell", "cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", package],
@@ -3387,6 +3450,8 @@ actor TFTMACRuntimeService {
             }
             try await Task.sleep(for: .milliseconds(200))
         }
+
+        if usesPrivateHighPerf { try await verifyHighPerfConsumption(paths: paths, telemetry: telemetry, launchEpoch: highPerfLaunchEpoch) }
 
         telemetry.recordEvent("TFT_READY_FOR_USER", payload: [
             "engine": "Unreal Engine",
@@ -3624,10 +3689,128 @@ actor TFTMACRuntimeService {
         ])
     }
 
+    private func changeHighPerfADBD(paths: TFTMACRuntimePaths, root: Bool) async throws {
+        _ = try Self.adb(paths: paths, [root ? "root" : "unroot"], timeout: 15)
+        for _ in 0..<30 {
+            try? await Task.sleep(for: .milliseconds(300))
+            if let result = try? Self.adb(paths: paths, ["shell", "id -u"], timeout: 5),
+               result.output.trimmingCharacters(in: .whitespacesAndNewlines) == (root ? "0" : "2000") {
+                return
+            }
+        }
+        throw TFTMACRuntimeError("DEV could not verify \(root ? "root" : "normal") ADB privileges.")
+    }
+
+    private func provisionPrivateHighPerf(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        guard tftPackageVersion == "versionName=18.1-5423749", let session = expectedSessionMarker?.split(separator: "=").last else {
+            throw TFTMACRuntimeError("DEV HighPerf requires the validated official TFT version and native session identity.")
+        }
+        let assets = try highPerfAssets()
+        highPerfOperationInProgress = true
+        defer { highPerfOperationInProgress = false }
+        _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
+        _ = try Self.adb(paths: paths, ["shell", "setprop debug.hwui.renderer skiagl"], timeout: 10)
+        let hwui = try Self.adb(paths: paths, ["shell", "getprop debug.hwui.renderer"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hwui == "skiagl" else { throw TFTMACRuntimeError("DEV could not establish the validated Android login renderer.") }
+        telemetry.recordEvent("DEV_LOGIN_HWUI_RENDERER_VERIFIED", payload: ["renderer": hwui, "game_angle_vulkan_unchanged": true])
+        stopLogcatCapture()
+        // Preserve the boot recorder; root/unroot restarts adbd, so gameplay gets a new recorder.
+        for name in ["logcat.raw.txt", "logcat.stderr.log"] {
+            let source = telemetry.captureDirectory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.moveItem(at: source, to: telemetry.captureDirectory.appendingPathComponent("boot-" + name))
+            }
+        }
+        do {
+            try await changeHighPerfADBD(paths: paths, root: true)
+            let identity = try Self.adb(paths: paths, ["shell", "getprop ro.boot.tftmac.session"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard identity == String(session) else { throw TFTMACRuntimeError("DEV HighPerf guest session mismatch.") }
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("DeviceProfiles.ini").path, "/data/local/tmp/tftmac-native-profile.ini"], timeout: 15)
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("profile-transaction.sh").path, "/data/local/tmp/tftmac-native-profile.sh"], timeout: 15)
+            highPerfTransactionPending = true
+            highPerfRestoreConfirmed = false
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh apply \(session)"], timeout: 30).output
+            guard receipt.contains("MOUNT_VERIFIED") else { throw TFTMACRuntimeError("DEV profile mount was not verified.") }
+            telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_MOUNT_VERIFIED", payload: ["receipt": receipt, "sha256": Self.highPerfHashes])
+            try receipt.write(to: telemetry.captureDirectory.appendingPathComponent("highperf-mount.txt"), atomically: true, encoding: .utf8)
+            try await changeHighPerfADBD(paths: paths, root: false)
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            try startLogcatCapture(paths: paths, telemetry: telemetry)
+        } catch {
+            try? await changeHighPerfADBD(paths: paths, root: false)
+            throw error
+        }
+    }
+
+    private func restorePrivateHighPerf(paths: TFTMACRuntimePaths) async {
+        // stop() and run() cleanup can reenter this actor while ADB reconnects.
+        // Only one may own the root/mount transaction; the other observes its result.
+        while highPerfRestorationInProgress { await Task.yield() }
+        guard usesPrivateHighPerf, highPerfTransactionPending,
+              let session = expectedSessionMarker?.split(separator: "=").last else { return }
+        highPerfRestorationInProgress = true
+        defer { highPerfRestorationInProgress = false }
+        do {
+            // Framework commands run as shell; the diagnostic root domain is for file/mount work.
+            try await changeHighPerfADBD(paths: paths, root: false)
+            _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
+            stopLogcatCapture()
+            try await changeHighPerfADBD(paths: paths, root: true)
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh rollback \(session)"], timeout: 30).output
+            try await changeHighPerfADBD(paths: paths, root: false)
+            highPerfTransactionPending = false
+            highPerfRestoreConfirmed = true
+            telemetry?.recordEvent("DEV_PRIVATE_HIGHPERF_RESTORED", payload: ["receipt": receipt])
+        } catch {
+            telemetry?.recordEvent("DEV_PRIVATE_HIGHPERF_RESTORE_FAILED", payload: ["error": error.localizedDescription, "journal_retained": true])
+            try? await changeHighPerfADBD(paths: paths, root: false)
+        }
+    }
+
+    private func verifyHighPerfConsumption(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, launchEpoch: String) async throws {
+        let ini = try String(contentsOf: highPerfAssets().appendingPathComponent("DeviceProfiles.ini"), encoding: .utf8)
+        var expected: [String: String] = [:]
+        for line in ini.split(whereSeparator: \.isNewline) where line.hasPrefix("CVars=") {
+            let pair = line.dropFirst(6).split(separator: "=", maxSplits: 1).map(String.init)
+            if pair.count == 2 { expected[pair[0]] = pair[1] }
+        }
+        let remote = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Logs/TFT.log"
+        let regex = try NSRegularExpression(pattern: #"Pushing Device Profile CVar: \[\[([^:]+):.*? -> ([^\]]+)\]\]"#)
+        for _ in 0..<60 {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            let modified = try? Self.adb(paths: paths, ["shell", "stat -c %Y \(remote)"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let modified, let time = Int64(modified), time >= (Int64(launchEpoch) ?? Int64.max),
+               let log = try? Self.adb(paths: paths, ["shell", "cat \(remote)"], timeout: 10).output {
+                var actual: [String: String] = [:]
+                for match in regex.matches(in: log, range: NSRange(log.startIndex..., in: log)) {
+                    if let key = Range(match.range(at: 1), in: log), let value = Range(match.range(at: 2), in: log) {
+                        actual[String(log[key])] = String(log[value])
+                    }
+                }
+                if !expected.isEmpty && expected.allSatisfy({ actual[$0.key] == $0.value }) {
+                    let output = telemetry.captureDirectory.appendingPathComponent("highperf-engine-boot.log")
+                    try log.write(to: output, atomically: true, encoding: .utf8)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
+                    telemetry.recordEvent("DEV_HIGHPERF_ENGINE_TARGETS_ACCEPTED", payload: ["targets": expected, "target_count": expected.count,
+                        "source": output.lastPathComponent, "source_is_fresh": true, "sustained_gameplay_60fps": "UNPROVEN"])
+                    return
+                }
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+        throw TFTMACRuntimeError("TFT did not confirm the DEV HighPerf settings in its fresh engine log.")
+    }
+
     private func provisionTFTDeviceProfiles(
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) async throws {
+        if usesPrivateHighPerf {
+            try await provisionPrivateHighPerf(paths: paths, telemetry: telemetry)
+            return
+        }
         let iniContent = """
         [Android_MatchedFragments DeviceProfile]
         DeviceType=Android
@@ -3969,59 +4152,13 @@ actor TFTMACRuntimeService {
 
         let package = "com.riotgames.league.teamfighttactics"
         guard windows.contains("Application Not Responding: \(package)"),
-              riotANRRecoveryAttempts < 3 else { return }
-
-        telemetry.recordEvent("RIOT_WEBVIEW_ANR_DIALOG_DETECTED", payload: [
-            "activity": GameFrameTelemetry.tftMobileFREActivity,
-            "attempt": riotANRRecoveryAttempts + 1,
-            "credential_data_observed": false
-        ])
-
-        let remotePath = "/sdcard/tftmac-anr-window.xml"
-        _ = try? Self.adb(paths: paths, ["shell", "rm", "-f", remotePath], timeout: 5)
-        guard let dump = try? Self.adb(
-            paths: paths,
-            ["shell", "uiautomator", "dump", remotePath],
-            timeout: 10
-        ), dump.status == 0,
-        let xml = try? Self.adb(paths: paths, ["shell", "cat", remotePath], timeout: 10).output,
-        let target = RiotANRRecovery.preferredTarget(in: xml) else {
-            telemetry.recordEvent("RIOT_ANR_RECOVERY_TARGET_UNAVAILABLE", payload: [
-                "credential_data_observed": false,
-                "input_remains_enabled": true
-            ])
-            return
-        }
-
-        let tap = try? Self.adb(
-            paths: paths,
-            ["shell", "input", "tap", "\(target.x)", "\(target.y)"],
-            timeout: 10
-        )
-        guard tap?.status == 0 else {
-            telemetry.recordEvent("RIOT_ANR_RECOVERY_TAP_FAILED", payload: [
-                "action": target.action.rawValue,
-                "credential_data_observed": false,
-                "input_remains_enabled": true
-            ])
-            return
-        }
-
-        riotANRRecoveryAttempts += 1
-        telemetry.recordEvent("RIOT_ANR_RECOVERY_ACTION_SELECTED", payload: [
-            "action": target.action.rawValue,
-            "attempt": riotANRRecoveryAttempts,
-            "x": target.x,
-            "y": target.y,
+              riotANRRecoveryAttempts == 0 else { return }
+        riotANRRecoveryAttempts = 1
+        telemetry.recordEvent("RIOT_ANR_DIALOG_REQUIRES_ATTENTION", payload: [
+            "automatic_dialog_action": "none",
             "input_remains_enabled": true,
             "credential_data_observed": false
         ])
-
-        // Control's proven recovery is Android-dialog-driven. A Close app action
-        // lets ActivityManager finish the failed Riot WebView, replace the TFT
-        // process and preserve the emulator/task. Wait remains the exact Control
-        // fallback when Android does not expose Close app.
-        try? await Task.sleep(for: .milliseconds(2_500))
     }
 
     private func sampleGameFrames(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
@@ -4382,7 +4519,7 @@ actor TFTMACRuntimeService {
     private func recordCorrectnessRejection(reason: String) {
         guard let telemetry else { return }
         let nowNS = DispatchTime.now().uptimeNanoseconds
-        let receipt = profile.experimentConfigurationReceipt
+        let receipt = effectiveConfigurationReceipt
         let metrics = CombatBenchmarkMetrics(
             combatDurationSeconds: 0,
             surfaceAvailability: 0,
@@ -4404,7 +4541,7 @@ actor TFTMACRuntimeService {
             sessionID: telemetry.sessionIdentifier,
             presetID: profile.experimentPreset,
             configurationSHA256: receipt.sha256,
-            comparisonIdentitySHA256: profile.comparisonConfigurationSHA256,
+            comparisonIdentitySHA256: effectiveComparisonSHA256,
             configurationJSON: receipt.canonicalJSON,
             tftPackageVersion: tftPackageVersion,
             performanceModeConfirmed: false,
@@ -4782,7 +4919,7 @@ actor TFTMACRuntimeService {
         ).output
         telemetry.recordEvent("RUNTIME_THIRTY_SECOND_RECEIPT", payload: [
             "preset_id": profile.experimentPreset.rawValue,
-            "configuration_sha256": profile.experimentConfigurationReceipt.sha256,
+            "configuration_sha256": effectiveConfigurationReceipt.sha256,
             "emulator_features_requested": profile.effectiveEmulatorFeatures,
             "display_geometry": geometry ?? "unavailable",
             "guest_egl": Self.firstRegexText("\\[ro.hardware.egl\\]: \\[(.*?)\\]", in: properties ?? "") ?? "unknown",
@@ -4987,7 +5124,7 @@ actor TFTMACRuntimeService {
                 confidence: "DIRECT_SOURCE"
             ),
             "configuration_sha256": GraphicsStackReceiptField(
-                value: profile.experimentConfigurationReceipt.sha256,
+                value: effectiveConfigurationReceipt.sha256,
                 source: "canonical effective runtime configuration",
                 confidence: "DIRECT"
             ),
