@@ -2244,7 +2244,7 @@ actor TFTMACRuntimeService {
     typealias GameFrameHandler = @MainActor @Sendable (GameFrameTelemetryWindow?) -> Void
 
     private let runtimeConfiguration: TFTMACSelectedRuntimeConfiguration
-    private let guestUnlockSecret: TFTMACGuestUnlockSecret
+    private let guestUnlockSecret: TFTMACGuestUnlockSecret?
     private let profile: TFTMACRuntimeProfile
     private let mailbox: LatestFrameMailbox
     private let status: StatusHandler
@@ -2295,7 +2295,7 @@ actor TFTMACRuntimeService {
 
     init(
         runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
-        guestUnlockSecret: TFTMACGuestUnlockSecret,
+        guestUnlockSecret: TFTMACGuestUnlockSecret?,
         mailbox: LatestFrameMailbox,
         status: @escaping StatusHandler,
         gameFrame: @escaping GameFrameHandler
@@ -3288,6 +3288,9 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
             if user.contains("RUNNING_UNLOCKED") { break }
+            guard let guestUnlockSecret else {
+                throw TFTMACRuntimeError("DEV Android still has a screen lock. Remove the Android lock before starting DEV.")
+            }
             if Date() >= nextUnlockAttempt, automaticUnlockAttempts < 2 {
                 automaticUnlockAttempted = true
                 automaticUnlockAttempts += 1
@@ -5816,7 +5819,7 @@ final class TFTMACRuntimeController {
 
     init(
         runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
-        guestUnlockSecret: TFTMACGuestUnlockSecret,
+        guestUnlockSecret: TFTMACGuestUnlockSecret?,
         mailbox: LatestFrameMailbox,
         status: @escaping TFTMACRuntimeService.StatusHandler,
         gameFrame: @escaping TFTMACRuntimeService.GameFrameHandler,

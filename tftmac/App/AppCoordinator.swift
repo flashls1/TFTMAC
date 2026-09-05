@@ -29,12 +29,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             startupCurtain.configure(workload: runtimeConfiguration.workload)
             renderStartupCurtain(on: controller, animated: false)
 
-            let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
-                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC",
+            let isDEV = runtimeConfiguration.selection.mode == .advancedDiagnostics
+            let unlockSecret: TFTMACGuestUnlockSecret? = isDEV ? nil : try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                applicationName: "TFTMAC",
                 runtimeMode: runtimeConfiguration.selection.mode
             )
             if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
-                controller.emulatorView.setStatus("Automatic Android unlock is stored securely.", isError: false)
+                controller.emulatorView.setStatus(
+                    isDEV ? "TFTMAC DEV does not require an Android PIN." : "Automatic Android unlock is stored securely.",
+                    isError: false
+                )
                 NSApp.terminate(nil)
                 return
             }
