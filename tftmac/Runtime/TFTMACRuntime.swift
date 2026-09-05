@@ -2297,8 +2297,8 @@ actor TFTMACRuntimeService {
 
     private static let highPerfHashes = [
         "debug-ramdisk.img": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
-        "DeviceProfiles.ini": "441dfa8e8b8726b444af487c1a10e60add88149b8d7b77c5822e2b28e5e6cca2",
-        "profile-transaction.sh": "64379421eb31876308be165042eb0c4e857a163f26ff4160377a2071f7bfb5ff"
+        "DeviceProfiles.ini": "aa9672cd730e5e3c32e6c9a793a4ef98bef90d80124c7e22b196d2e174af07e1",
+        "profile-transaction.sh": "2b5450816654b9f0ac7df597622d4f905d385ae85e5ca61d34345934e5828271"
     ]
 
     private func highPerfReceipt(_ base: RuntimeExperimentConfigurationReceipt) -> RuntimeExperimentConfigurationReceipt {
@@ -3789,12 +3789,13 @@ actor TFTMACRuntimeService {
                         actual[String(log[key])] = String(log[value])
                     }
                 }
-                if !expected.isEmpty && expected.allSatisfy({ actual[$0.key] == $0.value }) {
+                let rendererPreserved = log.contains("LogRHI: Initializing OpenGL RHI") && !log.contains("Creating Vulkan Device")
+                if rendererPreserved && !expected.isEmpty && expected.allSatisfy({ actual[$0.key] == $0.value }) {
                     let output = telemetry.captureDirectory.appendingPathComponent("highperf-engine-boot.log")
                     try log.write(to: output, atomically: true, encoding: .utf8)
                     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
                     telemetry.recordEvent("DEV_HIGHPERF_ENGINE_TARGETS_ACCEPTED", payload: ["targets": expected, "target_count": expected.count,
-                        "source": output.lastPathComponent, "source_is_fresh": true, "sustained_gameplay_60fps": "UNPROVEN"])
+                        "source": output.lastPathComponent, "source_is_fresh": true, "game_rhi": "OpenGL through ANGLE", "baseline_non_target_values_preserved": true, "sustained_gameplay_60fps": "UNPROVEN"])
                     return
                 }
             }
