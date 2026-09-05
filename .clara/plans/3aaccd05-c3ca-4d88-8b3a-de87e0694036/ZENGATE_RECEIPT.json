@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "gate": "TFTMAC_DEV_HIGHPERF_6GB_ZENGATE",
+  "version": "1.0",
+  "project_id": "tftmac",
+  "change_id": "3aaccd05-c3ca-4d88-8b3a-de87e0694036",
+  "base_head_sha": "74c74c48e75db9dc04e105d8e6f2574002fb787d",
+  "hard_gates": {
+    "win_condition": "PASS",
+    "source_of_truth": "PASS",
+    "material_ambiguity": "PASS",
+    "safety_reversibility": "PASS",
+    "validation_integrity": "PASS",
+    "project_constraints": "PASS"
+  },
+  "weighted_quality": 96.0,
+  "risk_penalty": 2.0,
+  "final_score": 94.0,
+  "decision": "PROCEED",
+  "remediation_mode": "NONE",
+  "execution_scope_lock": "Modify only TFTMAC DEV advanced_diagnostics startup/profile provisioning and targeted verification. Select TFT HighPerf plus 6GB and current GL fragments through supported Unreal startup arguments, prove the effective boot state, and leave protected Control unchanged."
+}
