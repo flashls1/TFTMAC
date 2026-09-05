@@ -76,9 +76,75 @@ final class TFTMACGate1Tests: XCTestCase {
         )
         mailbox.publish(first)
         mailbox.publish(second)
-        XCTAssertEqual(mailbox.takeLatest()?.sequence, 2)
-        XCTAssertNil(mailbox.takeLatest())
+        XCTAssertEqual(mailbox.takeForPresentation()?.sequence, 2)
+        XCTAssertNil(mailbox.takeForPresentation())
         XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 1)
+    }
+
+    private func displayFrame(_ sequence: UInt32, at time: UInt64) -> EmulatorFrame {
+        EmulatorFrame(
+            pixels: Data(count: 4), width: 1, height: 1, sequence: sequence,
+            emulatorTimestampMicroseconds: time / 1_000, receivedMonotonicNanoseconds: time
+        )
+    }
+
+    func testDisplayJitterBufferPreservesBurstAcrossTwoTicks() {
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        mailbox.publish(displayFrame(1, at: 0))
+        mailbox.publish(displayFrame(2, at: 8_000_000))
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 16_666_667)?.sequence, 1)
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 33_333_334)?.sequence, 2)
+        XCTAssertNil(mailbox.takeForPresentation(nowMonotonicNS: 50_000_001))
+        XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 0)
+    }
+
+    func testDisplayJitterBufferBoundsOverflowAndCountsEveryDiscard() {
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        for sequence in UInt32(1)...100 { mailbox.publish(displayFrame(sequence, at: UInt64(sequence))) }
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 101)?.sequence, 99)
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 102)?.sequence, 100)
+        XCTAssertNil(mailbox.takeForPresentation(nowMonotonicNS: 103))
+        XCTAssertEqual(mailbox.snapshot().receivedFrames, 100)
+        XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 98)
+        XCTAssertEqual(mailbox.snapshot().sequenceDrops, 0)
+    }
+
+    func testDisplayJitterBufferAgeBoundaryAndPauseRecovery() {
+        for (age, expected) in [(UInt64(33_333_333), UInt32(1)), (33_333_334, 1), (33_333_335, 2), (1_000_000_000, 2)] {
+            let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+            mailbox.publish(displayFrame(1, at: 0))
+            mailbox.publish(displayFrame(2, at: 8_000_000))
+            XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: age)?.sequence, expected)
+            XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, expected == 2 ? 1 : 0)
+        }
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        mailbox.publish(displayFrame(1, at: 0))
+        // A paused source still exposes its most recent image immediately.
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 1_000_000_000)?.sequence, 1)
+        mailbox.publish(displayFrame(2, at: 1_100_000_000))
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 1_100_000_001)?.sequence, 2)
+    }
+
+    func testDisplayJitterBufferReplaysSixtyHzBurstArrivalsWithoutFrameLoss() {
+        for buffered in [false, true] {
+            let mailbox = LatestFrameMailbox(buffersDisplayJitter: buffered)
+            var delivered = [UInt32]()
+            for pair in UInt32(0)..<300 {
+                let start = UInt64(pair) * 33_333_334
+                mailbox.publish(displayFrame(pair * 2 + 1, at: start + 100_000))
+                mailbox.publish(displayFrame(pair * 2 + 2, at: start + 8_100_000))
+                for tick in [start + 16_666_667, start + 33_333_334] {
+                    if let frame = mailbox.takeForPresentation(nowMonotonicNS: tick) {
+                        delivered.append(frame.sequence)
+                        XCTAssertLessThanOrEqual(tick - frame.receivedMonotonicNanoseconds, 33_333_334)
+                    }
+                }
+            }
+            XCTAssertEqual(delivered.count, buffered ? 600 : 300)
+            XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, buffered ? 0 : 300)
+            XCTAssertEqual(delivered, delivered.sorted())
+            XCTAssertEqual(Set(delivered).count, delivered.count)
+        }
     }
 
     func testAVDRestoreAllowsOnlyTheAppliedConfiguration() throws {

@@ -2,7 +2,9 @@ import AppKit
 
 @MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate {
-    private let mailbox = LatestFrameMailbox()
+    private let mailbox = LatestFrameMailbox(
+        buffersDisplayJitter: Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev"
+    )
     private var mainWindowController: MainWindowController?
     private var runtimeController: TFTMACRuntimeController?
     private var settingsWindowController: RuntimeSettingsWindowController?

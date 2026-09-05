@@ -233,11 +233,6 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        let uploadedNewSource = uploadNewestFrameIfPossible()
-        guard let slot = currentTextureSlot, let texture = textures[slot] else {
-            updatePresentationSampleIfNeeded()
-            return
-        }
         guard let drawable = currentDrawable, let descriptor = currentRenderPassDescriptor else {
             hostPresentationTelemetry.recordDrawableMiss()
             updatePresentationSampleIfNeeded()
@@ -250,6 +245,13 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         }
         guard let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             hostPresentationTelemetry.recordEncoderMiss()
+            updatePresentationSampleIfNeeded()
+            return
+        }
+
+        let uploadedNewSource = uploadNewestFrameIfPossible()
+        guard let slot = currentTextureSlot, let texture = textures[slot] else {
+            encoder.endEncoding()
             updatePresentationSampleIfNeeded()
             return
         }
@@ -331,13 +333,12 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
 
     @discardableResult
     private func uploadNewestFrameIfPossible() -> Bool {
-        guard let frame = mailbox.takeLatest() else { return false }
         guard let slot = gpuState.availableUploadSlot(excluding: currentTextureSlot) else { return false }
         if textures[slot] == nil {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba8Unorm_srgb,
-                width: frame.width,
-                height: frame.height,
+                width: FrameContract.width,
+                height: FrameContract.height,
                 mipmapped: false
             )
             descriptor.usage = [.shaderRead]
@@ -346,6 +347,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             textures[slot]?.label = "TFTMAC Android frame \(slot)"
         }
         guard let texture = textures[slot] else { return false }
+        guard let frame = mailbox.takeForPresentation() else { return false }
         frame.pixels.withUnsafeBytes { bytes in
             guard let baseAddress = bytes.baseAddress else { return }
             texture.replace(
