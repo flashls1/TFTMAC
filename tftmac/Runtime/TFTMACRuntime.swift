@@ -2735,6 +2735,17 @@ actor TFTMACRuntimeService {
         inputContinuation = nil
         var emulatorExitConfirmed = true
         if let paths {
+            if paths.mode == .advancedDiagnostics {
+                _ = try? Self.adb(
+                    paths: paths,
+                    ["shell", "rm", "-f", TFTMACHighPerfDeviceProfileExperiment.commandLinePath],
+                    timeout: 5
+                )
+                telemetry?.recordEvent("TFT_DEV_HIGHPERF_PROFILE_CLEANUP", payload: [
+                    "path": TFTMACHighPerfDeviceProfileExperiment.commandLinePath,
+                    "mode": paths.mode.rawValue
+                ])
+            }
             let ownedPID = discovery?.processIdentifier ?? expectedSessionMarker.flatMap { marker in
                 Self.findOwnedEmulatorPID(sessionMarker: marker, paths: paths)
             }
@@ -3609,6 +3620,11 @@ actor TFTMACRuntimeService {
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) async throws {
+        if paths.mode == .advancedDiagnostics {
+            try provisionTFTDEVHighPerfDeviceProfile(paths: paths, telemetry: telemetry)
+            return
+        }
+
         let iniContent = """
         [Android_MatchedFragments DeviceProfile]
         DeviceType=Android
@@ -3724,6 +3740,63 @@ actor TFTMACRuntimeService {
                 "error": error.localizedDescription
             ])
         }
+    }
+
+    private func provisionTFTDEVHighPerfDeviceProfile(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) throws {
+        let commandLine = TFTMACHighPerfDeviceProfileExperiment.commandLine
+        let tempFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UECommandLine-\(UUID().uuidString).txt")
+        try commandLine.write(to: tempFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        for stalePath in TFTMACHighPerfDeviceProfileExperiment.staleDeviceProfilePaths {
+            _ = try? Self.adb(paths: paths, ["shell", "rm", "-f", stalePath], timeout: 10)
+        }
+        _ = try Self.adb(
+            paths: paths,
+            ["shell", "mkdir", "-p", TFTMACHighPerfDeviceProfileExperiment.commandLineDirectory],
+            timeout: 15
+        )
+        _ = try Self.adb(
+            paths: paths,
+            ["push", tempFile.path, TFTMACHighPerfDeviceProfileExperiment.commandLinePath],
+            timeout: 15
+        )
+        let readback = try Self.adb(
+            paths: paths,
+            ["shell", "cat", TFTMACHighPerfDeviceProfileExperiment.commandLinePath],
+            timeout: 10
+        ).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard readback == commandLine else {
+            throw TFTMACRuntimeError("The DEV HighPerf UECommandLine.txt failed read-back verification.")
+        }
+
+        let commandLineSHA256 = SHA256.hash(data: Data(commandLine.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        telemetry.recordReceipt(
+            key: "tft_dev_device_profile_fragments",
+            value: TFTMACHighPerfDeviceProfileExperiment.fragments.joined(separator: ","),
+            source: "verified UECommandLine.txt read-back",
+            confidence: "DIRECT"
+        )
+        telemetry.recordReceipt(
+            key: "tft_dev_ue_command_line_sha256",
+            value: commandLineSHA256,
+            source: TFTMACHighPerfDeviceProfileExperiment.commandLinePath,
+            confidence: "DIRECT"
+        )
+        telemetry.recordEvent("TFT_DEV_HIGHPERF_PROFILE_PROVISIONED", payload: [
+            "path": TFTMACHighPerfDeviceProfileExperiment.commandLinePath,
+            "sha256": commandLineSHA256,
+            "project_selector": TFTMACHighPerfDeviceProfileExperiment.projectSelector,
+            "fragments": TFTMACHighPerfDeviceProfileExperiment.fragments,
+            "stale_device_profile_overrides_removed": true,
+            "mode": paths.mode.rawValue
+        ])
     }
 
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {

@@ -236,7 +236,7 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "55" ]] || fail "native test inventory drifted: expected 55, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "56" ]] || fail "native test inventory drifted: expected 56, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
@@ -359,4 +359,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 55 native tests; diagnostic mode source authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; 56 native tests; diagnostic mode source authority PASS)"

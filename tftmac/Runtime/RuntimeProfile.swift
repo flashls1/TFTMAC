@@ -1,6 +1,27 @@
 import CryptoKit
 import Foundation
 
+struct TFTMACHighPerfDeviceProfileExperiment: Sendable {
+    static let fragments = [
+        "Android_HighPerf_Fragment",
+        "Android_HighPerf_Frontend_Fragment",
+        "Android_6GB_Fragment",
+        "Android_GL_Base_Fragment",
+        "Android_GL_Others_Fragment"
+    ]
+    static let projectSelector = "../../../TFT/TFT.uproject"
+    static let commandLineDirectory = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT"
+    static let commandLinePath = "\(commandLineDirectory)/UECommandLine.txt"
+    static let staleDeviceProfilePaths = [
+        "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini",
+        "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Config/Android/DeviceProfiles.ini"
+    ]
+
+    static var commandLine: String {
+        "\(projectSelector) -DPFragments=\(fragments.joined(separator: ","))"
+    }
+}
+
 /// A named, reversible experiment selection. The runtime treats `control` as
 /// the normal launch contract; a non-control value must be explicitly applied
 /// and recorded by the launch transaction.

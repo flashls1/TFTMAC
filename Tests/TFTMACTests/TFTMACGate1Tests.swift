@@ -125,6 +125,27 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(candidate.identifier, "tftmac_native_6144m_8c_30hz_flush400")
     }
 
+    func testDEVHighPerfDeviceProfileCommandLinePreservesSixGBClass() {
+        XCTAssertEqual(
+            TFTMACHighPerfDeviceProfileExperiment.fragments,
+            [
+                "Android_HighPerf_Fragment",
+                "Android_HighPerf_Frontend_Fragment",
+                "Android_6GB_Fragment",
+                "Android_GL_Base_Fragment",
+                "Android_GL_Others_Fragment"
+            ]
+        )
+        XCTAssertEqual(TFTMACHighPerfDeviceProfileExperiment.projectSelector, "../../../TFT/TFT.uproject")
+        XCTAssertTrue(TFTMACHighPerfDeviceProfileExperiment.commandLine.contains("-DPFragments="))
+        XCTAssertTrue(TFTMACHighPerfDeviceProfileExperiment.commandLine.contains("Android_6GB_Fragment"))
+        XCTAssertFalse(TFTMACHighPerfDeviceProfileExperiment.commandLine.contains("LowPerf"))
+        XCTAssertEqual(
+            TFTMACHighPerfDeviceProfileExperiment.commandLinePath,
+            "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/UECommandLine.txt"
+        )
+    }
+
     func testRetiredInteractiveExperimentsAreNotUserSelectable() {
         XCTAssertEqual(RuntimeExperimentPreset.selectableCases.map(\.rawValue), ["control"])
     }
