@@ -44,6 +44,8 @@ private final class HostPresentationTelemetry: @unchecked Sendable {
         var encoderMisses = 0
         var commandBufferMisses = 0
         var commandErrors = 0
+        var actualPresentations = [NativeDrawablePresentation]()
+        var actualPresentationLoss = 0
         var completionLatenciesMS = [Double]()
         var gpuTimesMS = [Double]()
     }
@@ -53,8 +55,10 @@ private final class HostPresentationTelemetry: @unchecked Sendable {
     // A 60 Hz presenter needs only about 60 entries/window; this cap protects telemetry itself
     // from becoming a source of memory pressure if the display rate changes.
     private let maximumSamples = 256
+    let recordsActualPresentations = Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev"
+    private var nextPresentationID: UInt64 = 0
 
-    func recordSubmitted(uniqueSourceUpload: Bool) {
+    func recordSubmitted(uniqueSourceUpload: Bool) -> UInt64 {
         lock.lock()
         window.submittedFrames += 1
         if uniqueSourceUpload {
@@ -62,6 +66,21 @@ private final class HostPresentationTelemetry: @unchecked Sendable {
         } else {
             window.repeatedSourcePresents += 1
         }
+        nextPresentationID += 1
+        let id = nextPresentationID
+        lock.unlock()
+        return id
+    }
+
+    func recordActualPresentation(id: UInt64, sourceSequence: UInt32?, drawable: MTLDrawable) {
+        let seconds = drawable.presentedTime
+        let timestamp = seconds.isFinite && seconds > 0 && seconds < Double(Int64.max) / 1_000_000_000
+            ? UInt64((seconds * 1_000_000_000).rounded()) : 0
+        let sample = NativeDrawablePresentation(presentationID: id, sourceSequence: sourceSequence,
+            callbackMonotonicNS: DispatchTime.now().uptimeNanoseconds, presentedHostTimeNS: timestamp)
+        lock.lock()
+        if window.actualPresentations.count < maximumSamples { window.actualPresentations.append(sample) }
+        else { window.actualPresentationLoss += 1 }
         lock.unlock()
     }
 
@@ -132,7 +151,11 @@ private final class HostPresentationTelemetry: @unchecked Sendable {
             maximumCompletionLatencyMS: snapshot.completionLatenciesMS.max(),
             meanGPUTimeMS: Self.mean(snapshot.gpuTimesMS),
             p95GPUTimeMS: Self.percentile(snapshot.gpuTimesMS, percentile: 0.95),
-            maximumGPUTimeMS: snapshot.gpuTimesMS.max()
+            maximumGPUTimeMS: snapshot.gpuTimesMS.max(),
+            recordsActualPresentations: recordsActualPresentations,
+            lastSubmittedPresentationID: nextPresentationID,
+            actualPresentations: snapshot.actualPresentations,
+            actualPresentationLoss: snapshot.actualPresentationLoss
         )
     }
 
@@ -151,9 +174,9 @@ private final class HostPresentationTelemetry: @unchecked Sendable {
 
 @MainActor
 final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
-    var onTouchInput: ((TouchInput) -> Void)?
-    var onMouseInput: ((Int32, Int32, Int32) -> Void)?
-    var onKeyboardInput: ((String?, String?) -> Void)?
+    var onTouchInput: ((TouchInput, UInt64?) -> Void)?
+    var onMouseInput: ((Int32, Int32, Int32, UInt64?) -> Void)?
+    var onKeyboardInput: ((String?, String?, UInt64?) -> Void)?
     var onPresentationSample: ((PresentationSample) -> Void)?
     var onHostPresentationWindow: ((HostPresentationWindow) -> Void)?
     var onSourceFramePresented: ((UInt32) -> Void)?
@@ -275,7 +298,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         encoder.endEncoding()
 
         let submittedMonotonicNS = DispatchTime.now().uptimeNanoseconds
-        hostPresentationTelemetry.recordSubmitted(uniqueSourceUpload: uploadedNewSource)
+        let presentationID = hostPresentationTelemetry.recordSubmitted(uniqueSourceUpload: uploadedNewSource)
         gpuState.beginPresentation(slot: slot)
         let state = gpuState
         let telemetry = hostPresentationTelemetry
@@ -288,6 +311,11 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
                   let presentedSequence else { return }
             Task { @MainActor [weak self] in
                 self?.recordSuccessfullyPresentedSourceSequence(presentedSequence)
+            }
+        }
+        if telemetry.recordsActualPresentations {
+            drawable.addPresentedHandler { presented in
+                telemetry.recordActualPresentation(id: presentationID, sourceSequence: presentedSequence, drawable: presented)
             }
         }
         buffer.present(drawable)
@@ -311,9 +339,9 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             return
         }
         if let key = Self.specialKey(for: event) {
-            onKeyboardInput?(nil, key)
+            onKeyboardInput?(nil, key, Self.eventTimestampNS(event))
         } else if let text = event.characters, !text.isEmpty {
-            onKeyboardInput?(text, nil)
+            onKeyboardInput?(text, nil, Self.eventTimestampNS(event))
         }
     }
 
@@ -328,7 +356,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
 
     @objc func paste(_ sender: Any?) {
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
-        onKeyboardInput?(String(text.prefix(1024)), nil)
+        onKeyboardInput?(String(text.prefix(1024)), nil, nil)
     }
 
     @discardableResult
@@ -388,12 +416,20 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             ? primaryTouchSequence.contact(at: point)
             : primaryTouchSequence.release(at: point)
         guard let input else { return }
-        onTouchInput?(input)
+        onTouchInput?(input, Self.eventTimestampNS(event))
     }
 
     private func sendMouse(_ event: NSEvent, buttons: Int32) {
         guard let point = androidPoint(for: event) else { return }
-        onMouseInput?(point.x, point.y, buttons)
+        onMouseInput?(point.x, point.y, buttons, Self.eventTimestampNS(event))
+    }
+
+    private static func eventTimestampNS(_ event: NSEvent) -> UInt64? {
+        // NSEvent supplies the OS event timestamp in seconds since startup.
+        // Keep it distinct from arrival in this view and the emulator RPC.
+        let nanoseconds = event.timestamp * 1_000_000_000
+        guard nanoseconds.isFinite, nanoseconds > 0, nanoseconds < Double(UInt64.max) else { return nil }
+        return UInt64(nanoseconds)
     }
 
     private func updatePresentationSampleIfNeeded() {

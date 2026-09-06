@@ -1,5 +1,7 @@
 # TFTMAC Developer Record
 
+> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+
 **Development baseline:** untouched TFTMAC 2.3.0 build 8 Control plus a playable isolated Emulator 37.1.11/API 36 stock-shadow DEV runtime; three consecutive DEV native-frame launches passed
 **Control:** High / 60 FPS / Riot Performance Mode OFF  
 **Active campaign:** deterministic owned Vulkan probe screening; `combat_latency_a`, Home Run A, and Performance Mode Beta are retired

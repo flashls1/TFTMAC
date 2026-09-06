@@ -1,5 +1,7 @@
 # TFTMAC Continuation Handoff — 2026-09-04
 
+> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+
 Copy this entire document into the next agent. Treat it as the authoritative pointer to current state, then verify the cheap, drift-prone facts locally before changing anything.
 
 ---

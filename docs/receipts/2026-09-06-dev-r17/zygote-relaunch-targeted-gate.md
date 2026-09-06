@@ -1,0 +1,9 @@
+# Proven launch dependency — 2026-09-06 07:45 UTC
+
+FACT: r9 capture 2026-09-06T07-43-19.795Z-4636f85a-77d5-49be-abd7-5d4934415f31 recovered the interrupted AVD, then failed with `nsenter: not integer: 503 3344`. Current profile-transaction.sh passes the complete pidof result as one quoted PID. This blocks the approved three relaunch cycles. Driver/profile/AVD rollback passed. No gameplay was entered.
+
+Smallest scope addition: verify the fixed HighPerf file independently in every returned zygote64 mount namespace, validate each PID token, retain fail-closed behavior for missing/disappearing processes or any mismatch. Update only this script and its existing pinned hash. Do not alter settings, mounts, retries or other process management.
+
+ZoeMC targeted MODE A: BU split process-name lookup from individual namespace checks and aggregate verification. Domain none -> safe block; one matching -> pass; multiple all matching -> pass; any mismatch/invalid token/process vanished -> safe block. Oracle is existing required profile hash in each namespace, with all checks required before MOUNT_VERIFIED. Killer hand is two numeric PIDs (503,3344), which the prior single-argument model could not represent. Holdout reverses ordering and places failure after a first success; aggregate may not pass. Removing iteration or permitting any-one-success violates this oracle. No unresolved modeled outcome. PLAN_MODEL_PASS (reasoned bounded transition corpus; runtime proof remains pending).
+
+ZenGate targeted: H1–H6 PASS; same approved launch outcome, exact source/failure, isolated reversible two-hunk repair, actual shell multi-PID test then immediate signed launch. Weighted quality90, remaining liveness/Android runtime risk4, score86 PASS. Retain the parent gate execution lock in full. This gate expands only the proven launch blocker above.

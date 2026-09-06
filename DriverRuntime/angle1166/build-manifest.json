@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "angle_revision": "1166eec4c0b125e9e945196acfc549983ef72b18",
+  "depot_tools_revision": "81577f19a8497ba7e41afac322e8f03553a863ec",
+  "container_image_index": "sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc",
+  "container_amd64_manifest": "sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d",
+  "build_environment": {
+    "lima_version": "2.2.0",
+    "vm_driver": "vz",
+    "rosetta": true,
+    "cpus": 4,
+    "memory_gib": 6,
+    "disk_gib": 80,
+    "guest": "Ubuntu 24.04 arm64",
+    "compiler_container": "Ubuntu 22.04 amd64"
+  },
+  "feature": "tftmacRetainTextureBufferViews",
+  "feature_default_enabled": false,
+  "driver_patch_sha256": "e253ab1b0719c138bbd9d40396da00de5ba11fa3bc51fd4f4a71d4817db3ffdd",
+  "acceptance": {
+    "continuous_60_fps_proven": false,
+    "conformance": {
+      "result": "64 passed, 2 skipped, 0 failed across default and guarded configurations",
+      "receipt": "view-conformance-r2.json",
+      "output_sha256": "b742646dd23a0f5754c72a44d2fefc53ada1d4bfcd814935c1a1223041d1e811"
+    },
+    "replay": {
+      "workload": "three-frame TFT sign-in trace",
+      "reset_pixel_match": true,
+      "guarded_pixel_match": true,
+      "optimization_branch_exercised": false,
+      "original_capture_pixel_oracle": false,
+      "performance_evidence": false
+    },
+    "dev_driver_startup_transaction": "IMPLEMENTED_PENDING_LIVE_VALIDATION"
+  },
+  "exchange_directory": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange",
+  "acceptance_scope": "Historical original reuse/capture builds; does not apply conformance or replay results to the later instrumented candidate.",
+  "latest_candidate": {
+    "variant": "observed-reuse-cache-r14",
+    "complete_patch": "angle-buffer-view-diagnostics-complete.patch",
+    "complete_patch_sha256": "26bcf8b42404b4b78f4e4742225ee1b10f50687433e34ae624dabb2e892b174e",
+    "driver_transaction": "ACTUAL_TFT_LOADED_HASHES_VERIFIED_AND_ROLLBACK_PASSED",
+    "conformance_on_this_variant": "NOT_RERUN",
+    "gameplay_optimization_exercised": false,
+    "continuous_60_fps_proven": false,
+    "receipt": "../../docs/receipts/2026-09-06-dev-r17/sha256-receipts.json"
+  }
+}

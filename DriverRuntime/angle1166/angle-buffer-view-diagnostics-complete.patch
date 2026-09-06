@@ -1,0 +1,658 @@
+diff --git a/include/platform/autogen/FeaturesVk_autogen.h b/include/platform/autogen/FeaturesVk_autogen.h
+index af05414..0fcf851 100644
+--- a/include/platform/autogen/FeaturesVk_autogen.h
++++ b/include/platform/autogen/FeaturesVk_autogen.h
+@@ -1454,6 +1454,12 @@ struct FeaturesVk : FeatureSetBase
+         &members,
+     };
+ 
++    FeatureInfo tftmacRetainTextureBufferViews = {
++        "tftmacRetainTextureBufferViews",
++        FeatureCategory::VulkanFeatures,
++        &members,
++    };
++
+ };
+ 
+ inline FeaturesVk::FeaturesVk()  = default;
+diff --git a/include/platform/vk_features.json b/include/platform/vk_features.json
+index 60ce7bd..1826354 100644
+--- a/include/platform/vk_features.json
++++ b/include/platform/vk_features.json
+@@ -1908,6 +1908,13 @@
+                 "VkDevice supports VK_KHR_swapchain_mutable_format extension"
+             ],
+             "issue": "http://anglebug.com/386688871"
++        },
++        {
++            "name": "tftmac_retain_texture_buffer_views",
++            "category": "Features",
++            "description": [
++                "Retain texture buffer views across content updates when the allocation generation and complete view binding are unchanged. Experimental and disabled by default."
++            ]
+         }
+     ]
+ }
+diff --git a/src/common/angleutils.h b/src/common/angleutils.h
+index f3853a9..aa1efc7 100644
+--- a/src/common/angleutils.h
++++ b/src/common/angleutils.h
+@@ -156,6 +156,9 @@ struct PerfMonitorTriplet
+     FN(fullImageClears)                            \
+     FN(shaderResourcesDescriptorSetCacheMisses)    \
+     FN(shaderResourcesDescriptorSetCacheTotalSize) \
++    FN(tftmacTextureBufferRetainedBindings)        \
++    FN(tftmacTextureBufferRetainedSyncs)           \
++    FN(tftmacTextureBufferInvalidatedSyncs)        \
+     FN(buffersGhosted)                             \
+     FN(vertexArraySyncStateCalls)                  \
+     FN(allocateNewBufferBlockCalls)                \
+diff --git a/src/libANGLE/Context.cpp b/src/libANGLE/Context.cpp
+index e78ad72..123fb22 100644
+--- a/src/libANGLE/Context.cpp
++++ b/src/libANGLE/Context.cpp
+@@ -3502,7 +3502,10 @@ void Context::initVersionStrings()
+     {
+         versionString << "OpenGL ES ";
+         versionString << clientVersion.major << "." << clientVersion.minor << ".0 (ANGLE "
+-                      << angle::GetANGLEVersionString() << ")";
++                      << angle::GetANGLEVersionString()
++                      // TFT caches program binaries by GL version. Expose the actual
++                      // serialization ABI so same-revision driver variants stay isolated.
++                      << " TFTMAC program ABI: " << angle::GetANGLEShaderProgramVersion() << ")";
+     }
+ 
+     mVersionString = MakeStaticString(versionString.str());
+diff --git a/src/libANGLE/renderer/vulkan/ContextVk.cpp b/src/libANGLE/renderer/vulkan/ContextVk.cpp
+index eb5469b..6b29cb6 100644
+--- a/src/libANGLE/renderer/vulkan/ContextVk.cpp
++++ b/src/libANGLE/renderer/vulkan/ContextVk.cpp
+@@ -9217,6 +9217,10 @@ ANGLE_INLINE void ContextVk::generateRenderPassCommandsQueueSerial(QueueSerial *
+ 
+ void ContextVk::resetPerFramePerfCounters()
+ {
++    getTFTMACViewDiagnostics().flush(mPerfCounters.tftmacTextureBufferRetainedBindings,
++        mPerfCounters.tftmacTextureBufferRetainedSyncs,
++        mPerfCounters.tftmacTextureBufferInvalidatedSyncs,
++        getFeatures().tftmacRetainTextureBufferViews.enabled);
+     mPerfCounters.renderPasses                           = 0;
+     mPerfCounters.writeDescriptorSets                    = 0;
+     mPerfCounters.flushedOutsideRenderPassCommandBuffers = 0;
+diff --git a/src/libANGLE/renderer/vulkan/TextureVk.cpp b/src/libANGLE/renderer/vulkan/TextureVk.cpp
+index ae982d0..ec9f8c6 100644
+--- a/src/libANGLE/renderer/vulkan/TextureVk.cpp
++++ b/src/libANGLE/renderer/vulkan/TextureVk.cpp
+@@ -2219,6 +2219,20 @@ angle::Result TextureVk::setImageExternal(const gl::Context *context,
+ 
+ angle::Result TextureVk::setBuffer(const gl::Context *context, GLenum internalFormat)
+ {
++    ContextVk *contextVk = vk::GetImpl(context);
++    const auto &binding = mState.getBuffer();
++    // The frontend updates the image format after calling setBuffer, so compare
++    // the incoming format explicitly here as well as the finalized state in syncState.
++    if (mImage == nullptr && binding.get() != nullptr &&
++        internalFormat == mTextureBufferViewFormat &&
++        canRetainBufferViews(contextVk, binding.getOffset(), gl::GetBoundBufferAvailableSize(binding)))
++    {
++        contextVk->getPerfCounters().tftmacTextureBufferRetainedBindings++;
++        // Rebinding the same complete view does not change its descriptor or lifetime.
++        resetSampler();
++        return angle::Result::Continue;
++    }
++
+     // No longer an image
+     releaseAndDeleteImageAndViews(vk::GetImpl(context));
+     resetSampler();
+@@ -2227,6 +2241,31 @@ angle::Result TextureVk::setBuffer(const gl::Context *context, GLenum internalFo
+     return angle::Result::Continue;
+ }
+ 
++bool TextureVk::canRetainBufferViews(ContextVk *contextVk, VkDeviceSize offset,
++                                    VkDeviceSize size) const
++{
++    vk::Renderer *renderer = contextVk->getRenderer();
++    if (!renderer->getFeatures().tftmacRetainTextureBufferViews.enabled ||
++        !mTextureBufferViewKeyValid || !mBufferViews.isInitialized() ||
++        mState.getBuffer().get() == nullptr ||
++        NeedsRGBAEmulation(renderer, getBaseLevelFormat(renderer).getIntendedFormatID()))
++    {
++        return false;
++    }
++    BufferVk *bufferVk = vk::GetImpl(mState.getBuffer().get());
++    if (!bufferVk->isBufferValid())
++    {
++        return false;
++    }
++    const vk::BufferHelper &buffer = bufferVk->getBuffer();
++    return mTextureBufferViewGeneration == buffer.getBufferSerial() &&
++           mTextureBufferViewDevice == contextVk->getDevice() &&
++           mTextureBufferViewBuffer == buffer.getBuffer().getHandle() &&
++           mTextureBufferViewAllocationOffset == buffer.getOffset() &&
++           mTextureBufferViewBindingOffset == offset && mTextureBufferViewSize == size &&
++           mTextureBufferViewFormat == mState.getBaseLevelDesc().format.info->sizedInternalFormat;
++}
++
+ gl::ImageIndex TextureVk::getNativeImageIndex(const gl::ImageIndex &inputImageIndex) const
+ {
+     if (mEGLImageNativeType == gl::TextureType::InvalidEnum)
+@@ -3582,7 +3621,9 @@ angle::Result TextureVk::syncState(const gl::Context *context,
+         VkDeviceSize offset = bufferBinding.getOffset();
+         VkDeviceSize size   = gl::GetBoundBufferAvailableSize(bufferBinding);
+ 
+-        if (NeedsRGBAEmulation(renderer, getBaseLevelFormat(renderer).getIntendedFormatID()))
++        const bool requiresRGBAConversion =
++            NeedsRGBAEmulation(renderer, getBaseLevelFormat(renderer).getIntendedFormatID());
++        if (requiresRGBAConversion)
+         {
+             size_t conversionBufferSize;
+             ANGLE_TRY(convertBufferToRGBA(contextVk, conversionBufferSize));
+@@ -3590,9 +3631,56 @@ angle::Result TextureVk::syncState(const gl::Context *context,
+             size   = conversionBufferSize;
+         }
+ 
+-        mBufferViews.release(contextVk);
+-        mBufferViews.init(renderer, offset, size);
+-        mDescriptorSetCacheManager.releaseKeys(renderer);
++        BufferVk *bufferVk = vk::GetImpl(bufferBinding.get());
++        const vk::BufferHelper *buffer = bufferVk->isBufferValid() ? &bufferVk->getBuffer() : nullptr;
++        const GLenum format = mState.getBaseLevelDesc().format.info->sizedInternalFormat;
++        const bool canRetainViews = canRetainBufferViews(contextVk, offset, size);
++        auto &diagnostics = contextVk->getTFTMACViewDiagnostics();
++        if (diagnostics.enabled)
++        {
++            // Count reasons independently of the optimization switch. Reasons may
++            // overlap; unchanged is exclusive. No elapsed durations are added here.
++            if (!mTextureBufferViewKeyValid ||
++                requiresRGBAConversion || buffer == nullptr) { ++diagnostics.other; }
++            else
++            {
++                bool changed = false;
++                if (mTextureBufferViewGeneration != buffer->getBufferSerial() ||
++                    mTextureBufferViewDevice != contextVk->getDevice() ||
++                    mTextureBufferViewBuffer != buffer->getBuffer().getHandle() ||
++                    mTextureBufferViewAllocationOffset != buffer->getOffset())
++                { ++diagnostics.allocation; changed = true; }
++                if (mTextureBufferViewBindingOffset != offset || mTextureBufferViewSize != size)
++                { ++diagnostics.range; changed = true; }
++                if (mTextureBufferViewFormat != format) { ++diagnostics.format; changed = true; }
++                if (!changed) ++diagnostics.unchanged;
++            }
++        }
++
++        if (canRetainViews)
++        {
++            contextVk->getPerfCounters().tftmacTextureBufferRetainedSyncs++;
++        }
++        else
++        {
++            contextVk->getPerfCounters().tftmacTextureBufferInvalidatedSyncs++;
++            mTextureBufferViewKeyValid = false;
++            mBufferViews.release(contextVk);
++            mBufferViews.init(renderer, offset, size);
++            mDescriptorSetCacheManager.releaseKeys(renderer);
++            // RGB conversion can select a separate allocation; retain its original path.
++            if (!requiresRGBAConversion && buffer != nullptr)
++            {
++                mTextureBufferViewKeyValid = true;
++                mTextureBufferViewGeneration = buffer->getBufferSerial();
++                mTextureBufferViewDevice = contextVk->getDevice();
++                mTextureBufferViewBuffer = buffer->getBuffer().getHandle();
++                mTextureBufferViewAllocationOffset = buffer->getOffset();
++                mTextureBufferViewBindingOffset = offset;
++                mTextureBufferViewSize = size;
++                mTextureBufferViewFormat = format;
++            }
++        }
+         return angle::Result::Continue;
+     }
+ 
+diff --git a/src/libANGLE/renderer/vulkan/TextureVk.h b/src/libANGLE/renderer/vulkan/TextureVk.h
+index 9138127..1a7fb8f 100644
+--- a/src/libANGLE/renderer/vulkan/TextureVk.h
++++ b/src/libANGLE/renderer/vulkan/TextureVk.h
+@@ -677,6 +677,18 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
+     // corresponding to the attached buffer range.
+     vk::BufferViewHelper mBufferViews;
+ 
++    // Experimental reuse key. BufferSerial changes on allocation replacement, including
++    // suballocation reuse. The existing BufferViewHelper owns deferred GPU-safe destruction.
++    bool canRetainBufferViews(ContextVk *contextVk, VkDeviceSize offset, VkDeviceSize size) const;
++    bool mTextureBufferViewKeyValid = false;
++    vk::BufferSerial mTextureBufferViewGeneration;
++    VkDevice mTextureBufferViewDevice = VK_NULL_HANDLE;
++    VkBuffer mTextureBufferViewBuffer = VK_NULL_HANDLE;
++    VkDeviceSize mTextureBufferViewAllocationOffset = 0;
++    VkDeviceSize mTextureBufferViewBindingOffset = 0;
++    VkDeviceSize mTextureBufferViewSize = 0;
++    GLenum mTextureBufferViewFormat = GL_NONE;
++
+     // Render targets stored as array of vector of vectors
+     //
+     // - First dimension: index N contains render targets with views from mMultisampledImageViews[N]
+diff --git a/src/libANGLE/renderer/vulkan/vk_helpers.cpp b/src/libANGLE/renderer/vulkan/vk_helpers.cpp
+index 3690e72..325d552 100644
+--- a/src/libANGLE/renderer/vulkan/vk_helpers.cpp
++++ b/src/libANGLE/renderer/vulkan/vk_helpers.cpp
+@@ -13284,6 +13284,8 @@ angle::Result BufferViewHelper::getView(ErrorContext *context,
+     auto iter = mViews.find(viewVkFormat);
+     if (iter != mViews.end())
+     {
++        auto &diagnostics = context->getTFTMACViewDiagnostics();
++        if (diagnostics.enabled) ++diagnostics.hits;
+         *viewOut = &iter->second;
+         return angle::Result::Continue;
+     }
+@@ -13303,7 +13305,11 @@ angle::Result BufferViewHelper::getView(ErrorContext *context,
+     viewCreateInfo.range                  = size;
+ 
+     BufferView view;
+-    ANGLE_VK_TRY(context, view.init(context->getDevice(), viewCreateInfo));
++    auto &diagnostics = context->getTFTMACViewDiagnostics();
++    const uint64_t started = diagnostics.enabled ? vk::TFTMACViewDiagnostics::now() : 0;
++    const VkResult created = view.init(context->getDevice(), viewCreateInfo);
++    if (diagnostics.enabled) diagnostics.created(started, viewCreateInfo);
++    ANGLE_VK_TRY(context, created);
+ 
+     // Cache the view
+     auto insertIter = mViews.insert({viewVkFormat, std::move(view)});
+diff --git a/src/libANGLE/renderer/vulkan/vk_utils.h b/src/libANGLE/renderer/vulkan/vk_utils.h
+index e0cdfa3..55dfa07 100644
+--- a/src/libANGLE/renderer/vulkan/vk_utils.h
++++ b/src/libANGLE/renderer/vulkan/vk_utils.h
+@@ -11,6 +11,14 @@
+ #define LIBANGLE_RENDERER_VULKAN_VK_UTILS_H_
+ 
+ #include <atomic>
++#include <array>
++#include <cstdio>
++#include <ctime>
++#if defined(__ANDROID__)
++#include <android/log.h>
++#include <sys/system_properties.h>
++#include <unistd.h>
++#endif
+ #include <limits>
+ #include <queue>
+ 
+@@ -346,6 +354,77 @@ class [[nodiscard]] ScopedQueueSerialIndex final : angle::NonCopyable
+ class RefCountedEventsGarbageRecycler;
+ // Abstracts error handling. Implemented by ContextVk for GL, DisplayVk for EGL, worker threads,
+ // CLContextVk etc.
++
++// Diagnostic-only bounded guest-clock observations. Context/swap IDs are not
++// submission IDs or Android/native presentation IDs.
++struct TFTMACViewDiagnostics
++{
++    struct Span { uint64_t request, start, duration, offset, range; uint32_t format; };
++    inline static std::atomic<uint64_t> nextContext{1};
++    const uint64_t context = nextContext.fetch_add(1, std::memory_order_relaxed);
++    const bool enabled = [] {
++#if defined(__ANDROID__)
++        char value[PROP_VALUE_MAX] = {};
++        return __system_property_get("debug.angle.tftmac_view_stats", value) > 0 && value[0] == '1';
++#else
++        return false;
++#endif
++    }();
++    uint64_t frame = 0, request = 0, creates = 0, createNS = 0, hits = 0;
++    uint64_t unchanged = 0, allocation = 0, range = 0, format = 0, other = 0;
++    uint64_t previousBindings = 0, previousSyncs = 0, previousInvalidations = 0;
++    uint64_t lost = 0, count = 0;
++    std::array<Span, 512> spans{};
++    static uint64_t now()
++    {
++        timespec t{};
++        if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) return 0;
++        return uint64_t(t.tv_sec) * 1000000000ull + uint64_t(t.tv_nsec);
++    }
++    void created(uint64_t started, const VkBufferViewCreateInfo &info)
++    {
++        const uint64_t ended = now();
++        ++request; ++creates;
++        const uint64_t duration = ended >= started ? ended - started : 0;
++        createNS += duration;
++        if (started == 0 || ended == 0 || count == spans.size()) { ++lost; return; }
++        spans[count++] = {request, started, duration, info.offset, info.range, uint32_t(info.format)};
++    }
++    void flush(uint64_t bindings, uint64_t syncs, uint64_t invalidations, bool reuse)
++    {
++        if (!enabled) return;
++        ++frame;
++#if defined(__ANDROID__)
++        __android_log_print(ANDROID_LOG_INFO, "TFTMAC_VIEW", "F 1 %llu %llu %llu %u %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
++            (unsigned long long)context, (unsigned long long)frame, (unsigned long long)now(), unsigned(reuse),
++            (unsigned long long)(bindings - previousBindings), (unsigned long long)(syncs - previousSyncs),
++            (unsigned long long)(invalidations - previousInvalidations), (unsigned long long)creates,
++            (unsigned long long)createNS, (unsigned long long)hits, (unsigned long long)unchanged,
++            (unsigned long long)allocation, (unsigned long long)range, (unsigned long long)format,
++            (unsigned long long)other, (unsigned long long)count, (unsigned long long)lost);
++        // Each line stays below Android's log payload bound. Explicit context,
++        // frame, chunk and total record counts detect truncation or logcat loss.
++        char text[3500]; size_t used = 0; unsigned chunk = 0;
++        auto begin = [&] { used = size_t(snprintf(text, sizeof(text), "S 1 %llu %llu %u ",
++            (unsigned long long)context, (unsigned long long)frame, chunk++)); };
++        auto emit = [&] { __android_log_print(ANDROID_LOG_INFO, "TFTMAC_VIEW", "%s", text); };
++        begin();
++        for (uint64_t i = 0; i < count; ++i)
++        {
++            if (sizeof(text) - used < 180) { emit(); begin(); }
++            const auto &span = spans[i];
++            used += size_t(snprintf(text + used, sizeof(text) - used, "%llu,%llu,%llu,%u,%llu,%llu;",
++                (unsigned long long)span.request, (unsigned long long)span.start,
++                (unsigned long long)span.duration, span.format,
++                (unsigned long long)span.offset, (unsigned long long)span.range));
++        }
++        if (count) emit();
++#endif
++        previousBindings = bindings; previousSyncs = syncs; previousInvalidations = invalidations;
++        creates = createNS = hits = unchanged = allocation = range = format = other = lost = count = 0;
++    }
++};
++
+ class ErrorContext : angle::NonCopyable
+ {
+   public:
+@@ -362,12 +441,14 @@ class ErrorContext : angle::NonCopyable
+ 
+     const angle::VulkanPerfCounters &getPerfCounters() const { return mPerfCounters; }
+     angle::VulkanPerfCounters &getPerfCounters() { return mPerfCounters; }
++    TFTMACViewDiagnostics &getTFTMACViewDiagnostics() { return mTFTMACViewDiagnostics; }
+     const DeviceQueueIndex &getDeviceQueueIndex() const { return mDeviceQueueIndex; }
+ 
+   protected:
+     Renderer *const mRenderer;
+     DeviceQueueIndex mDeviceQueueIndex;
+     angle::VulkanPerfCounters mPerfCounters;
++    TFTMACViewDiagnostics mTFTMACViewDiagnostics;
+ };
+ 
+ // Abstract global operations that are handled differently between EGL and OpenCL.
+diff --git a/src/tests/gl_tests/TextureTest.cpp b/src/tests/gl_tests/TextureTest.cpp
+index 4607a6e..e519516 100644
+--- a/src/tests/gl_tests/TextureTest.cpp
++++ b/src/tests/gl_tests/TextureTest.cpp
+@@ -14429,6 +14429,240 @@ void main()
+     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+ }
+ 
++// Exercise content changes separately from binding/storage changes. The same tests run
++// with the experimental Vulkan view-reuse feature both disabled and enabled.
++TEST_P(TextureBufferTestES31, TFTMACContentStorageAndRangeTransitions32Bit)
++{
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_buffer"));
++
++    auto runCase = [&](GLenum format, const char *samplerType, auto scalar, size_t components) {
++        using Scalar = decltype(scalar);
++        const size_t texelBytes = sizeof(Scalar) * components;
++        GLint alignment = 0;
++        glGetIntegerv(GL_TEXTURE_BUFFER_OFFSET_ALIGNMENT, &alignment);
++        ASSERT_GT(alignment, 0);
++        const size_t alignmentBytes = static_cast<size_t>(alignment);
++        const size_t stride = ((texelBytes * 2 + alignmentBytes - 1) / alignmentBytes) * alignmentBytes;
++        std::vector<uint8_t> storage(stride * 2, 0);
++        const std::array<Scalar, 4> red = {1, 0, 0, 1};
++        const std::array<Scalar, 4> green = {0, 1, 0, 1};
++        const std::array<Scalar, 4> blue = {0, 0, 1, 1};
++        memcpy(storage.data(), red.data(), texelBytes);
++        memcpy(storage.data() + stride, blue.data(), texelBytes);
++
++        std::stringstream fragment;
++        fragment << "#version 310 es\n#extension GL_EXT_texture_buffer : require\n"
++                 << "precision highp float;\nuniform highp " << samplerType
++                 << " s;\nuniform int expectedSize;\nout vec4 colorOut;\n"
++                 << "void main() { colorOut = vec4(texelFetch(s, 0)); "
++                 << "if (textureSize(s) != expectedSize) colorOut = vec4(1,0,1,1); }\n";
++        ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), fragment.str().c_str());
++        glUseProgram(program);
++        glUniform1i(glGetUniformLocation(program, "expectedSize"), 1);
++        GLBuffer buffer;
++        GLTexture texture;
++        glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++        glBufferData(GL_TEXTURE_BUFFER, storage.size(), storage.data(), GL_DYNAMIC_DRAW);
++        glBindTexture(GL_TEXTURE_BUFFER, texture);
++        glTexBufferRangeEXT(GL_TEXTURE_BUFFER, format, buffer, 0, texelBytes);
++
++        auto drawAndCheck = [&](const GLColor &expected) {
++            drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++            EXPECT_GL_NO_ERROR();
++            EXPECT_PIXEL_COLOR_EQ(0, 0, expected);
++        };
++        drawAndCheck(GLColor::red);
++        // No glTexBuffer call: update the content of the existing binding.
++        glBufferSubData(GL_TEXTURE_BUFFER, 0, texelBytes, green.data());
++        drawAndCheck(components == 1 ? GLColor::black : GLColor::green);
++
++        // Keep a draw in flight while replacing storage behind the same GL buffer name.
++        drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++        glBufferData(GL_TEXTURE_BUFFER, storage.size(), nullptr, GL_DYNAMIC_DRAW);
++        glBufferSubData(GL_TEXTURE_BUFFER, 0, storage.size(), storage.data());
++        drawAndCheck(GLColor::red);
++
++        glTexBufferRangeEXT(GL_TEXTURE_BUFFER, format, buffer, stride, texelBytes);
++        drawAndCheck(components == 4 ? GLColor::blue : GLColor::black);
++        glTexBufferRangeEXT(GL_TEXTURE_BUFFER, format, buffer, 0, texelBytes * 2);
++        glUniform1i(glGetUniformLocation(program, "expectedSize"), 2);
++        drawAndCheck(GLColor::red);
++    };
++
++    runCase(GL_R32F, "samplerBuffer", GLfloat(0), 1);
++    runCase(GL_RG32F, "samplerBuffer", GLfloat(0), 2);
++    runCase(GL_RGBA32F, "samplerBuffer", GLfloat(0), 4);
++    runCase(GL_R32I, "isamplerBuffer", GLint(0), 1);
++    runCase(GL_RG32I, "isamplerBuffer", GLint(0), 2);
++    runCase(GL_RGBA32I, "isamplerBuffer", GLint(0), 4);
++    runCase(GL_R32UI, "usamplerBuffer", GLuint(0), 1);
++    runCase(GL_RG32UI, "usamplerBuffer", GLuint(0), 2);
++    runCase(GL_RGBA32UI, "usamplerBuffer", GLuint(0), 4);
++}
++
++TEST_P(TextureBufferTestES31, TFTMACDestroyTextureAndBufferWhileDrawIsInFlight)
++{
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_buffer"));
++    constexpr char fragment[] = R"(#version 310 es
++#extension GL_EXT_texture_buffer : require
++precision highp float;
++uniform highp samplerBuffer s;
++out vec4 colorOut;
++void main() { colorOut = texelFetch(s, 0); }
++)";
++    ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), fragment);
++    {
++        GLTexture texture;
++        GLBuffer buffer;
++        const std::array<GLfloat, 4> red = {1, 0, 0, 1};
++        glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++        glBufferData(GL_TEXTURE_BUFFER, sizeof(red), red.data(), GL_DYNAMIC_DRAW);
++        glBindTexture(GL_TEXTURE_BUFFER, texture);
++        glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++        drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++        EXPECT_GL_NO_ERROR();
++    }
++    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
++    EXPECT_GL_NO_ERROR();
++}
++TEST_P(TextureBufferTestES31, TFTMACFormatChangesOnSameAllocation)
++{
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_buffer"));
++    const char *formats[] = {"usamplerBuffer", "isamplerBuffer", "samplerBuffer"};
++    const GLenum internalFormats[] = {GL_RGBA32UI, GL_RGBA32I, GL_RGBA32F};
++    const GLuint one = 0x3f800000u;
++    const std::array<GLuint, 4> data = {one, 0, 0, one};
++    GLBuffer buffer;
++    GLTexture texture;
++    glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++    glBufferData(GL_TEXTURE_BUFFER, sizeof(data), data.data(), GL_STATIC_DRAW);
++    glBindTexture(GL_TEXTURE_BUFFER, texture);
++    for (size_t iteration = 0; iteration < 6; ++iteration)
++    {
++        const size_t index = iteration % 3;
++        std::stringstream fragment;
++        fragment << "#version 310 es\n#extension GL_EXT_texture_buffer : require\n"
++                 << "precision highp float;\nuniform highp " << formats[index]
++                 << " s;\nout vec4 colorOut;\nvoid main() { vec4 v = vec4(texelFetch(s, 0));"
++                 << "colorOut = (v.r == " << (index == 2 ? "1.0" : "1065353216.0")
++                 << " && v.g == 0.0 && textureSize(s) == 1) ? vec4(1,0,0,1) : vec4(1,0,1,1); }";
++        ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), fragment.str().c_str());
++        glTexBufferEXT(GL_TEXTURE_BUFFER, internalFormats[index], buffer);
++        drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
++        EXPECT_GL_NO_ERROR();
++    }
++}
++
++// Identical rebinding must exercise the retained-view branch; pixel correctness
++// alone would also pass if the experimental path never ran.
++TEST_P(TextureBufferTestES31, TFTMACIdenticalBindingsExerciseReuse)
++{
++    ANGLE_SKIP_TEST_IF(!IsVulkan());
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_buffer"));
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_AMD_performance_monitor"));
++    constexpr char fragment[] = R"(#version 310 es
++#extension GL_EXT_texture_buffer : require
++precision highp float;
++uniform highp samplerBuffer s;
++out vec4 colorOut;
++void main() { colorOut = texelFetch(s, 0); }
++)";
++    ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), fragment);
++    GLTexture texture;
++    GLBuffer buffer;
++    const std::array<GLfloat, 4> red = {1, 0, 0, 1};
++    glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++    glBufferData(GL_TEXTURE_BUFFER, sizeof(red), red.data(), GL_STATIC_DRAW);
++    glBindTexture(GL_TEXTURE_BUFFER, texture);
++    glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++    drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
++    const auto counters = BuildCounterNameToIndexMap();
++    const uint64_t before = GetPerfCounters(counters).tftmacTextureBufferRetainedBindings;
++    for (int index = 0; index < 20; ++index)
++    {
++        glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++        drawQuad(program, essl31_shaders::PositionAttrib(), 0.5);
++    }
++    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
++    EXPECT_GL_NO_ERROR();
++    const bool enabled = getEGLWindow()->isFeatureEnabled(Feature::TftmacRetainTextureBufferViews);
++    EXPECT_EQ(GetPerfCounters(counters).tftmacTextureBufferRetainedBindings - before,
++              enabled ? 20u : 0u);
++}
++
++TEST_P(TextureBufferTestES31, TFTMACSharedContextContentStorageAndLifetime)
++{
++    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_buffer"));
++    constexpr char vertex[] = R"(#version 310 es
++void main() {
++    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
++    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
++})";
++    constexpr char fragment[] = R"(#version 310 es
++#extension GL_EXT_texture_buffer : require
++precision highp float;
++uniform highp samplerBuffer s;
++out vec4 colorOut;
++void main() { colorOut = texelFetch(s, 0); }
++)";
++    ANGLE_GL_PROGRAM(program, vertex, fragment);
++    GLTexture texture;
++    GLBuffer buffer;
++    const std::array<GLfloat, 4> red = {1, 0, 0, 1};
++    const std::array<GLfloat, 4> green = {0, 1, 0, 1};
++    const std::array<GLfloat, 4> blue = {0, 0, 1, 1};
++    glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++    glBufferData(GL_TEXTURE_BUFFER, sizeof(red), red.data(), GL_DYNAMIC_DRAW);
++    glBindTexture(GL_TEXTURE_BUFFER, texture);
++    glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++    glUseProgram(program);
++    glDrawArrays(GL_TRIANGLES, 0, 3);
++    GLsync first = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
++    glFlush();
++
++    EGLWindow *window = getEGLWindow();
++    EGLContext shared = window->createContext(window->getContext(), nullptr);
++    ASSERT_NE(shared, EGL_NO_CONTEXT);
++    struct RestoreContext
++    {
++        EGLWindow *window;
++        EGLContext shared;
++        ~RestoreContext()
++        {
++            window->makeCurrent();
++            eglDestroyContext(window->getDisplay(), shared);
++        }
++    } restore{window, shared};
++    ASSERT_TRUE(window->makeCurrent(shared));
++    glWaitSync(first, 0, GL_TIMEOUT_IGNORED);
++    glDeleteSync(first);
++    glBindBuffer(GL_TEXTURE_BUFFER, buffer);
++    glBufferSubData(GL_TEXTURE_BUFFER, 0, sizeof(green), green.data());
++    glBindTexture(GL_TEXTURE_BUFFER, texture);
++    glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++    glUseProgram(program);
++    glViewport(0, 0, getWindowWidth(), getWindowHeight());
++    glDrawArrays(GL_TRIANGLES, 0, 3);
++    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
++
++    // Replace the shared allocation while its previous storage has a pending draw.
++    glDrawArrays(GL_TRIANGLES, 0, 3);
++    glBufferData(GL_TEXTURE_BUFFER, sizeof(blue), blue.data(), GL_DYNAMIC_DRAW);
++    GLsync second = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
++    glFlush();
++    ASSERT_TRUE(window->makeCurrent());
++    glWaitSync(second, 0, GL_TIMEOUT_IGNORED);
++    glDeleteSync(second);
++    glBindTexture(GL_TEXTURE_BUFFER, texture);
++    glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA32F, buffer);
++    glUseProgram(program);
++    glDrawArrays(GL_TRIANGLES, 0, 3);
++    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
++    EXPECT_GL_NO_ERROR();
++}
++
+ // Test that glTexBufferEXT can be used in a draw call for R8 normalized values.
+ TEST_P(TextureBufferTestES31, RNorm8EXT)
+ {
+@@ -16325,7 +16559,8 @@ ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(ETC1CompressedTextureTest);
+ ANGLE_INSTANTIATE_TEST_ES3(PBOCompressedTexture3DTest);
+ 
+ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TextureBufferTestES31);
+-ANGLE_INSTANTIATE_TEST_ES31(TextureBufferTestES31);
++ANGLE_INSTANTIATE_TEST_ES31_AND(TextureBufferTestES31,
++    ES31_VULKAN().enable(Feature::TftmacRetainTextureBufferViews));
+ 
+ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TextureBufferTestES32);
+ ANGLE_INSTANTIATE_TEST_ES32(TextureBufferTestES32);
+@@ -16345,7 +16580,8 @@ ANGLE_INSTANTIATE_TEST_ES3_AND(Texture2DDepthStencilTestES3,
+                                ES3_VULKAN().enable(Feature::ForceFallbackFormat));
+ 
+ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(RGBTextureBufferTestES31);
+-ANGLE_INSTANTIATE_TEST_ES31(RGBTextureBufferTestES31);
++ANGLE_INSTANTIATE_TEST_ES31_AND(RGBTextureBufferTestES31,
++    ES31_VULKAN().enable(Feature::TftmacRetainTextureBufferViews));
+ 
+ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(MultisampleTexture2DTestES31);
+ ANGLE_INSTANTIATE_TEST_ES31(MultisampleTexture2DTestES31);
+diff --git a/util/autogen/angle_features_autogen.cpp b/util/autogen/angle_features_autogen.cpp
+index 2142fa5..75a45b7 100644
+--- a/util/autogen/angle_features_autogen.cpp
++++ b/util/autogen/angle_features_autogen.cpp
+@@ -420,6 +420,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
+     {Feature::SyncAllVertexArraysToDefault, "syncAllVertexArraysToDefault"},
+     {Feature::SyncDefaultVertexArraysToDefault, "syncDefaultVertexArraysToDefault"},
+     {Feature::SyncMonolithicPipelinesToBlobCache, "syncMonolithicPipelinesToBlobCache"},
++    {Feature::TftmacRetainTextureBufferViews, "tftmacRetainTextureBufferViews"},
+     {Feature::UnbindFBOBeforeSwitchingContext, "unbindFBOBeforeSwitchingContext"},
+     {Feature::UncurrentEglSurfaceUponSurfaceDestroy, "uncurrentEglSurfaceUponSurfaceDestroy"},
+     {Feature::UnfoldShortCircuits, "unfoldShortCircuits"},
+diff --git a/util/autogen/angle_features_autogen.h b/util/autogen/angle_features_autogen.h
+index 8e212e3..63ef0fd 100644
+--- a/util/autogen/angle_features_autogen.h
++++ b/util/autogen/angle_features_autogen.h
+@@ -420,6 +420,7 @@ enum class Feature
+     SyncAllVertexArraysToDefault,
+     SyncDefaultVertexArraysToDefault,
+     SyncMonolithicPipelinesToBlobCache,
++    TftmacRetainTextureBufferViews,
+     UnbindFBOBeforeSwitchingContext,
+     UncurrentEglSurfaceUponSurfaceDestroy,
+     UnfoldShortCircuits,

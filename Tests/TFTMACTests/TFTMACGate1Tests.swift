@@ -3,6 +3,71 @@ import CryptoKit
 import XCTest
 
 final class TFTMACGate1Tests: XCTestCase {
+    func testInterruptedAVDRecoveryRestoresAndAllowsIdempotentNextLaunch() throws {
+        try withInterruptedAVD { config, state, captures, original, _ in
+            let hash = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
+            XCTAssertTrue(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                        captureRoot: captures, expectedOriginalSHA256: hash))
+            XCTAssertEqual(try Data(contentsOf: config), original)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: state.appendingPathComponent("avd-config-transaction.json").path))
+            XCTAssertFalse(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                         captureRoot: captures, expectedOriginalSHA256: hash))
+        }
+    }
+
+    func testInterruptedAVDAlreadyRestoredCanFinishJournalRemoval() throws {
+        try withInterruptedAVD { config, state, captures, original, _ in
+            try original.write(to: config)
+            XCTAssertTrue(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                        captureRoot: captures, expectedOriginalSHA256: nil))
+            XCTAssertEqual(try Data(contentsOf: config), original)
+        }
+    }
+
+    func testInterruptedAVDRejectsWrongRegistryIdentityAndPreservesJournal() throws {
+        try withInterruptedAVD { config, state, captures, _, applied in
+            XCTAssertThrowsError(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                               captureRoot: captures, expectedOriginalSHA256: String(repeating: "0", count: 64)))
+            XCTAssertEqual(try Data(contentsOf: config), applied)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: state.appendingPathComponent("avd-config-transaction.json").path))
+        }
+    }
+
+    func testInterruptedAVDRejectsTamperedBackupAndConflictingConfig() throws {
+        for target in ["backup", "config", "journal"] {
+            try withInterruptedAVD { config, state, captures, _, _ in
+                let journal = state.appendingPathComponent("avd-config-transaction.json")
+                let destination = target == "backup" ? captures.appendingPathComponent("session/avd-config.before.ini") : (target == "config" ? config : journal)
+                try Data("unexpected".utf8).write(to: destination)
+                let before = try Data(contentsOf: config)
+                XCTAssertThrowsError(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                                   captureRoot: captures, expectedOriginalSHA256: nil))
+                XCTAssertEqual(try Data(contentsOf: config), before)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+            }
+        }
+    }
+
+    private func withInterruptedAVD(_ body: (URL, URL, URL, Data, Data) throws -> Void) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let state = root.appendingPathComponent("State")
+        let captures = root.appendingPathComponent("Captures")
+        let session = captures.appendingPathComponent("session")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let config = root.appendingPathComponent("config.ini")
+        let backup = session.appendingPathComponent("avd-config.before.ini")
+        let original = Data("hw.cpu.ncore=4\n".utf8), applied = Data("hw.cpu.ncore=8\n".utf8)
+        try applied.write(to: config)
+        try original.write(to: backup)
+        let hash: (Data) -> String = { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+        let data = try JSONSerialization.data(withJSONObject: ["schema": 1, "config": config.path,
+            "backup": backup.path, "original_sha256": hash(original), "applied_sha256": hash(applied)])
+        try data.write(to: state.appendingPathComponent("avd-config-transaction.json"))
+        try body(config, state, captures, original, applied)
+    }
+
     func testAspectFitCentersSixteenByNineInsideMatchingViewport() {
         let mapper = ViewportMapper(
             sourceSize: CGSize(width: 1920, height: 1080),

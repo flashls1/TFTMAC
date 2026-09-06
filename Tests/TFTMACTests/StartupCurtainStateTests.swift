@@ -1,6 +1,14 @@
 import XCTest
 
 final class StartupCurtainStateTests: XCTestCase {
+    func testCleanupCannotReplaceFirstSpecificFailure() {
+        var reducer = StartupCurtainReducer()
+        reducer.configure(workload: .officialTFT)
+        reducer.fail("The interrupted AVD backup failed its hash check.")
+        reducer.fail("TFTMAC needs attention.")
+        XCTAssertEqual(reducer.state, .failed(message: "The interrupted AVD backup failed its hash check."))
+    }
+
     func testColdBootAndroidFramesDoNotReveal() {
         var reducer = StartupCurtainReducer()
         reducer.configure(workload: .officialTFT)

@@ -33,6 +33,7 @@ non-comparable diagnostic source runtime for the planned causal logger.
 
 ## Current handoff authority
 
+- [`AGENT_HANDOFF_2026-09-06.md`](AGENT_HANDOFF_2026-09-06.md) — current DEV r17 checkpoint, SHA receipts, Keychain blocker and unproven 60 FPS acceptance.
 - [`facts.md`](facts.md) — locked facts, current observations, verified results, and explicit unknowns.
 - [`project.md`](project.md) — complete project history, architecture pivots, current Build 8 logger state, and continuity for a new chat.
 - [`dev.md`](dev.md) — code ownership, experiment ledger, SQL contracts, hypotheses, and the next development gates.

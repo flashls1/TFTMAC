@@ -25,6 +25,13 @@ enum TFTMACApplication {
         appMenu.addItem(withTitle: "About TFTMAC", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         let settings = appMenu.addItem(withTitle: "Performance Lab…", action: #selector(AppCoordinator.showSettings(_:)), keyEquivalent: ",")
         settings.target = coordinator
+        if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev" {
+            let remember = appMenu.addItem(withTitle: "Remember Riot login", action: #selector(AppCoordinator.toggleRememberRiotLogin(_:)), keyEquivalent: "")
+            remember.target = coordinator
+            remember.state = RiotCredentialStore.remember ? .on : .off
+            let saved = appMenu.addItem(withTitle: "Sign in with saved account", action: #selector(AppCoordinator.signInWithSavedAccount(_:)), keyEquivalent: "")
+            saved.target = coordinator
+        }
         appMenu.addItem(.separator())
         let quit = appMenu.addItem(withTitle: "Quit TFTMAC", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = application

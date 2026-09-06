@@ -45,6 +45,7 @@ readonly PROBE_RECEIPT="${ROOT}/.build/vulkan-probe/build-receipt.json"
 
 readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing-identity.command")"
 [[ -n "${SIGNING_IDENTITY_HASH}" ]] || fail "stable local signing identity is unavailable"
+TFTMAC_CLOCK_SIGN_IDENTITY="${SIGNING_IDENTITY_HASH}" /bin/zsh "${ROOT}/scripts/build-native-clock.command"
 
 /usr/bin/xcodebuild \
   -quiet \
@@ -64,6 +65,9 @@ readonly MACOS_DIR="${DIST}/Contents/MacOS"
 readonly RESOURCES_DIR="${DIST}/Contents/Resources"
 readonly INFO="${DIST}/Contents/Info.plist"
 /usr/bin/ditto "${ROOT}/tftmac/Assets/DEVHighPerf" "${RESOURCES_DIR}/DEVHighPerf"
+/usr/bin/ditto "${ROOT}/.build/native-clock/NativeClock" "${RESOURCES_DIR}/NativeClock"
+/bin/mkdir -p "${RESOURCES_DIR}/ANGLEDriver"
+/bin/cp "${ROOT}/DriverRuntime/angle1166/guest-driver-transaction.sh" "${RESOURCES_DIR}/ANGLEDriver/guest-driver-transaction.sh"
 /bin/mv "${MACOS_DIR}/TFTMAC" "${MACOS_DIR}/TFTMACDEVCore"
 /usr/bin/xcrun --sdk macosx clang \
   -Os -arch arm64 -mmacosx-version-min=15.0 \

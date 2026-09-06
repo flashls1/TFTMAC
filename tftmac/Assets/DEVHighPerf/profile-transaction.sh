@@ -93,9 +93,12 @@ fi
 mount -o bind "$stage/DeviceProfiles.ini" "$target"
 [ "$(mount_count)" = 1 ] && [ "$(sha "$target")" = "$expected" ] || fail 'mount verification failed'
 [ "$(metadata "$target")" = '0:0 444' ] && [ "$(context "$target")" = "$ctx" ] || fail 'mounted metadata mismatch'
-zygote=$(pidof zygote64)
-[ -n "$zygote" ] || fail 'zygote missing'
-[ "$(nsenter -t "$zygote" -m -- sha256sum "$target" | cut -d ' ' -f 1)" = "$expected" ] || fail 'zygote mount namespace mismatch'
+zygotes=$(pidof zygote64)
+[ -n "$zygotes" ] || fail 'zygote missing'
+for zygote in $zygotes; do
+  case "$zygote" in *[!0-9]*|'') fail 'invalid zygote PID' ;; esac
+  [ "$(nsenter -t "$zygote" -m -- sha256sum "$target" | cut -d ' ' -f 1)" = "$expected" ] || fail "zygote mount namespace mismatch: $zygote"
+done
 echo MOUNT_VERIFIED > "$stage/state"
 sync
-printf 'MOUNT_VERIFIED sha256=%s owner=0:0 mode=444 context=%s zygote=%s original_present=%s\n' "$expected" "$ctx" "$zygote" "$(cat "$stage/present")"
+printf 'MOUNT_VERIFIED sha256=%s owner=0:0 mode=444 context=%s zygotes=%s original_present=%s\n' "$expected" "$ctx" "$zygotes" "$(cat "$stage/present")"

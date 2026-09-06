@@ -74,14 +74,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
                 }
             )
             runtimeController = runtime
-            controller.emulatorView.onTouchInput = { [weak runtime] input in
-                runtime?.sendTouch(input)
+            controller.emulatorView.onTouchInput = { [weak runtime] input, timestampNS in
+                runtime?.sendTouch(input, nativeEventMonotonicNS: timestampNS)
             }
-            controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons in
-                runtime?.sendMouse(x: x, y: y, buttons: buttons)
+            controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons, timestampNS in
+                runtime?.sendMouse(x: x, y: y, buttons: buttons, nativeEventMonotonicNS: timestampNS)
             }
-            controller.emulatorView.onKeyboardInput = { [weak runtime] text, key in
-                runtime?.sendKeyboard(text: text, key: key)
+            controller.emulatorView.onKeyboardInput = { [weak runtime] text, key, timestampNS in
+                runtime?.sendKeyboard(text: text, key: key, nativeEventMonotonicNS: timestampNS)
             }
             controller.emulatorView.onPresentationSample = { [weak runtime] sample in
                 runtime?.recordPresentation(sample)
@@ -96,7 +96,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             }
             runtime.start()
         } catch {
-            startupCurtain.fail(error.localizedDescription)
+            var message = error.localizedDescription
+            if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev" {
+                let support = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Application Support/TFTMAC/Modes/advanced_diagnostics", isDirectory: true)
+                do { _ = try DiagnosticArtifactFile.persistStartupFailure(message, applicationSupport: support) }
+                catch { message += " (The private failure receipt could not be written: \(error.localizedDescription))" }
+            }
+            startupCurtain.fail(message)
             renderStartupCurtain(on: controller)
         }
 
@@ -115,6 +122,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         settings.showWindow(sender)
         settings.window?.makeKeyAndOrderFront(sender)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func toggleRememberRiotLogin(_ sender: NSMenuItem) {
+        RiotCredentialStore.remember.toggle()
+        sender.state = RiotCredentialStore.remember ? .on : .off
+    }
+
+    @objc func signInWithSavedAccount(_ sender: Any?) {
+        runtimeController?.signInWithSavedAccount()
     }
 
     @objc func markMatchEntry(_ sender: Any?) { recordMarker("MATCH_ENTRY") }

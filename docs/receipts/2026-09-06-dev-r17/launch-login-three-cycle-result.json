@@ -1,0 +1,36 @@
+{
+  "utc": "2026-09-06T08:20:54.130482+00:00",
+  "status": "THREE_COLD_BOOT_SAVED_LOGIN_LOBBY_QUIT_CYCLES_PASS",
+  "cycles": [
+    {
+      "capture": "2026-09-06T08-03-20.595Z-6fce26d9-5acf-4f69-a683-4ad56b8ba1bb",
+      "sign_in_submissions": 1,
+      "lobby_visually_verified": true,
+      "complete_restoration": true,
+      "performance_acceptance": false
+    },
+    {
+      "capture": "2026-09-06T08-07-59.260Z-9b009c68-aab0-4d80-ab96-26740dc0e848",
+      "sign_in_submissions": 1,
+      "lobby_visually_verified": true,
+      "complete_restoration": true,
+      "performance_acceptance": false
+    },
+    {
+      "capture": "2026-09-06T08-14-07.713Z-30464b28-6348-4c51-bd1a-2321015f02cd",
+      "sign_in_submissions": 1,
+      "lobby_visually_verified": true,
+      "complete_restoration": true,
+      "performance_acceptance": false
+    }
+  ],
+  "tests": 108,
+  "credentials_in_source": false,
+  "control_unchanged": true,
+  "remaining": [
+    "actual TFT ANGLE counter export",
+    "recorder admission with actual producer and missing producer fault",
+    "frozen first batch real match",
+    "full overhead lineage conformance and two continuous-60 matches"
+  ]
+}

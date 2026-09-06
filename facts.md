@@ -1,5 +1,7 @@
 # TFTMAC Facts
 
+> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+
 **Authority date:** 2026-09-04 America/Chicago
 **Observed runtime/source evidence through:** 2026-09-04T21:55:24Z
 **Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.

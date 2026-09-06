@@ -1,5 +1,7 @@
 # TFTMAC Project Record
 
+> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+
 **Project:** native macOS TFT client experience using the official Android TFT package  
 **Current development line:** `master` is the merged authority; new product work is developed in isolated Clara managed changes against the DEV / `advanced_diagnostics` product first.
 **Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control executable SHA-256 `d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2` was restored and re-verified on 2026-09-04.

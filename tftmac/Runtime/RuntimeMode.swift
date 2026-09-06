@@ -157,6 +157,15 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
         bundle: Bundle = .main,
         fileManager: FileManager = .default
     ) throws {
+        try validateLaunchPrerequisites(bundle: bundle, fileManager: fileManager)
+        try validateOptionalSHA256(path: definition.avdConfigPath, expected: definition.avdConfigSha256, label: "AVD config")
+    }
+
+    // Mutable AVD contents are checked after owned interrupted-transaction recovery.
+    func validateLaunchPrerequisites(
+        bundle: Bundle = .main,
+        fileManager: FileManager = .default
+    ) throws {
         guard definition.launchState == .enabled else {
             throw TFTMACRuntimeModeError(
                 message: "Runtime mode \(mode.rawValue) is \(definition.launchState.rawValue) and remains fail-closed."
@@ -214,7 +223,6 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
             expected: definition.gfxstreamBackendSha256,
             label: "gfxstream backend"
         )
-        try validateOptionalSHA256(path: definition.avdConfigPath, expected: definition.avdConfigSha256, label: "AVD config")
         try validateOptionalSHA256(path: definition.avdIniPath, expected: definition.avdIniSha256, label: "AVD ini")
     }
 

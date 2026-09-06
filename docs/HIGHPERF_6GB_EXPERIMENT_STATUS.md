@@ -1,5 +1,7 @@
 # TFTMAC HighPerf + 6GB Experiment Status
 
+> Historical experiment record. Use the [2026-09-06 DEV checkpoint](../AGENT_HANDOFF_2026-09-06.md) for current source, effective-profile evidence and unresolved acceptance.
+
 **Last updated:** 2026-09-04 (America/Chicago)
 **Project:** `flashls1/TFTMAC`
 **Active DEV worktree:** `clara/fix-dev-launch-keychain-prompts-riot-log-bddd2d6c`
