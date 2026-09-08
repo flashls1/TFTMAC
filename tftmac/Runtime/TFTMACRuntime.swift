@@ -4529,65 +4529,98 @@ actor TFTMACRuntimeService {
     }
 
     private func signInWithSavedRiotAccount(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async {
-        guard let form = try? readRiotLoginForm(paths: paths) else { return }
         riotLoginFormAttempted = true
         riotLoginManuallyRequested = false
-        let manualGeneration = riotInteraction.snapshot()
+        let result = await runRiotCDPLogin(paths: paths)
+        let submitted = result.output.contains("official Riot login form was submitted")
+        telemetry.recordEvent("RIOT_SAVED_SIGNIN_CDP_FINISHED", payload: [
+            "helper_exit_status": result.status,
+            "form_submitted": submitted,
+            "credential_source": "DEV_Keychain_stdin",
+            "credential_data_recorded": false,
+            "mechanism": "ANDROID_WEBVIEW_CDP"
+        ])
+        if submitted {
+            telemetry.recordEvent("RIOT_SAVED_SIGNIN_SUBMITTED", payload: [
+                "form_verified": true,
+                "credential_source": "DEV_Keychain_stdin",
+                "attempts_this_form": 1,
+                "authentication_success": "NOT_YET_VERIFIED",
+                "credential_data_recorded": false,
+                "mechanism": "ANDROID_WEBVIEW_CDP"
+            ])
+            await status("Saved Riot sign-in submitted through the Riot WebView. Waiting for Riot; manual interaction remains available.", false)
+        } else {
+            telemetry.recordEvent("RIOT_SAVED_SIGNIN_STOPPED", payload: [
+                "reason": "The saved-sign-in WebView helper did not submit the recognized form.",
+                "retry_this_form": false,
+                "helper_exit_status": result.status,
+                "mechanism": "ANDROID_WEBVIEW_CDP"
+            ])
+            await status("Saved Riot sign-in did not submit the recognized WebView form. Manual sign-in remains available.", false)
+        }
+    }
+
+    private func runRiotCDPLogin(paths: TFTMACRuntimePaths) async -> ProcessResult {
+        guard let resources = Bundle.main.resourceURL else {
+            return ProcessResult(status: -1, output: "Riot WebView helper resources are unavailable.")
+        }
+        let helper = resources.appendingPathComponent("RiotLogin/login-tft-webview.mjs")
+        guard FileManager.default.fileExists(atPath: helper.path) else {
+            return ProcessResult(status: -1, output: "Riot WebView helper is not bundled.")
+        }
+        let nodeCandidates = [
+            "/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"
+        ].map(URL.init(fileURLWithPath:))
+        guard let node = nodeCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            return ProcessResult(status: -1, output: "Node.js is not installed at an accepted local path.")
+        }
+        let credentials: RiotCredentials
         do {
-            let credentials = try await Task.detached(priority: .userInitiated) {
+            credentials = try await Task.detached(priority: .userInitiated) {
                 try RiotCredentialStore.load()
             }.value
-            guard form.username.text.isEmpty, form.password.text.isEmpty else { throw RiotLoginError.focusChanged }
-            try await touchRiotField(form.username, manualGeneration: manualGeneration)
-            let usernameFocused = try readRiotLoginForm(paths: paths)
-            guard usernameFocused.username.focused, usernameFocused.username.text.isEmpty else { throw RiotLoginError.focusChanged }
-            try await typeRiotField(credentials.username, manualGeneration: manualGeneration)
-            let usernameFilled = try readRiotLoginForm(paths: paths)
-            guard usernameFilled.username.text == credentials.username else { throw RiotLoginError.focusChanged }
-            try await touchRiotField(usernameFilled.password, manualGeneration: manualGeneration)
-            let passwordFocused = try readRiotLoginForm(paths: paths)
-            guard passwordFocused.password.focused, passwordFocused.password.text.isEmpty,
-                  passwordFocused.username.text == credentials.username else { throw RiotLoginError.focusChanged }
-            try await typeRiotField(credentials.transientPassword(), manualGeneration: manualGeneration)
-            let filled = try readRiotLoginForm(paths: paths)
-            guard filled.password.focused, filled.username.text == credentials.username,
-                  filled.submitEnabled, !filled.password.text.isEmpty else { throw RiotLoginError.focusChanged }
-            try await touchRiotField(filled.submit, manualGeneration: manualGeneration)
-            telemetry.recordEvent("RIOT_SAVED_SIGNIN_SUBMITTED", payload: [
-                "form_verified": true, "both_field_focus_checks_passed": true,
-                "credential_source": "DEV_Keychain", "attempts_this_form": 1,
-                "authentication_success": "NOT_YET_VERIFIED", "credential_data_recorded": false
-            ])
-            await status("Saved Riot sign-in submitted. Waiting for Riot; manual interaction remains available.", false)
         } catch {
-            // Only locally defined, credential-free errors may be persisted.
-            let message = (error as? RiotLoginError)?.localizedDescription ?? "Saved Riot sign-in stopped. Manual sign-in remains available."
-            telemetry.recordEvent("RIOT_SAVED_SIGNIN_STOPPED", payload: ["reason": message, "retry_this_form": false])
-            await status(message, false)
+            return ProcessResult(status: -1, output: "The DEV Keychain item could not be read without UI.")
         }
-    }
+        let payload: Data
+        do {
+            payload = try JSONSerialization.data(withJSONObject: [
+                "username": credentials.username,
+                "password": credentials.transientPassword()
+            ])
+        } catch {
+            return ProcessResult(status: -1, output: "The private Riot credential pipe could not be prepared.")
+        }
 
-    private func touchRiotField(_ field: RiotLoginForm.Field, manualGeneration: UInt64) async throws {
-        guard !stopping, riotInteraction.snapshot() == manualGeneration else { throw RiotLoginError.focusChanged }
-        guard inputChannel.send(.touch(.primary(x: field.x, y: field.y, isContact: true))) else {
-            throw RiotLoginError.inputUnavailable
-        }
-        // Always enqueue the matching release before suspension or cancellation.
-        guard inputChannel.send(.touch(.primary(x: field.x, y: field.y, isContact: false))) else {
-            throw RiotLoginError.inputUnavailable
-        }
-        try await Task.sleep(for: .milliseconds(150))
-    }
-
-    private func typeRiotField(_ text: String, manualGeneration: UInt64) async throws {
-        for character in text {
-            guard !stopping, riotInteraction.snapshot() == manualGeneration else { throw RiotLoginError.focusChanged }
-            guard inputChannel.send(.secureKeyboard(KeyboardInput(text: String(character), key: nil))) else {
-                throw RiotLoginError.inputUnavailable
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                guard let pid = try Self.readProcessID(
+                    paths: paths,
+                    packageName: "com.riotgames.league.teamfighttactics"
+                ) else {
+                    return ProcessResult(status: -1, output: "The Riot process was not running.")
+                }
+                let socket = "localabstract:webview_devtools_remote_\(pid)"
+                let forward = try Self.adb(paths: paths, ["forward", "tcp:0", socket], timeout: 10)
+                let port = forward.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard Int(port) != nil else {
+                    return ProcessResult(status: -1, output: "The Riot WebView DevTools socket was not available.")
+                }
+                defer { _ = try? Self.adb(paths: paths, ["forward", "--remove", "tcp:\(port)"], timeout: 10) }
+                var environment = Self.adbEnvironment(paths: paths)
+                environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+                return try Self.runCommand(
+                    node,
+                    [helper.path, port, "--stdin"],
+                    environment: environment,
+                    input: payload,
+                    timeout: 35
+                )
+            } catch {
+                return ProcessResult(status: -1, output: "The Riot WebView helper could not run.")
             }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        try await Task.sleep(for: .milliseconds(150))
+        }.value
     }
 
     private func maintainRiotLoginReliability(

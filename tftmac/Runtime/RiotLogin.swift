@@ -1,5 +1,4 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 final class RiotLoginInteractionGuard: @unchecked Sendable {
@@ -48,21 +47,14 @@ enum RiotCredentialStore {
     }
 
     static func load() throws -> RiotCredentials {
-        // LAContext does not suppress authorization UI for macOS file keychains.
-        // Scope the legacy process-local setting; never unlock or relax item access.
-        var interactionAllowed: DarwinBoolean = false
-        let readInteraction = SecKeychainGetUserInteractionAllowed(&interactionAllowed)
-        guard readInteraction == errSecSuccess else { throw RiotLoginError.keychain(readInteraction) }
-        let disableInteraction = SecKeychainSetUserInteractionAllowed(false)
-        guard disableInteraction == errSecSuccess else { throw RiotLoginError.keychain(disableInteraction) }
-        defer { SecKeychainSetUserInteractionAllowed(interactionAllowed.boolValue) }
-        let context = LAContext()
-        context.interactionNotAllowed = true
+        // DEV must never block startup on SecurityAgent. The item's ACL is the
+        // authority; an ACL miss fails immediately and leaves manual sign-in
+        // available instead of showing a prompt on every launch.
         var result: CFTypeRef?
         let status = SecItemCopyMatching([
             kSecClass: kSecClassGenericPassword, kSecAttrService: service,
             kSecMatchLimit: kSecMatchLimitOne, kSecReturnAttributes: true, kSecReturnData: true,
-            kSecUseAuthenticationContext: context
+            kSecUseAuthenticationUI: kSecUseAuthenticationUIFail
         ] as CFDictionary, &result)
         guard status == errSecSuccess else { throw RiotLoginError.keychain(status) }
         guard let item = result as? [String: Any],
