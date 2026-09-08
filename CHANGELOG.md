@@ -11,6 +11,8 @@
 - Added the sanitized two-game capture review for the Sep 7 and Sep 8 long TFT
   sessions, including frame-window tails, presenter repeats, host timings, and
   the remaining causal-coverage gaps.
+- Added the evidence-gated fast-wins 60 FPS plan, starting with the existing
+  prebuilt ANGLE view-reuse candidate and defining the immediate decision test.
 - Archived obsolete launch/profile/source-build entrypoints under
   `docs/history/2026-08-31-pre-build8/` and replaced them with current pointers.
 
