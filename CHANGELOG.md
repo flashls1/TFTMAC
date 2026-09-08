@@ -13,6 +13,10 @@
   the remaining causal-coverage gaps.
 - Added the evidence-gated fast-wins 60 FPS plan, starting with the existing
   prebuilt ANGLE view-reuse candidate and defining the immediate decision test.
+- Recorded the first fast-wins experiment in
+  `docs/receipts/2026-09-08-fast-wins-r1/angle-reuse-gate.md`: the candidate
+  ANGLE files were mapped by TFT, but the run failed the surface/ready
+  lifecycle gate before gameplay and produced no FPS evidence.
 - Archived obsolete launch/profile/source-build entrypoints under
   `docs/history/2026-08-31-pre-build8/` and replaced them with current pointers.
 
