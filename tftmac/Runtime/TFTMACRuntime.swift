@@ -3099,12 +3099,30 @@ actor TFTMACRuntimeService {
             }.value
         }
         if angleDriverOverride?.viewDiagnosticsEnabled == true, let telemetry {
-            do {
-                guard let pid = angleDriverVerifiedPID else { throw TFTMACRuntimeError("Actual TFT driver identity was never verified.") }
-                try telemetry.finalizeANGLEEvidence(pid: pid)
-                telemetry.recordEvent("ANGLE_EVIDENCE_FINALIZED", payload: ["pid": pid, "summary": "angle-driver-evidence.json", "acceptance": "DIAGNOSTIC_ONLY"])
-            } catch {
-                telemetry.recordEvent("ANGLE_EVIDENCE_FAILED", payload: ["error": error.localizedDescription, "readiness": false, "raw_preserved": true])
+            if let pid = angleDriverVerifiedPID {
+                let finalizationError = await Task.detached(priority: .utility) {
+                    do {
+                        try telemetry.finalizeANGLEEvidence(pid: pid)
+                        return nil as String?
+                    } catch {
+                        return error.localizedDescription
+                    }
+                }.value
+                if let finalizationError {
+                    telemetry.recordEvent("ANGLE_EVIDENCE_FAILED", payload: [
+                        "error": finalizationError,
+                        "readiness": false,
+                        "raw_preserved": true
+                    ])
+                } else {
+                    telemetry.recordEvent("ANGLE_EVIDENCE_FINALIZED", payload: ["pid": pid, "summary": "angle-driver-evidence.json", "acceptance": "DIAGNOSTIC_ONLY"])
+                }
+            } else {
+                telemetry.recordEvent("ANGLE_EVIDENCE_FAILED", payload: [
+                    "error": "Actual TFT driver identity was never verified.",
+                    "readiness": false,
+                    "raw_preserved": true
+                ])
             }
         }
         let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed && highPerfRestoreConfirmed && logcatExitConfirmed ? "STOPPED" : "FAILED"
