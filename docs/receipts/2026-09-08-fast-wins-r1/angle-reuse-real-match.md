@@ -59,4 +59,5 @@ confirmed at 17:36:24Z, but `ANGLE_EVIDENCE_FINALIZED` was not recorded until
 of the 299,076-event ANGLE stream during cleanup. This is a shutdown/finalization
 latency defect, separate from the in-match rendering result.
 
-Sealed SQLite SHA-256: to be recorded after final artifact sealing.
+Sealed SQLite SHA-256: `62ce91fadf1cbc124e7f8a865d4db871a3d6bf24b7e54124f87dea535fd90282`.
+Sealed ANGLE evidence SHA-256: `879162163d091770c273992bf3ce8eba786f81013005dc030c2f7b0c593b1b54`.
