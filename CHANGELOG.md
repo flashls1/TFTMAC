@@ -8,6 +8,9 @@
   status across the human-readable project record.
 - Recorded the latest 42m27s automatic graphics capture as performance evidence
   while retaining internal attribution as unknown.
+- Added the sanitized two-game capture review for the Sep 7 and Sep 8 long TFT
+  sessions, including frame-window tails, presenter repeats, host timings, and
+  the remaining causal-coverage gaps.
 - Archived obsolete launch/profile/source-build entrypoints under
   `docs/history/2026-08-31-pre-build8/` and replaced them with current pointers.
 
