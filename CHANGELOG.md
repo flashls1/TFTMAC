@@ -17,6 +17,11 @@
   `docs/receipts/2026-09-08-fast-wins-r1/angle-reuse-gate.md`: the candidate
   ANGLE files were mapped by TFT, but the run failed the surface/ready
   lifecycle gate before gameplay and produced no FPS evidence.
+- Recorded the stock DEV lifecycle comparator in
+  `docs/receipts/2026-09-08-fast-wins-r1/stock-dev-lifecycle-comparator.md`:
+  stock reached `TFT_READY_FOR_USER` and sealed cleanly, so the first failure
+  is candidate-specific or a candidate/path interaction; no gameplay FPS
+  conclusion is made.
 - Archived obsolete launch/profile/source-build entrypoints under
   `docs/history/2026-08-31-pre-build8/` and replaced them with current pointers.
 
