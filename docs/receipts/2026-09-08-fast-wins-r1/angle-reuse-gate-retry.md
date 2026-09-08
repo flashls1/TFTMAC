@@ -17,6 +17,10 @@ probes off the runtime actor. No driver bytes or runtime settings changed.
   `054b8fa9354bb5beb6e501728bbd6f9539f76aceba1e3060fdd9050d4f69cf81`
 - Capture: `2026-09-08T17-25-48.466Z-3e363fd6-2c9c-40e6-a636-2e90d073984e`
 - Session: `STOPPED`, `2026-09-08T17:25:48Z` to `2026-09-08T17:26:43Z`.
+- Sealed SQLite SHA-256:
+  `800429bb890dae5e54bed85b5937ea253446421d946af7b1517f16f8f75a4469`.
+- Rebuilt DEV core SHA-256:
+  `7bb6714fde3ea3b232d947b3028b0aba78f712d23fe90a17ead03a9ed2310405`.
 - Live TFT PID: `3740`.
 - `ANGLE_DRIVER_LOADED_VERIFIED` recorded all three manifest-matching
   libraries and `reuse_enabled=true`, `variant=\"reuse\"`.
