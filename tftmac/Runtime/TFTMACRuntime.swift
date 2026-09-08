@@ -234,6 +234,13 @@ private struct GraphicsPipelineSnapshot: Sendable {
     let receipt: GraphicsStackReceipt
 }
 
+private struct GraphicsPipelineSnapshotContext: Sendable {
+    let gamePID: Int32?
+    let currentLayerName: String?
+    let packageVersion: String
+    let configurationSHA256: String
+}
+
 struct StreamFreshnessWindow: Sendable {
     let startedMonotonicNS: UInt64
     let endedMonotonicNS: UInt64
@@ -2468,6 +2475,7 @@ actor TFTMACRuntimeService {
     private var highPerfTransactionPending = false
     private var highPerfRestoreConfirmed = true
     private var highPerfRestorationInProgress = false
+    private var graphicsSnapshotInFlight = false
 
     private var usesPrivateHighPerf: Bool {
         runtimeConfiguration.selection.mode == .advancedDiagnostics && runtimeConfiguration.workload == .officialTFT
@@ -4579,7 +4587,10 @@ actor TFTMACRuntimeService {
     }
 
     private func runRiotCoordinateLogin(paths: TFTMACRuntimePaths) async -> ProcessResult {
-        guard Self.riotCredentialFormDetected(paths: paths) else {
+        let formDetected = await Task.detached(priority: .utility) {
+            Self.riotCredentialFormDetected(paths: paths)
+        }.value
+        guard formDetected else {
             return ProcessResult(status: -1, output: "The Riot credential form was not visually verified.")
         }
         let credentials: RiotCredentials
@@ -4852,12 +4863,15 @@ actor TFTMACRuntimeService {
             ])
         }
 
+        let splashDetected = await Task.detached(priority: .utility) {
+            Self.riotSignInSplashDetected(paths: paths)
+        }.value
         if !loginFocused,
            !riotLoginSplashTapAttempted,
            currentGamePID != nil,
            riotProcessStartedNS != 0,
            nowNS - riotProcessStartedNS < 120_000_000_000,
-           Self.riotSignInSplashDetected(paths: paths) {
+           splashDetected {
             let x = profile.width / 2
             let y = Int((Double(profile.height) * 0.6574).rounded())
             let result = try? Self.adb(
@@ -5771,6 +5785,41 @@ actor TFTMACRuntimeService {
         telemetry: TFTMACNativeTelemetry,
         label: String
     ) {
+        guard !graphicsSnapshotInFlight else {
+            telemetry.recordEvent("GRAPHICS_PIPELINE_SNAPSHOT_SKIPPED", payload: [
+                "label": label,
+                "reason": "SNAPSHOT_IN_FLIGHT"
+            ])
+            return
+        }
+        graphicsSnapshotInFlight = true
+        let context = GraphicsPipelineSnapshotContext(
+            gamePID: currentGamePID,
+            currentLayerName: currentExactLayerName,
+            packageVersion: tftPackageVersion,
+            configurationSHA256: effectiveConfigurationReceipt.sha256
+        )
+        Task.detached(priority: .utility) { [weak self, paths, telemetry, label, context] in
+            Self.recordGraphicsPipelineSnapshotSynchronously(
+                paths: paths,
+                telemetry: telemetry,
+                label: label,
+                context: context
+            )
+            await self?.finishGraphicsPipelineSnapshot()
+        }
+    }
+
+    private func finishGraphicsPipelineSnapshot() {
+        graphicsSnapshotInFlight = false
+    }
+
+    nonisolated private static func recordGraphicsPipelineSnapshotSynchronously(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        label: String,
+        context: GraphicsPipelineSnapshotContext
+    ) {
         let stdout = Self.readTailText(
             telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log"),
             maximumBytes: 16 * 1024 * 1024
@@ -5892,9 +5941,9 @@ actor TFTMACRuntimeService {
             : "UNKNOWN_INCOMPLETE_RUNTIME_RECEIPT"
         let receipt = GraphicsStackReceipt(fields: [
             "tft_package_version": GraphicsStackReceiptField(
-                value: tftPackageVersion,
+                value: context.packageVersion,
                 source: "adb dumpsys package com.riotgames.league.teamfighttactics",
-                confidence: tftPackageVersion == "unknown" ? "UNKNOWN" : "DIRECT"
+                confidence: context.packageVersion == "unknown" ? "UNKNOWN" : "DIRECT"
             ),
             "tft_surface": GraphicsStackReceiptField(
                 value: exactLayerName ?? surfaceState,
@@ -5962,7 +6011,7 @@ actor TFTMACRuntimeService {
                 confidence: "DIRECT_SOURCE"
             ),
             "configuration_sha256": GraphicsStackReceiptField(
-                value: effectiveConfigurationReceipt.sha256,
+                value: context.configurationSHA256,
                 source: "canonical effective runtime configuration",
                 confidence: "DIRECT"
             ),
@@ -5979,8 +6028,8 @@ actor TFTMACRuntimeService {
         ])
         telemetry.recordGraphicsPipelineSnapshot(GraphicsPipelineSnapshot(
             label: label,
-            gamePID: currentGamePID,
-            exactLayerName: exactLayerName ?? currentExactLayerName,
+            gamePID: context.gamePID,
+            exactLayerName: exactLayerName ?? context.currentLayerName,
             tftSurfaceState: surfaceState,
             gameGraphicsAPI: gameGraphicsAPI,
             gameGraphicsAPIConfidence: gameGraphicsAPIConfidence,
