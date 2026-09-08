@@ -5,6 +5,7 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
+import ImageIO
 import Metal
 import SQLite3
 import SwiftProtobuf
@@ -2452,6 +2453,8 @@ actor TFTMACRuntimeService {
     private var riotLoginIMEConfigured = false
     private var riotLoginFormAttempted = false
     private var riotLoginManuallyRequested = false
+    private var riotLoginSplashTapAttempted = false
+    private var riotProcessStartedNS: UInt64 = 0
     private var nativeClockSession: NativeClockSession?
     private var nativeClockGuestReady = false
     private var nativeClockUnavailable = false
@@ -4461,6 +4464,8 @@ actor TFTMACRuntimeService {
             currentGamePID = nil
             currentExactLayerName = nil
             consecutiveBadGraphicsWindows = 0
+            riotProcessStartedNS = 0
+            riotLoginSplashTapAttempted = false
         }
 
         telemetry.recordEvent(
@@ -4477,6 +4482,8 @@ actor TFTMACRuntimeService {
 
         if let observedGamePID {
             currentGamePID = observedGamePID
+            riotProcessStartedNS = DispatchTime.now().uptimeNanoseconds
+            riotLoginSplashTapAttempted = false
             graphicsAutomaticTraceCount = 0
             graphicsIncidentTraceCount = 0
             lastGraphicsAutomaticTraceNS = 0
@@ -4531,23 +4538,33 @@ actor TFTMACRuntimeService {
     private func signInWithSavedRiotAccount(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async {
         riotLoginFormAttempted = true
         riotLoginManuallyRequested = false
-        let result = await runRiotCDPLogin(paths: paths)
-        let submitted = result.output.contains("official Riot login form was submitted")
+        let cdpResult = await runRiotCDPLogin(paths: paths)
+        var result = cdpResult
+        var mechanism = "ANDROID_WEBVIEW_CDP"
+        var submitted = cdpResult.output.contains("official Riot login form was submitted")
+        if !submitted {
+            let fallbackResult = await runRiotCoordinateLogin(paths: paths)
+            if fallbackResult.output.contains("official Riot login form was submitted") {
+                result = fallbackResult
+                mechanism = "ANDROID_AUTHENTICATED_INPUT_FALLBACK"
+                submitted = true
+            }
+        }
         telemetry.recordEvent("RIOT_SAVED_SIGNIN_CDP_FINISHED", payload: [
             "helper_exit_status": result.status,
             "form_submitted": submitted,
-            "credential_source": "DEV_Keychain_stdin",
+            "credential_source": "DEV_LocalCredentialFile",
             "credential_data_recorded": false,
-            "mechanism": "ANDROID_WEBVIEW_CDP"
+            "mechanism": mechanism
         ])
         if submitted {
             telemetry.recordEvent("RIOT_SAVED_SIGNIN_SUBMITTED", payload: [
                 "form_verified": true,
-                "credential_source": "DEV_Keychain_stdin",
+                "credential_source": "DEV_LocalCredentialFile",
                 "attempts_this_form": 1,
                 "authentication_success": "NOT_YET_VERIFIED",
                 "credential_data_recorded": false,
-                "mechanism": "ANDROID_WEBVIEW_CDP"
+                "mechanism": mechanism
             ])
             await status("Saved Riot sign-in submitted through the Riot WebView. Waiting for Riot; manual interaction remains available.", false)
         } else {
@@ -4555,9 +4572,61 @@ actor TFTMACRuntimeService {
                 "reason": "The saved-sign-in WebView helper did not submit the recognized form.",
                 "retry_this_form": false,
                 "helper_exit_status": result.status,
-                "mechanism": "ANDROID_WEBVIEW_CDP"
+                "mechanism": mechanism
             ])
             await status("Saved Riot sign-in did not submit the recognized WebView form. Manual sign-in remains available.", false)
+        }
+    }
+
+    private func runRiotCoordinateLogin(paths: TFTMACRuntimePaths) async -> ProcessResult {
+        guard Self.riotCredentialFormDetected(paths: paths) else {
+            return ProcessResult(status: -1, output: "The Riot credential form was not visually verified.")
+        }
+        let credentials: RiotCredentials
+        do {
+            credentials = try RiotCredentialStore.load()
+        } catch {
+            return ProcessResult(status: -1, output: "The local DEV credential file could not be read.")
+        }
+        let generation = riotInteraction.snapshot()
+        let usernamePoint = (
+            x: Int32((Double(profile.width) * 0.275).rounded()),
+            y: Int32((Double(profile.height) * 0.379).rounded())
+        )
+        let passwordPoint = (
+            x: Int32((Double(profile.width) * 0.725).rounded()),
+            y: usernamePoint.y
+        )
+        let submitPoint = (
+            x: Int32((Double(profile.width) * 0.893).rounded()),
+            y: Int32((Double(profile.height) * 0.810).rounded())
+        )
+        do {
+            try await sendRiotTouch(usernamePoint.x, usernamePoint.y, expectedGeneration: generation)
+            try await sendRiotSecureText(credentials.username, expectedGeneration: generation)
+            try await sendRiotTouch(passwordPoint.x, passwordPoint.y, expectedGeneration: generation)
+            try await sendRiotSecureText(credentials.transientPassword(), expectedGeneration: generation)
+            try await Task.sleep(for: .milliseconds(500))
+            try await sendRiotTouch(submitPoint.x, submitPoint.y, expectedGeneration: generation)
+            return ProcessResult(status: 0, output: "The official Riot login form was submitted through authenticated input; credentials were not printed.")
+        } catch {
+            return ProcessResult(status: -1, output: "The authenticated Riot input fallback stopped before submission.")
+        }
+    }
+
+    private func sendRiotTouch(_ x: Int32, _ y: Int32, expectedGeneration: UInt64) async throws {
+        guard riotInteraction.snapshot() == expectedGeneration else { throw RiotLoginError.focusChanged }
+        inputChannel.send(.touch(.primary(x: x, y: y, isContact: true)))
+        try await Task.sleep(for: .milliseconds(30))
+        inputChannel.send(.touch(.primary(x: x, y: y, isContact: false)))
+        try await Task.sleep(for: .milliseconds(180))
+    }
+
+    private func sendRiotSecureText(_ text: String, expectedGeneration: UInt64) async throws {
+        for scalar in text.unicodeScalars {
+            guard riotInteraction.snapshot() == expectedGeneration else { throw RiotLoginError.focusChanged }
+            inputChannel.send(.secureKeyboard(KeyboardInput(text: String(scalar), key: nil)))
+            try await Task.sleep(for: .milliseconds(35))
         }
     }
 
@@ -4581,7 +4650,7 @@ actor TFTMACRuntimeService {
                 try RiotCredentialStore.load()
             }.value
         } catch {
-            return ProcessResult(status: -1, output: "The DEV Keychain item could not be read without UI.")
+            return ProcessResult(status: -1, output: "The local DEV credential file could not be read.")
         }
         let payload: Data
         do {
@@ -4623,13 +4692,133 @@ actor TFTMACRuntimeService {
         }.value
     }
 
+    nonisolated private static func riotSignInSplashDetected(paths: TFTMACRuntimePaths) -> Bool {
+        let process = Process()
+        process.executableURL = paths.adb
+        process.arguments = [
+            "-P", "\(paths.adbServerPort)", "-s", paths.serial,
+            "exec-out", "screencap", "-p"
+        ]
+        process.environment = adbEnvironment(paths: paths)
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  image.width > 0, image.height > 0,
+                  let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return false }
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            guard let context = CGContext(
+                data: &pixels,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+
+            func sample(_ xRatio: Double, _ yRatio: Double) -> (UInt8, UInt8, UInt8) {
+                let x = min(image.width - 1, max(0, Int((xRatio * Double(image.width)).rounded())))
+                let topY = min(image.height - 1, max(0, Int((yRatio * Double(image.height)).rounded())))
+                let y = topY
+                let offset = (y * image.width + x) * 4
+                return (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+            }
+
+            let buttonBody = sample(0.45, 0.676)
+            let buttonUpper = sample(0.45, 0.63)
+            let createBody = sample(0.45, 0.75)
+            let background = sample(0.15, 0.50)
+            let brownButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red < 120 && green < 90 && blue < 70 && red > blue
+            }
+            let darkCreateButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red < 70 && green < 70 && blue < 70
+            }
+            return brownButton(buttonBody.0, buttonBody.1, buttonBody.2)
+                && brownButton(buttonUpper.0, buttonUpper.1, buttonUpper.2)
+                && darkCreateButton(createBody.0, createBody.1, createBody.2)
+                && background.2 > background.0 + 60
+        } catch {
+            return false
+        }
+    }
+
+    nonisolated private static func riotCredentialFormDetected(paths: TFTMACRuntimePaths) -> Bool {
+        let process = Process()
+        process.executableURL = paths.adb
+        process.arguments = [
+            "-P", "\(paths.adbServerPort)", "-s", paths.serial,
+            "exec-out", "screencap", "-p"
+        ]
+        process.environment = adbEnvironment(paths: paths)
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  image.width > 0, image.height > 0,
+                  let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return false }
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            guard let context = CGContext(
+                data: &pixels,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+
+            func sample(_ xRatio: Double, _ yRatio: Double) -> (UInt8, UInt8, UInt8) {
+                let x = min(image.width - 1, max(0, Int((xRatio * Double(image.width)).rounded())))
+                let topY = min(image.height - 1, max(0, Int((yRatio * Double(image.height)).rounded())))
+                let y = topY
+                let offset = (y * image.width + x) * 4
+                return (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+            }
+
+            let background = sample(0.50, 0.50)
+            let username = sample(0.275, 0.379)
+            let password = sample(0.725, 0.379)
+            let submit = sample(0.893, 0.810)
+            let nearWhite: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 242 && green >= 242 && blue >= 242
+            }
+            let field: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 215 && red <= 245 && abs(Int(red) - Int(green)) <= 2 && abs(Int(green) - Int(blue)) <= 2
+            }
+            let submitButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 210 && red <= 245 && abs(Int(red) - Int(green)) <= 2 && abs(Int(green) - Int(blue)) <= 2
+            }
+            return nearWhite(background.0, background.1, background.2)
+                && field(username.0, username.1, username.2)
+                && field(password.0, password.1, password.2)
+                && submitButton(submit.0, submit.1, submit.2)
+        } catch {
+            return false
+        }
+    }
+
     private func maintainRiotLoginReliability(
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) async {
         guard runtimeConfiguration.selection.mode == .advancedDiagnostics,
-              runtimeConfiguration.workload == .officialTFT,
-              currentExactLayerName == nil else { return }
+              runtimeConfiguration.workload == .officialTFT else { return }
 
         let nowNS = DispatchTime.now().uptimeNanoseconds
         if lastRiotANRProbeNS != 0, nowNS - lastRiotANRProbeNS < 750_000_000 { return }
@@ -4660,6 +4849,29 @@ actor TFTMACRuntimeService {
                 "show_ime_with_hard_keyboard": 0,
                 "command_status": result?.status ?? -1,
                 "credential_data_observed": false
+            ])
+        }
+
+        if !loginFocused,
+           !riotLoginSplashTapAttempted,
+           currentGamePID != nil,
+           riotProcessStartedNS != 0,
+           nowNS - riotProcessStartedNS < 120_000_000_000,
+           Self.riotSignInSplashDetected(paths: paths) {
+            let x = profile.width / 2
+            let y = Int((Double(profile.height) * 0.6574).rounded())
+            let result = try? Self.adb(
+                paths: paths,
+                ["shell", "input", "tap", "\(x)", "\(y)"],
+                timeout: 10
+            )
+            riotLoginSplashTapAttempted = true
+            telemetry.recordEvent("RIOT_LOGIN_SPLASH_SIGN_IN_TAPPED", payload: [
+                "x": x,
+                "y": y,
+                "command_status": result?.status ?? -1,
+                "credential_data_observed": false,
+                "mechanism": "UNREAL_SIGN_IN_SPLASH_TO_WEBVIEW"
             ])
         }
 

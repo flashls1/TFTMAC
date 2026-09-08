@@ -140,32 +140,12 @@ try {
   } else if (preflightResult.visibleCaptcha) {
     fail('A CAPTCHA is visible on the Riot login form; the helper stopped without reading credentials.');
   } else {
-    if (service === '--stdin') {
-      helperStage = 'private_credential_pipe';
-      const payload = JSON.parse(await readPrivateStdin());
-      account = typeof payload.username === 'string' ? payload.username : '';
-      password = typeof payload.password === 'string' ? payload.password : '';
-    } else {
-      helperStage = 'keychain_metadata';
-      const metadata = execFileSync('/usr/bin/security', [
-        'find-generic-password',
-        '-s',
-        service
-      ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
-      const accountMatch = metadata.match(/^\s*"acct"<blob>="(.*)"$/m);
-      if (!accountMatch) throw new Error('Keychain account metadata missing');
-      account = accountMatch[1];
-      helperStage = 'keychain_password';
-      password = execFileSync('/usr/bin/security', [
-        'find-generic-password',
-        '-s',
-        service,
-        '-a',
-        account,
-        '-w'
-      ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).replace(/\r?\n$/, '');
-    }
-    if (!account || !password) throw new Error('Empty Keychain credential');
+    if (service !== '--stdin') throw new Error('The DEV WebView helper accepts only its private local credential pipe');
+    helperStage = 'private_credential_pipe';
+    const payload = JSON.parse(await readPrivateStdin());
+    account = typeof payload.username === 'string' ? payload.username : '';
+    password = typeof payload.password === 'string' ? payload.password : '';
+    if (!account || !password) throw new Error('Empty local credential payload');
 
     const expression = `(async () => {
       const username = document.querySelector('input[name="username"]');

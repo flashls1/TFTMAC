@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 final class RiotLoginInteractionGuard: @unchecked Sendable {
     private let lock = NSLock()
@@ -26,10 +25,10 @@ struct RiotCredentials: Sendable, CustomStringConvertible {
 }
 
 enum RiotLoginError: LocalizedError {
-    case keychain(OSStatus), invalidCredential, unrecognizedForm, focusChanged, inputUnavailable
+    case credentialFile, invalidCredential, unrecognizedForm, focusChanged, inputUnavailable
     var errorDescription: String? {
         switch self {
-        case .keychain(let code): "Saved Riot sign-in could not read its DEV Keychain item (status \(code)). Manual sign-in remains available."
+        case .credentialFile: "Saved Riot sign-in could not read the local DEV credential file. Manual sign-in remains available."
         case .invalidCredential: "The saved Riot account is missing or invalid. Manual sign-in remains available."
         case .unrecognizedForm: "Saved Riot sign-in stopped because the expected form is not ready. Manual sign-in remains available."
         case .focusChanged: "Saved Riot sign-in stopped because field focus or form contents changed. Manual sign-in remains available."
@@ -39,28 +38,37 @@ enum RiotLoginError: LocalizedError {
 }
 
 enum RiotCredentialStore {
-    static let service = "com.flashls1.tftmac.dev.riot-login.v1"
     static let rememberKey = "TFTMACDEVRememberRiotLogin"
+    private static let credentialDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        .appendingPathComponent("Library/Application Support/TFTMAC DEV", isDirectory: true)
+    private static let credentialURL = credentialDirectory.appendingPathComponent("riot-login.json")
     static var remember: Bool {
         get { UserDefaults.standard.object(forKey: rememberKey) == nil || UserDefaults.standard.bool(forKey: rememberKey) }
         set { UserDefaults.standard.set(newValue, forKey: rememberKey) }
     }
 
     static func load() throws -> RiotCredentials {
-        // DEV must never block startup on SecurityAgent. The item's ACL is the
-        // authority; an ACL miss fails immediately and leaves manual sign-in
-        // available instead of showing a prompt on every launch.
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching([
-            kSecClass: kSecClassGenericPassword, kSecAttrService: service,
-            kSecMatchLimit: kSecMatchLimitOne, kSecReturnAttributes: true, kSecReturnData: true,
-            kSecUseAuthenticationUI: kSecUseAuthenticationUIFail
-        ] as CFDictionary, &result)
-        guard status == errSecSuccess else { throw RiotLoginError.keychain(status) }
-        guard let item = result as? [String: Any],
-              let username = item[kSecAttrAccount as String] as? String,
-              let password = item[kSecValueData as String] as? Data else { throw RiotLoginError.invalidCredential }
-        return try RiotCredentials(username: username, passwordBytes: password)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: credentialURL.path)
+        } catch {
+            throw RiotLoginError.credentialFile
+        }
+        guard let permissions = attributes[.posixPermissions] as? NSNumber,
+              permissions.intValue & 0o077 == 0,
+              let data = try? Data(contentsOf: credentialURL, options: [.mappedIfSafe]),
+              data.count <= 16_384 else { throw RiotLoginError.credentialFile }
+        struct FileCredentials: Decodable {
+            let username: String
+            let password: String
+        }
+        let file: FileCredentials
+        do {
+            file = try JSONDecoder().decode(FileCredentials.self, from: data)
+        } catch {
+            throw RiotLoginError.credentialFile
+        }
+        return try RiotCredentials(username: file.username, passwordBytes: Data(file.password.utf8))
     }
 }
 
