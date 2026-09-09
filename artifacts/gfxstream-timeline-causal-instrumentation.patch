@@ -16,10 +16,18 @@ index 67f72cc80..f3cf13e38 100644
  set_source_files_properties(vk_sub_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
  set_source_files_properties(vk_decoder_snapshot.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
 diff --git a/host/vulkan/vk_decoder.cpp b/host/vulkan/vk_decoder.cpp
-index 3174d3256..e012b06fc 100644
+index 3174d3256..652e0559a 100644
 --- a/host/vulkan/vk_decoder.cpp
 +++ b/host/vulkan/vk_decoder.cpp
-@@ -52,6 +52,10 @@
+@@ -30,6 +30,7 @@
+ 
+ #include "vk_decoder.h"
+ 
++#include <atomic>
+ #include <cstring>
+ #include <functional>
+ #include <optional>
+@@ -52,6 +53,10 @@
  #include "vulkan_dispatch.h"
  #include "vulkan_stream.h"
  
@@ -30,7 +38,18 @@ index 3174d3256..e012b06fc 100644
  #define MAX_PACKET_LENGTH (400 * 1024 * 1024)  // 400MB
  #define CC_LIKELY(exp) (__builtin_expect(!!(exp), true))
  #define CC_UNLIKELY(exp) (__builtin_expect(!!(exp), false))
-@@ -1481,10 +1485,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -60,6 +65,10 @@ namespace gfxstream {
+ namespace host {
+ namespace vk {
+ 
++#if defined(__APPLE__)
++std::atomic<uint64_t> g_tftmac_direct_submit_id{1};
++#endif
++
+ class VkDecoder::Impl {
+    public:
+     Impl()
+@@ -1481,10 +1490,74 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                                     (unsigned long long)fence);
                  }
                  VkResult vkQueueSubmit_VkResult_return = VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -57,12 +76,40 @@ index 3174d3256..e012b06fc 100644
 +                const uint64_t tftmac_submit_started_ns = tftmac_owned_submit
 +                    ? tftmac::causal::MonotonicTimestampNS()
 +                    : 0;
++                const bool tftmac_direct_submit_recording =
++                    tftmac::causal::InitializeCurrentThreadRecorder();
++                const uint64_t tftmac_direct_submit_id = tftmac_direct_submit_recording
++                    ? g_tftmac_direct_submit_id.fetch_add(1, std::memory_order_relaxed)
++                    : 0;
++                const uint64_t tftmac_direct_previous_work_id =
++                    tftmac::causal::CurrentThreadTransportWorkId();
++                const uint64_t tftmac_direct_submit_started_ns = tftmac_direct_submit_recording
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_submit_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        0,
++                        submitCount);
++                }
 +#endif
                  if (CC_LIKELY(vk)) {
                      vkQueueSubmit_VkResult_return = m_state->on_vkQueueSubmit(
                          &m_pool, snapshotApiCallHandle, queue, submitCount, pSubmits, fence);
                  }
 +#if defined(__APPLE__)
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_direct_submit_started_ns,
++                        submitCount);
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_previous_work_id);
++                }
 +                if (tftmac_owned_submit) {
 +                    tftmac::causal::Record(
 +                        tftmac::causal::EventKind::kEnd,
@@ -77,7 +124,7 @@ index 3174d3256..e012b06fc 100644
                  if ((vkQueueSubmit_VkResult_return) == VK_ERROR_DEVICE_LOST)
                      m_state->on_DeviceLost();
                  vkStream->unsetHandleMapping();
-@@ -22262,10 +22302,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -22262,10 +22335,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                          ioStream, (unsigned long long)queue, (unsigned long long)submitCount,
                          (unsigned long long)pSubmits, (unsigned long long)fence);
                  }
@@ -124,7 +171,7 @@ index 3174d3256..e012b06fc 100644
                  vkStream->unsetHandleMapping();
                  if (m_snapshotsEnabled) {
                      m_state->snapshot()->vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle,
-@@ -23157,6 +23233,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -23157,6 +23266,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                  uint64_t id;
                  memcpy((uint64_t*)&id, *readStreamPtrPtr, sizeof(uint64_t));
                  *readStreamPtrPtr += sizeof(uint64_t);
