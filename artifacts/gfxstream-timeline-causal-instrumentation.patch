@@ -67,6 +67,68 @@ index 15f609e8d..9e2691a3e 100644
  }
  }  // namespace gfxstream
 -
+diff --git a/host/gl/glestranslator/egl/CMakeLists.txt b/host/gl/glestranslator/egl/CMakeLists.txt
+index 103b18e50..2c5c787e8 100644
+--- a/host/gl/glestranslator/egl/CMakeLists.txt
++++ b/host/gl/glestranslator/egl/CMakeLists.txt
+@@ -88,6 +88,11 @@ target_compile_options(
+     EGL_translator_static
+     PRIVATE -Wno-inconsistent-missing-override -Wno-macro-redefined)
+ 
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(EGL_translator_static PRIVATE
++                               ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
++
+ if (APPLE)
+     target_compile_options(EGL_translator_static PRIVATE -Wno-deprecated-declarations)
+     target_compile_options(EGL_translator_static PRIVATE "-Wno-deprecated-declarations")
+diff --git a/host/gl/glestranslator/egl/egl_imp.cpp b/host/gl/glestranslator/egl/egl_imp.cpp
+index 5d5905580..b370c0c72 100644
+--- a/host/gl/glestranslator/egl/egl_imp.cpp
++++ b/host/gl/glestranslator/egl/egl_imp.cpp
+@@ -50,6 +50,10 @@
+ #include "gfxstream/common/logging.h"
+ #include "gfxstream/host/vm_operations.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ #define MAJOR          1
+ #define MINOR          4
+ 
+@@ -1258,8 +1262,30 @@ EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffers(EGLDisplay display, EGLSurface surf
+     }
+ 
+     {
++#if defined(__APPLE__)
++        const bool tftmac_swap_recording =
++            tftmac::causal::InitializeCurrentThreadRecorder();
++        const uint64_t tftmac_swap_started_ns = tftmac_swap_recording
++            ? tftmac::causal::MonotonicTimestampNS()
++            : 0;
++        if (tftmac_swap_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kBegin,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1501);
++        }
++#endif
+         gfxstream::base::AutoLock mutex(*graphicsDriverLock());
+         dpy->nativeType()->swapBuffers(Srfc->native());
++#if defined(__APPLE__)
++        if (tftmac_swap_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kEnd,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1501,
++                tftmac::causal::MonotonicTimestampNS() - tftmac_swap_started_ns);
++        }
++#endif
+     }
+     return EGL_TRUE;
+ }
 diff --git a/host/vulkan/CMakeLists.txt b/host/vulkan/CMakeLists.txt
 index 67f72cc80..f3cf13e38 100644
 --- a/host/vulkan/CMakeLists.txt
