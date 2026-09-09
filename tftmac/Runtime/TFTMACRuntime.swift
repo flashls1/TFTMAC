@@ -3415,6 +3415,24 @@ actor TFTMACRuntimeService {
             "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
         ]
+        if ProcessInfo.processInfo.environment["TFTMAC_PIPELINE_EVENT_V1"] == "1" {
+            let pipelineEventsDirectory = telemetry.captureDirectory.appendingPathComponent("pipeline-events", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: pipelineEventsDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            arguments.insert(contentsOf: [
+                "--env", "TFTMAC_PIPELINE_EVENT_V1=1",
+                "--env", "TFTMAC_PIPELINE_EVENTS_DIR=\(pipelineEventsDirectory.path)"
+            ], at: arguments.firstIndex(of: paths.hostApplication.path) ?? arguments.endIndex)
+            telemetry.recordEvent("CAUSAL_PIPELINE_RECORDER_ENABLED", payload: [
+                "schema": 1,
+                "events_directory": pipelineEventsDirectory.path,
+                "runtime_process": "emulator_host_child",
+                "mechanism_exercise_required": "sealed_pipeline_segment_from_current_runtime"
+            ])
+        }
         if usesPrivateHighPerf {
             let assets = try highPerfAssets()
             let stock = paths.sdkRoot.appendingPathComponent("system-images/android-36/google_apis_playstore/arm64-v8a/ramdisk.img")
