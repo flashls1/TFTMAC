@@ -78,6 +78,14 @@ bool ParseOwnedProbeTimelineWorkId(
     const void* p_next,
     uint64_t* transport_work_id);
 
+// Parse the gated ANGLE diagnostic sideband. ANGLE appends one timeline
+// semaphore after any existing binary signal semaphores, so the signal count
+// may be one or greater and the final signal value carries the work ID.
+bool ParseANGLETimelineWorkId(
+    uint32_t signal_semaphore_count,
+    const void* p_next,
+    uint64_t* transport_work_id);
+
 // Register the calling producer before measured work begins. Registration may
 // allocate, open the private segment file, and start its off-path drain thread.
 // Record() itself performs only fixed-record ring writes.
