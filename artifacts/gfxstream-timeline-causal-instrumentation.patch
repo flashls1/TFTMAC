@@ -77,6 +77,62 @@ index 86147a3bf..50708ca61 100644
      return true;
  }
  
+diff --git a/host/gl/display_gl.cpp b/host/gl/display_gl.cpp
+index fe046282e..510fc2ca2 100644
+--- a/host/gl/display_gl.cpp
++++ b/host/gl/display_gl.cpp
+@@ -22,6 +22,10 @@
+ #include "gfxstream/host/display_operations.h"
+ #include "texture_draw.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ namespace host {
+ namespace gl {
+@@ -47,6 +51,22 @@ std::shared_future<void> DisplayGl::post(const Post& post) {
+     }
+     const auto* surfaceGl = static_cast<const DisplaySurfaceGl*>(surface->getImpl());
+ 
++#if defined(__APPLE__)
++    const bool tftmac_post_recording =
++        tftmac::causal::InitializeCurrentThreadRecorder();
++    const uint64_t tftmac_post_started_ns = tftmac_post_recording
++        ? tftmac::causal::MonotonicTimestampNS()
++        : 0;
++    if (tftmac_post_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kBegin,
++            tftmac::causal::Boundary::kSourceFramePublish,
++            1506,
++            0,
++            static_cast<uint32_t>(post.layers.size()));
++    }
++#endif
++
+     bool hasDrawLayer = false;
+     for (const PostLayer& layer : post.layers) {
+         if (!layer.colorBuffer) continue;
+@@ -76,6 +96,17 @@ std::shared_future<void> DisplayGl::post(const Post& post) {
+ 
+     s_egl.eglSwapBuffers(surfaceGl->mDisplay, surfaceGl->mSurface);
+ 
++#if defined(__APPLE__)
++    if (tftmac_post_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kEnd,
++            tftmac::causal::Boundary::kSourceFramePublish,
++            1506,
++            tftmac::causal::MonotonicTimestampNS() - tftmac_post_started_ns,
++            static_cast<uint32_t>(post.layers.size()));
++    }
++#endif
++
+     return getCompletedFuture();
+ }
+ 
 diff --git a/host/gl/emulated_egl_window_surface.cpp b/host/gl/emulated_egl_window_surface.cpp
 index 34ed7cfc3..f06450216 100644
 --- a/host/gl/emulated_egl_window_surface.cpp
