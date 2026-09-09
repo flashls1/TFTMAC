@@ -145,6 +145,55 @@ index 5d5905580..b370c0c72 100644
      }
      return EGL_TRUE;
  }
+diff --git a/host/renderControl_dec/CMakeLists.txt b/host/renderControl_dec/CMakeLists.txt
+index ed5452739..0fdbefab2 100644
+--- a/host/renderControl_dec/CMakeLists.txt
++++ b/host/renderControl_dec/CMakeLists.txt
+@@ -33,3 +33,7 @@ target_include_directories(
+     ${GFXSTREAM_REPO_ROOT}/include
+     ${GFXSTREAM_REPO_ROOT}/host
+     ${GFXSTREAM_REPO_ROOT}/host/gfxstream_host_decoder_common)
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(renderControl_dec
++        PRIVATE ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
+diff --git a/host/renderControl_dec/renderControl_dec.cpp b/host/renderControl_dec/renderControl_dec.cpp
+index 6985c403a..cf29d9942 100644
+--- a/host/renderControl_dec/renderControl_dec.cpp
++++ b/host/renderControl_dec/renderControl_dec.cpp
+@@ -25,6 +25,10 @@
+ #include "gfxstream/host/ChecksumCalculatorThreadInfo.h"
+ #include "gfxstream/host/ProtocolUtils.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ 
+ typedef unsigned int tsize_t; // Target "size_t", which is 32-bit for now. It may or may not be the same as host's size_t when emugen is compiled.
+@@ -1236,6 +1240,16 @@ size_t renderControl_decoder_context_t::decode(void *buf, size_t len, IOStream *
+ 					"renderControl_decoder_context_t::decode, OP_rcFlushWindowColorBufferAsyncWithFrameNumber: GL checksumCalculator failure\n");
+ 			}
+ 			DECODER_DEBUG_LOG("renderControl(%p): rcFlushWindowColorBufferAsyncWithFrameNumber(windowSurface:0x%08x frameNumber:0x%08x )", stream, var_windowSurface, var_frameNumber);
++#if defined(__APPLE__)
++			if (tftmac::causal::InitializeCurrentThreadRecorder()) {
++				tftmac::causal::Record(
++					tftmac::causal::EventKind::kInstant,
++					tftmac::causal::Boundary::kColorBufferPublish,
++					1503,
++					var_frameNumber,
++					var_windowSurface);
++			}
++#endif
+ 			this->rcFlushWindowColorBufferAsyncWithFrameNumber(var_windowSurface, var_frameNumber);
+ 			SET_LASTCALL("rcFlushWindowColorBufferAsyncWithFrameNumber");
+ 			gfxstream::base::endTrace();
+@@ -1621,4 +1635,3 @@ size_t renderControl_decoder_context_t::decode(void *buf, size_t len, IOStream *
+ 	return ptr - (unsigned char*)buf;
+ }
+ }  // namespace gfxstream
+-
 diff --git a/host/render_control.cpp b/host/render_control.cpp
 index 08a80598d..81b4382f6 100644
 --- a/host/render_control.cpp
