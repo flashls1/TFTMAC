@@ -16,7 +16,7 @@ index 67f72cc80..f3cf13e38 100644
  set_source_files_properties(vk_sub_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
  set_source_files_properties(vk_decoder_snapshot.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
 diff --git a/host/vulkan/vk_decoder.cpp b/host/vulkan/vk_decoder.cpp
-index 3174d3256..073f7977d 100644
+index 3174d3256..e012b06fc 100644
 --- a/host/vulkan/vk_decoder.cpp
 +++ b/host/vulkan/vk_decoder.cpp
 @@ -52,6 +52,10 @@
@@ -124,6 +124,25 @@ index 3174d3256..073f7977d 100644
                  vkStream->unsetHandleMapping();
                  if (m_snapshotsEnabled) {
                      m_state->snapshot()->vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle,
+@@ -23157,6 +23233,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                 uint64_t id;
+                 memcpy((uint64_t*)&id, *readStreamPtrPtr, sizeof(uint64_t));
+                 *readStreamPtrPtr += sizeof(uint64_t);
++#if defined(__APPLE__)
++                if (id != 0) {
++                    const uint64_t previous_work_id =
++                        tftmac::causal::CurrentThreadTransportWorkId();
++                    tftmac::causal::SetThreadTransportWorkId(id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kInstant,
++                        tftmac::causal::Boundary::kGfxstreamDecode,
++                        1101);
++                    tftmac::causal::SetThreadTransportWorkId(previous_work_id);
++                }
++#endif
+                 if (m_logCalls) {
+                     GFXSTREAM_INFO("stream %p: call vkTraceAsyncGOOGLE 0x%llx ", ioStream,
+                                    (unsigned long long)id);
 diff --git a/host/vulkan/vk_decoder_global_state.cpp b/host/vulkan/vk_decoder_global_state.cpp
 index 4316e99ba..36e4ad3cb 100644
 --- a/host/vulkan/vk_decoder_global_state.cpp
