@@ -13,13 +13,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private var activeApplicationSupport = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
     private var terminationInProgress = false
+    private let autonomousSilent = TFTMACLaunchPolicy.isAutonomousSilent()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = MainWindowController(mailbox: mailbox)
         mainWindowController = controller
-        controller.showWindow(nil)
-        controller.focusStartupCurtain()
-        NSApp.activate(ignoringOtherApps: true)
+        if !autonomousSilent {
+            controller.showWindow(nil)
+            controller.focusStartupCurtain()
+            NSApp.activate(ignoringOtherApps: true)
+        }
 
         do {
             let savedProfile = TFTMACRuntimeProfile.load()
@@ -108,11 +111,13 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak controller] in
+            guard !self.autonomousSilent else { return }
             controller?.enterNativeFullscreen()
         }
     }
 
     @objc func showSettings(_ sender: Any?) {
+        guard !autonomousSilent else { return }
         let settings = settingsWindowController ?? RuntimeSettingsWindowController(profile: TFTMACRuntimeProfile.load())
         settings.onSave = { [weak self] previous, next in
             self?.runtimeController?.recordSettingsChange(previous: previous, next: next)
@@ -176,7 +181,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !autonomousSilent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

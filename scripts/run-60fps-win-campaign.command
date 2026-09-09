@@ -192,10 +192,11 @@ run_candidate() {
   /usr/bin/jq -n --arg candidate "${id}" --arg manifest "${manifest}" --arg profile "${profile}" \
     --arg app "${DEV_APP}" --arg serial "${SERIAL}" --argjson adb_port "${ADB_PORT}" \
     --arg workload official_tft --arg quality "1920x1080@60" \
-    '{schema:1,candidate:$candidate,angle_manifest:(if $manifest=="" then null else $manifest end),profile:(if $profile=="" then null else $profile end),app:$app,serial:$serial,adb_server_port:$adb_port,workload:$workload,quality:$quality,auto_perfetto:true}' \
+    --arg silent_env "TFTMAC_AUTONOMOUS_SILENT=1" \
+    '{schema:1,candidate:$candidate,angle_manifest:(if $manifest=="" then null else $manifest end),profile:(if $profile=="" then null else $profile end),app:$app,serial:$serial,adb_server_port:$adb_port,workload:$workload,quality:$quality,auto_perfetto:true,launch_policy:{environment:$silent_env,expected_activation_policy:"prohibited",expected_visible_window_count:0}}' \
     > "${run_dir}/manifest.json"
   typeset -a launch_env
-  launch_env=("TFTMAC_ENABLE_AUTO_PERFETTO=1")
+  launch_env=("TFTMAC_ENABLE_AUTO_PERFETTO=1" "TFTMAC_AUTONOMOUS_SILENT=1")
   [[ -n "${manifest}" ]] && launch_env+=("TFTMAC_ANGLE_DRIVER_MANIFEST=${manifest}")
   [[ -n "${profile}" ]] && launch_env+=("TFTMAC_DEV_EXPERIMENT_PROFILE=${profile}")
   /usr/bin/env "${launch_env[@]}" "${DEV_APP}/Contents/MacOS/TFTMACDEVLauncher" > "${run_dir}/open.log" 2>&1 &

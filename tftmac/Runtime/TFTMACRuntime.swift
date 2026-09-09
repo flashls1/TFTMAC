@@ -2550,6 +2550,10 @@ actor TFTMACRuntimeService {
                 configurationReceipt: effectiveConfigurationReceipt
             )
             self.telemetry = telemetry
+            telemetry.recordEvent("AUTONOMOUS_LAUNCH_POLICY", payload: [
+                "silent_requested": TFTMACLaunchPolicy.isAutonomousSilent(),
+                "expected_activation_policy": TFTMACLaunchPolicy.isAutonomousSilent() ? "prohibited" : "regular"
+            ])
             labStore = try CombatBenchmarkLabStore(applicationSupport: paths.applicationSupport)
             await status("Starting Android through the native Mac app host…", false)
 

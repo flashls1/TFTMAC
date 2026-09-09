@@ -1,5 +1,13 @@
 import AppKit
 
+enum TFTMACLaunchPolicy {
+    static let autonomousSilentEnvironmentKey = "TFTMAC_AUTONOMOUS_SILENT"
+
+    static func isAutonomousSilent(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        environment[autonomousSilentEnvironmentKey] == "1"
+    }
+}
+
 @main
 enum TFTMACApplication {
     @MainActor private static var coordinator: AppCoordinator?
@@ -10,8 +18,11 @@ enum TFTMACApplication {
         let coordinator = AppCoordinator()
         Self.coordinator = coordinator
         application.delegate = coordinator
-        application.setActivationPolicy(.regular)
-        installMainMenu(on: application, coordinator: coordinator)
+        let silent = TFTMACLaunchPolicy.isAutonomousSilent()
+        application.setActivationPolicy(silent ? .prohibited : .regular)
+        if !silent {
+            installMainMenu(on: application, coordinator: coordinator)
+        }
         application.run()
     }
 
