@@ -37,7 +37,7 @@ index 3174d3256..073f7977d 100644
 +#if defined(__APPLE__)
 +                uint64_t tftmac_transport_work_id = 0;
 +                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
-+                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                    tftmac::causal::ParseANGLETimelineWorkId(
 +                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
 +                }
 +                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);
@@ -84,7 +84,7 @@ index 3174d3256..073f7977d 100644
 +#if defined(__APPLE__)
 +                uint64_t tftmac_transport_work_id = 0;
 +                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
-+                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                    tftmac::causal::ParseANGLETimelineWorkId(
 +                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
 +                }
 +                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);

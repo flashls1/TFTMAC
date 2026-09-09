@@ -1,0 +1,170 @@
+diff --git a/src/libANGLE/renderer/vulkan/BUILD.gn b/src/libANGLE/renderer/vulkan/BUILD.gn
+index 1b2098453d..4be14fd2b8 100644
+--- a/src/libANGLE/renderer/vulkan/BUILD.gn
++++ b/src/libANGLE/renderer/vulkan/BUILD.gn
+@@ -16,6 +16,9 @@ declare_args() {
+ 
+   # Enable Vulkan GPU trace event capability
+   angle_enable_vulkan_gpu_trace_events = false
++
++  # Emit the TFTMAC timeline sideband only in the isolated diagnostic build.
++  tftmac_angle_causal_trace = false
+ }
+ 
+ declare_args() {
+@@ -245,6 +248,9 @@ config("angle_vulkan_backend_config") {
+   if (angle_enable_vulkan_validation_layers) {
+     defines += [ "ANGLE_ENABLE_VULKAN_VALIDATION_LAYERS" ]
+   }
++  if (tftmac_angle_causal_trace) {
++    defines += [ "TFTMAC_ANGLE_CAUSAL_TRACE=1" ]
++  }
+ }
+ 
+ angle_source_set("angle_vk_mem_alloc_wrapper") {
+diff --git a/src/libANGLE/renderer/vulkan/CommandProcessor.cpp b/src/libANGLE/renderer/vulkan/CommandProcessor.cpp
+index 5914e24ae3..c21a2d7e32 100644
+--- a/src/libANGLE/renderer/vulkan/CommandProcessor.cpp
++++ b/src/libANGLE/renderer/vulkan/CommandProcessor.cpp
+@@ -11,6 +11,8 @@
+ #include "libANGLE/renderer/vulkan/RendererVk.h"
+ #include "libANGLE/trace.h"
+ 
++#include <array>
++
+ namespace rx
+ {
+ namespace vk
+@@ -58,6 +60,22 @@ bool CommandsHaveValidOrdering(const std::vector<vk::CommandBatch> &commands)
+     return true;
+ }
+ 
++#if defined(TFTMAC_ANGLE_CAUSAL_TRACE)
++bool HasTimelineSemaphoreSubmitInfo(const void *pNext)
++{
++    const VkBaseInStructure *next = static_cast<const VkBaseInStructure *>(pNext);
++    while (next != nullptr)
++    {
++        if (next->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO)
++        {
++            return true;
++        }
++        next = next->pNext;
++    }
++    return false;
++}
++#endif
++
+ template <typename SecondaryCommandBufferListT>
+ void ResetSecondaryCommandBuffers(VkDevice device,
+                                   vk::CommandPool *commandPool,
+@@ -859,6 +877,15 @@ void CommandQueue::destroy(Context *context)
+ 
+     mFenceRecycler.destroy(context);
+ 
++#if defined(TFTMAC_ANGLE_CAUSAL_TRACE)
++    if (mTFTMACTimelineSemaphore != VK_NULL_HANDLE)
++    {
++        vkDestroySemaphore(renderer->getDevice(), mTFTMACTimelineSemaphore, nullptr);
++        mTFTMACTimelineSemaphore = VK_NULL_HANDLE;
++        mTFTMACDevice            = VK_NULL_HANDLE;
++    }
++#endif
++
+     ASSERT(mInFlightCommands.empty() && mGarbageQueue.empty());
+ }
+ 
+@@ -868,6 +895,23 @@ angle::Result CommandQueue::init(Context *context, const vk::DeviceQueueMap &que
+     ANGLE_TRY(mPrimaryCommandPool.init(context, false, queueMap.getIndex()));
+     mQueueMap = queueMap;
+ 
++#if defined(TFTMAC_ANGLE_CAUSAL_TRACE)
++    mTFTMACDevice = context->getDevice();
++    VkSemaphoreTypeCreateInfo timelineType = {};
++    timelineType.sType                    = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
++    timelineType.semaphoreType            = VK_SEMAPHORE_TYPE_TIMELINE;
++    timelineType.initialValue             = 0;
++    VkSemaphoreCreateInfo timelineCreateInfo = {};
++    timelineCreateInfo.sType                  = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
++    timelineCreateInfo.pNext                  = &timelineType;
++    if (vkCreateSemaphore(mTFTMACDevice, &timelineCreateInfo, nullptr,
++                          &mTFTMACTimelineSemaphore) != VK_SUCCESS)
++    {
++        mTFTMACDevice            = VK_NULL_HANDLE;
++        mTFTMACTimelineSemaphore = VK_NULL_HANDLE;
++    }
++#endif
++
+     if (queueMap.isProtected())
+     {
+         ANGLE_TRY(mProtectedPrimaryCommandPool.init(context, true, queueMap.getIndex()));
+@@ -1280,7 +1324,37 @@ angle::Result CommandQueue::queueSubmit(Context *context,
+ 
+     VkFence fenceHandle = fence ? fence->getHandle() : VK_NULL_HANDLE;
+     VkQueue queue       = getQueue(contextPriority);
+-    ANGLE_VK_TRY(context, vkQueueSubmit(queue, 1, &submitInfo, fenceHandle));
++
++#if defined(TFTMAC_ANGLE_CAUSAL_TRACE)
++    VkSubmitInfo instrumentedSubmit = submitInfo;
++    std::array<VkSemaphore, 2> signalSemaphores{};
++    std::array<uint64_t, 2> signalValues{};
++    VkTimelineSemaphoreSubmitInfo timelineSubmitInfo = {};
++    const bool canAddTimeline = mTFTMACTimelineSemaphore != VK_NULL_HANDLE &&
++                                submitInfo.signalSemaphoreCount <= 1 &&
++                                !HasTimelineSemaphoreSubmitInfo(submitInfo.pNext);
++    if (canAddTimeline)
++    {
++        if (submitInfo.signalSemaphoreCount == 1)
++        {
++            signalSemaphores[0] = submitInfo.pSignalSemaphores[0];
++        }
++        signalSemaphores[submitInfo.signalSemaphoreCount] = mTFTMACTimelineSemaphore;
++        signalValues[submitInfo.signalSemaphoreCount] = ++mTFTMACTimelineValue;
++        timelineSubmitInfo.sType                     = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
++        timelineSubmitInfo.pNext                     = instrumentedSubmit.pNext;
++        timelineSubmitInfo.signalSemaphoreValueCount = submitInfo.signalSemaphoreCount + 1;
++        timelineSubmitInfo.pSignalSemaphoreValues    = signalValues.data();
++        instrumentedSubmit.pNext                     = &timelineSubmitInfo;
++        instrumentedSubmit.signalSemaphoreCount      = submitInfo.signalSemaphoreCount + 1;
++        instrumentedSubmit.pSignalSemaphores         = signalSemaphores.data();
++    }
++    const VkSubmitInfo *submitForCall = canAddTimeline ? &instrumentedSubmit : &submitInfo;
++#else
++    const VkSubmitInfo *submitForCall = &submitInfo;
++#endif
++
++    ANGLE_VK_TRY(context, vkQueueSubmit(queue, 1, submitForCall, fenceHandle));
+     mLastSubmittedQueueSerial = submitQueueSerial;
+ 
+     // Now that we've submitted work, clean up RendererVk garbage
+diff --git a/src/libANGLE/renderer/vulkan/CommandProcessor.h b/src/libANGLE/renderer/vulkan/CommandProcessor.h
+index 4f1b3cdcd8..aff21a4ce1 100644
+--- a/src/libANGLE/renderer/vulkan/CommandProcessor.h
++++ b/src/libANGLE/renderer/vulkan/CommandProcessor.h
+@@ -479,6 +479,12 @@ class CommandQueue final : public CommandQueueInterface
+     DeviceQueueMap mQueueMap;
+ 
+     FenceRecycler mFenceRecycler;
++
++#if defined(TFTMAC_ANGLE_CAUSAL_TRACE)
++    VkDevice mTFTMACDevice = VK_NULL_HANDLE;
++    VkSemaphore mTFTMACTimelineSemaphore = VK_NULL_HANDLE;
++    uint64_t mTFTMACTimelineValue = 0;
++#endif
+ };
+ 
+ // CommandProcessor is used to dispatch work to the GPU when the asyncCommandQueue feature is
+diff --git a/android/build/python/aemu/prebuilts/angle.py b/android/build/python/aemu/prebuilts/angle.py
+index a088d945ad..aabb56de09 100644
+--- a/android/build/python/aemu/prebuilts/angle.py
++++ b/android/build/python/aemu/prebuilts/angle.py
+@@ -202,6 +202,9 @@ def buildAngle(build_dir):
+                 " use_custom_libcxx=false")
+         gn_args = gn_common_args.format(arch="x64", os="win")
+ 
++    if os.environ.get("TFTMAC_ANGLE_CAUSAL_TRACE") == "1":
++        gn_args += " tftmac_angle_causal_trace=true"
++
+     gn_cmd = [
+         str(DEPOT_TOOLS_PATH / ("gn.bat" if HOST_OS == "windows" else "gn")),
+         "gen",
