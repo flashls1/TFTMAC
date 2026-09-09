@@ -16,7 +16,7 @@ index 67f72cc80..f3cf13e38 100644
  set_source_files_properties(vk_sub_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
  set_source_files_properties(vk_decoder_snapshot.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
 diff --git a/host/vulkan/vk_decoder.cpp b/host/vulkan/vk_decoder.cpp
-index 3174d3256..877f8b37b 100644
+index 3174d3256..02e43415b 100644
 --- a/host/vulkan/vk_decoder.cpp
 +++ b/host/vulkan/vk_decoder.cpp
 @@ -30,6 +30,7 @@
@@ -124,7 +124,51 @@ index 3174d3256..877f8b37b 100644
                  if ((vkQueueSubmit_VkResult_return) == VK_ERROR_DEVICE_LOST)
                      m_state->on_DeviceLost();
                  vkStream->unsetHandleMapping();
-@@ -22262,10 +22335,74 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -11562,10 +11635,43 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                                    (unsigned long long)fence);
+                 }
+                 VkResult vkQueueSubmit2_VkResult_return = VK_ERROR_OUT_OF_HOST_MEMORY;
++#if defined(__APPLE__)
++                const bool tftmac_submit2_recording =
++                    tftmac::causal::InitializeCurrentThreadRecorder();
++                const uint64_t tftmac_submit2_id = tftmac_submit2_recording
++                    ? g_tftmac_direct_submit_id.fetch_add(1, std::memory_order_relaxed)
++                    : 0;
++                const uint64_t tftmac_submit2_previous_work_id =
++                    tftmac::causal::CurrentThreadTransportWorkId();
++                const uint64_t tftmac_submit2_started_ns = tftmac_submit2_recording
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++                if (tftmac_submit2_recording) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_submit2_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1202,
++                        0,
++                        submitCount);
++                }
++#endif
+                 if (CC_LIKELY(vk)) {
+                     vkQueueSubmit2_VkResult_return = m_state->on_vkQueueSubmit2(
+                         &m_pool, snapshotApiCallHandle, queue, submitCount, pSubmits, fence);
+                 }
++#if defined(__APPLE__)
++                if (tftmac_submit2_recording) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1202,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_submit2_started_ns,
++                        submitCount,
++                        static_cast<uint16_t>(vkQueueSubmit2_VkResult_return));
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_submit2_previous_work_id);
++                }
++#endif
+                 if ((vkQueueSubmit2_VkResult_return) == VK_ERROR_DEVICE_LOST)
+                     m_state->on_DeviceLost();
+                 vkStream->unsetHandleMapping();
+@@ -22262,10 +22368,74 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                          ioStream, (unsigned long long)queue, (unsigned long long)submitCount,
                          (unsigned long long)pSubmits, (unsigned long long)fence);
                  }
@@ -199,7 +243,7 @@ index 3174d3256..877f8b37b 100644
                  vkStream->unsetHandleMapping();
                  if (m_snapshotsEnabled) {
                      m_state->snapshot()->vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle,
-@@ -23157,6 +23294,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -23157,6 +23327,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                  uint64_t id;
                  memcpy((uint64_t*)&id, *readStreamPtrPtr, sizeof(uint64_t));
                  *readStreamPtrPtr += sizeof(uint64_t);
