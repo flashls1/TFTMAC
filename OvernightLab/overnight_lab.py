@@ -51,7 +51,8 @@ PBE_MARKERS = (
 CLASSIFICATIONS = {
     "HARD_REJECT", "INCONCLUSIVE", "NO_SIGNAL", "MECHANISM_WORKING",
     "POSITIVE_PROVISIONAL", "PROMOTION_CANDIDATE", "WIN_60", "CONTROL_VALID",
-    "AUTH_BLOCKED", "SKIPPED", "QUARANTINED",
+    "CONTROL_SETUP_FAILED", "TELEMETRY_INCOMPLETE", "INTERRUPTED",
+    "AUTH_BLOCKED", "UI_BLOCKED", "SKIPPED", "QUARANTINED",
 }
 
 
@@ -462,6 +463,12 @@ class OvernightLab:
         return bool(row and row["q"])
 
     # ---------- launch / process / capture ----------
+    def dev_core_running(self) -> bool:
+        return self.command(
+            ["/usr/bin/pgrep", "-f", "^/Applications/TFTMAC DEV\\.app/Contents/MacOS/TFTMACDEVCore$"],
+            check=False,
+        ).returncode == 0
+
     def owned_emulator_pids(self) -> list[int]:
         pattern = rf"^/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64 @{re.escape(self.authority['avd_name'])}( |$)"
         result = self.command(["/usr/bin/pgrep", "-f", pattern], check=False)
@@ -568,20 +575,31 @@ class OvernightLab:
                 raise LabError(f"ANGLE artifact is not built: {manifest_path}", error_class="ANGLE_ARTIFACT_MISSING", component="angle", phase="launch")
             self.validate_angle_manifest(manifest_path)
             env["TFTMAC_ANGLE_DRIVER_MANIFEST"] = str(manifest_path)
-        argv = [str(self.dev_launcher)]
-        log = (ctx.run_dir / "open.log").open("w", encoding="utf-8")
-        ctx.open_process = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, text=True, env=env)
-        atomic_json(ctx.run_dir / "launch.json", {"argv": argv, "environment": {
-            key: env[key] for key in ("TFTMAC_RUNTIME_MODE", "TFTMAC_DEV_VCPU", "TFTMAC_AUTONOMOUS_SILENT", "TFTMAC_ANGLE_DRIVER_MANIFEST") if key in env
-        }, "started_utc": utc_now()})
+        launch_env = {
+            key: env[key]
+            for key in ("TFTMAC_RUNTIME_MODE", "TFTMAC_DEV_VCPU", "TFTMAC_AUTONOMOUS_SILENT", "TFTMAC_ANGLE_DRIVER_MANIFEST")
+            if key in env
+        }
+        # The frozen Sept.10 LKG is proven only through the packaged GUI/session launch boundary.
+        # Do not execute TFTMACDEVLauncher directly from the controller process.
+        argv = ["/usr/bin/open", "-n"]
+        for key, value in launch_env.items():
+            argv.extend(["--env", f"{key}={value}"])
+        argv.append(str(self.dev_app))
+        opened = self.command(argv, timeout=30, check=False)
+        (ctx.run_dir / "open.log").write_text(opened.stdout + opened.stderr, encoding="utf-8")
+        if opened.returncode != 0:
+            raise LabError(
+                f"DEV GUI launch failed: {normalize_error(opened.stderr or opened.stdout)}",
+                error_class="DEV_GUI_LAUNCH_FAILED", component="host", phase="launch")
+        ctx.open_process = None
+        atomic_json(ctx.run_dir / "launch.json", {"argv": argv, "environment": launch_env, "started_utc": utc_now()})
         deadline = time.monotonic() + 45
         capture = None
         while time.monotonic() < deadline:
             newest = self.latest_capture()
             if newest and newest != before:
                 capture = newest
-                break
-            if ctx.open_process.poll() is not None:
                 break
             time.sleep(0.5)
         ctx.capture = capture
@@ -590,9 +608,10 @@ class OvernightLab:
 
     def wait_for_device(self, ctx: RunContext, timeout: int = 150) -> None:
         self.command([str(self.adb_path), "-P", str(self.adb_port), "start-server"], timeout=20)
-        deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        deadline = started + timeout
         while time.monotonic() < deadline:
-            if ctx.open_process and ctx.open_process.poll() is not None:
+            if time.monotonic() - started > 10 and not self.dev_core_running() and not self.owned_emulator_pids():
                 raise LabError("DEV exited before ADB became ready", error_class="BOOT_FAILURE", phase="boot")
             r = self.adb("get-state", timeout=5, check=False)
             if r.returncode == 0 and "device" in r.stdout:
@@ -682,6 +701,16 @@ class OvernightLab:
         for key in self.authority["lkg_cache_properties"]:
             props[key] = self.adb("shell", "getprop", key).stdout.strip()
         ctx.selected_rhi, ctx.raw_native_rhi = self.selected_rhi(ctx.capture)
+        rhi_deadline = time.monotonic() + 30
+        while ctx.selected_rhi == "UNKNOWN" and time.monotonic() < rhi_deadline:
+            if not self.dev_core_running() or not self.owned_emulator_pids():
+                break
+            time.sleep(1)
+            ctx.selected_rhi, ctx.raw_native_rhi = self.selected_rhi(ctx.capture)
+        if ctx.candidate["kind"] != "vulkan_canary" and ctx.selected_rhi != self.authority["expected_normal_rhi"]:
+            raise LabError(
+                f"expected current LKG RHI {self.authority['expected_normal_rhi']}, observed {ctx.selected_rhi}",
+                error_class="RHI_SELECTION_UNPROVEN", component="runtime", phase="identity")
         identity = {
             "package_paths": package_paths,
             "version_name": vm.group(1), "version_code": int(vc.group(1)),
@@ -1154,6 +1183,17 @@ class OvernightLab:
         return [m for m in markers if m.lower() in text.lower()]
 
     def request_dev_quit(self) -> None:
+        # Prefer the normal AppKit quit path so TFTMAC can seal capture state and restore the AVD.
+        self.command(
+            ["/usr/bin/osascript", "-e", 'tell application id "com.flashls1.tftmac.dev" to quit'],
+            timeout=15, check=False,
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and self.dev_core_running():
+            time.sleep(0.25)
+        if not self.dev_core_running():
+            return
+        # Bounded fallback only when the application does not honor normal quit.
         patterns = [
             r"^/Applications/TFTMAC DEV\.app/Contents/MacOS/TFTMACDEVLauncher$",
             r"^/Applications/TFTMAC DEV\.app/Contents/MacOS/TFTMACDEVCore$",
@@ -1203,7 +1243,16 @@ class OvernightLab:
 
     def classify_result(self, ctx: RunContext, navigation: Optional[dict[str, Any]], error: Optional[BaseException]) -> str:
         if isinstance(error, AuthBlocked): return "AUTH_BLOCKED"
-        if error: return "HARD_REJECT" if getattr(error, "error_class", "") not in {"CAPTURE_FAILURE", "TELEMETRY_FAILURE"} else "INCONCLUSIVE"
+        if error:
+            error_class = getattr(error, "error_class", "")
+            phase = getattr(error, "phase", "")
+            if error_class in {"CAPTURE_FAILURE", "TELEMETRY_FAILURE", "SURFACE_MISSING"}:
+                return "TELEMETRY_INCOMPLETE"
+            if ctx.candidate["kind"] == "control":
+                return "CONTROL_SETUP_FAILED"
+            if phase in {"launch", "boot", "runtime", "identity", "navigation", "login", "candidate_apply"}:
+                return "INCONCLUSIVE"
+            return "HARD_REJECT"
         required = ctx.candidate.get("decision_requires", [])
         for producer in required:
             row = self.db.one("SELECT status FROM telemetry_coverage WHERE run_id=? AND producer=?", (ctx.run_id, producer))
@@ -1284,7 +1333,7 @@ class OvernightLab:
                  int(rollback.get("lkg_integrity", False)), int(rollback["verified"]), canonical_json(rollback)))
         classification = self.classify_result(ctx, navigation, error)
         if not rollback.get("verified"):
-            classification = "HARD_REJECT"
+            classification = "CONTROL_SETUP_FAILED" if candidate["kind"] == "control" else "INCONCLUSIVE"
             if error is None:
                 error = LabError("rollback could not be proven", error_class="ROLLBACK_FAILURE", phase="rollback")
                 self.failure(ctx, error, "rollback")
@@ -1376,7 +1425,24 @@ class OvernightLab:
         assert self.game_xy(1280, 720) == (1200, 675)
         # Candidate admission must be clean.
         for c in self.manifest["candidates"]: assert not self.contains_pbe(c)
-        return {"static": static, "latency_parser": "PASS", "coordinate_scaling": "PASS", "candidate_admission": "PASS"}
+        # Current LKG RHI selection must win over generic Vulkan capability evidence.
+        with tempfile.TemporaryDirectory() as td:
+            capture = Path(td)
+            (capture / "highperf-engine-boot.log").write_text(
+                "VulkanRHI will NOT be used:\nVulkan is disabled via console variable.\n"
+                "OpenGL ES will be used.\nLogRHI: Initializing OpenGL RHI\n"
+                "LogRHI: GL_RENDERER: ANGLE (Apple, Vulkan 1.3.0)\n",
+                encoding="utf-8",
+            )
+            assert self.selected_rhi(capture)[0] == "OPENGL_ES_ANGLE"
+        # Infrastructure/setup faults are not candidate performance rejections.
+        control_ctx = RunContext("self-test", self.candidate("control"), "run-control", Path("/tmp"))
+        setup_error = LabError("fixture boot failure", error_class="BOOT_FAILURE", phase="boot")
+        assert self.classify_result(control_ctx, None, setup_error) == "CONTROL_SETUP_FAILED"
+        cache_ctx = RunContext("self-test", self.candidate("cache-current"), "run-cache", Path("/tmp"))
+        assert self.classify_result(cache_ctx, None, setup_error) == "INCONCLUSIVE"
+        return {"static": static, "latency_parser": "PASS", "coordinate_scaling": "PASS",
+                "candidate_admission": "PASS", "rhi_precedence": "PASS", "failure_classification": "PASS"}
 
     def fault_test(self) -> dict[str, Any]:
         cases: dict[str, bool] = {}
@@ -1404,14 +1470,28 @@ class OvernightLab:
 
     def reconcile_resume(self, cid: str) -> dict[str, Any]:
         cp = read_json(self.checkpoint_path(cid))
-        dev_running = self.command(["/usr/bin/pgrep", "-f", "^/Applications/TFTMAC DEV\\.app/Contents/MacOS/TFTMACDEVCore$"], check=False).returncode == 0
+        dev_running = self.dev_core_running()
         adb_running = self.adb("get-state", timeout=5, check=False).returncode == 0
-        detail = {"checkpoint": cp, "dev_running": dev_running, "adb_running": adb_running}
+        emulator_running = bool(self.owned_emulator_pids())
+        orphaned = cp.get("campaign_state") == "RUNNING" and not dev_running and not adb_running and not emulator_running
+        detail = {"checkpoint": cp, "dev_running": dev_running, "adb_running": adb_running,
+                  "emulator_running": emulator_running, "orphaned_running_checkpoint": orphaned}
         recovery = self.ensure_clean_runtime_baseline()
         detail["avd_recovery"] = recovery
         if self.owned_emulator_pids() or self.adb("get-state", timeout=5, check=False).returncode == 0:
             raise LabError("resume reconciliation could not stop the owned diagnostic emulator", error_class="ROLLBACK_FAILURE", phase="resume")
         self.verify_static_authority()
+        if orphaned:
+            run_id = cp.get("current_run_id")
+            if run_id:
+                row = self.db.one("SELECT state FROM runs WHERE run_id=?", (run_id,))
+                if row and row["state"] != "COMPLETE":
+                    self.db.execute(
+                        "UPDATE runs SET ended_utc=?,state='COMPLETE',classification='INTERRUPTED',rollback_verified=1 WHERE run_id=?",
+                        (utc_now(), run_id))
+            self.write_checkpoint(
+                cid, queue_index=int(cp.get("queue_index", 0)), state="RECOVERED", phase="RESUME_RECONCILED",
+                current_candidate=None, current_run=None, failure="orphaned RUNNING checkpoint reconciled to restored host baseline")
         return detail
 
     def run_campaign(self, *, duration_seconds: int, resume: bool) -> str:
@@ -1432,8 +1512,10 @@ class OvernightLab:
                 cid = self.create_campaign(); index = 0
             deadline = time.monotonic() + duration_seconds
             queue = list(self.manifest["queue"])
+            control_setup_retries: dict[int, int] = {}
             while index < len(queue) and time.monotonic() < deadline:
                 candidate_id = queue[index]
+                candidate = self.candidate(candidate_id)
                 self.write_checkpoint(cid, queue_index=index, state="RUNNING", phase="CANDIDATE_ADMISSION", current_candidate=candidate_id, current_run=None, failure=None)
                 if self.is_quarantined(cid, candidate_id):
                     classification = "QUARANTINED"
@@ -1441,16 +1523,28 @@ class OvernightLab:
                     try:
                         classification = self.run_candidate(cid, candidate_id)
                     except BaseException as exc:
-                        classification = "HARD_REJECT"
+                        classification = "CONTROL_SETUP_FAILED" if candidate["kind"] == "control" else "INCONCLUSIVE"
                         # run_candidate contains its own rollback; this is only controller-level escape.
                         self.write_checkpoint(cid, queue_index=index, state="RUNNING", phase="CANDIDATE_CONTROLLER_ERROR", current_candidate=candidate_id, current_run=None, failure=normalize_error(str(exc)))
-                index += 1
-                self.write_checkpoint(cid, queue_index=index, state="RUNNING", phase="QUEUE_ADVANCED", current_candidate=None, current_run=None, failure=None)
                 self.generate_report(cid)
                 # Never continue after a failed rollback.
                 row = self.db.one("SELECT rollback_verified FROM runs WHERE campaign_id=? ORDER BY started_utc DESC LIMIT 1", (cid,))
                 if row and not row["rollback_verified"]:
                     raise LabError("campaign stopped because latest rollback is unproven", error_class="ROLLBACK_FAILURE", phase="campaign")
+                # The frozen LKG documents one bounded clean retry for a startup-only transient.
+                if candidate["kind"] == "control" and classification == "CONTROL_SETUP_FAILED" and control_setup_retries.get(index, 0) == 0:
+                    control_setup_retries[index] = 1
+                    self.write_checkpoint(cid, queue_index=index, state="RUNNING", phase="CONTROL_SETUP_RETRY", current_candidate=candidate_id, current_run=None, failure="bounded clean retry of unchanged control")
+                    continue
+                # No performance candidate is legal before a green current-client control.
+                if candidate["kind"] == "control" and classification != "CONTROL_VALID":
+                    blocked_state = "AUTH_BLOCKED" if classification == "AUTH_BLOCKED" else "CONTROL_BLOCKED"
+                    self.db.execute("UPDATE campaigns SET state=? WHERE campaign_id=?", (blocked_state, cid))
+                    self.write_checkpoint(cid, queue_index=index, state=blocked_state, phase="CONTROL_NOT_GREEN", current_candidate=candidate_id, current_run=None, failure=classification)
+                    self.generate_report(cid)
+                    return cid
+                index += 1
+                self.write_checkpoint(cid, queue_index=index, state="RUNNING", phase="QUEUE_ADVANCED", current_candidate=None, current_run=None, failure=None)
             state = "COMPLETE" if index >= len(queue) else "DEADLINE_COMPLETE"
             self.db.execute("UPDATE campaigns SET state=?,ended_utc=? WHERE campaign_id=?", (state, utc_now(), cid))
             self.write_checkpoint(cid, queue_index=index, state=state, phase="COMPLETE", current_candidate=None, current_run=None, failure=None)
