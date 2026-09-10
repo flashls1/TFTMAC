@@ -1,0 +1,28 @@
+{
+  "cache_after": null,
+  "cache_before": null,
+  "candidate": "control",
+  "classification": "HARD_REJECT",
+  "error": "ADB failed: adb: device 'emulator-#' not found",
+  "navigation": null,
+  "raw_native_classifier_value": "UNKNOWN",
+  "rollback": {
+    "angle_restored": true,
+    "avd_recovery": {
+      "journal_present": false,
+      "restored": false,
+      "sha256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125",
+      "verified": true
+    },
+    "cache_properties_restored": true,
+    "dev_core_stopped": true,
+    "emulator_stopped": true,
+    "fallback_emulator_stop": false,
+    "installed_app_integrity": true,
+    "lkg_integrity": true,
+    "native_restore_evidence": false,
+    "profile_restored": true,
+    "verified": true
+  },
+  "selected_game_rhi": "UNKNOWN"
+}

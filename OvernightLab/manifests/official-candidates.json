@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "client_scope": "OFFICIAL_LIVE",
+  "queue": [
+    "control",
+    "buffer-observability",
+    "cache-no-global-sync",
+    "cache-current",
+    "control",
+    "direct-vulkan"
+  ],
+  "candidates": [
+    {
+      "id": "control",
+      "family": "CONTROL",
+      "kind": "control",
+      "build_scope": "NO_BUILD",
+      "restart_class": "EMULATOR_RESTART",
+      "target_stages": ["1-1", "1-2"],
+      "maximum_seconds": 900
+    },
+    {
+      "id": "buffer-observability",
+      "family": "BUFFER_RETENTION",
+      "kind": "angle",
+      "build_scope": "ANGLE_DRIVER_BUILD",
+      "restart_class": "EMULATOR_RESTART",
+      "angle_manifest": "/Volumes/MAC MINI M4/TFTMAC/OvernightLab/builds/angle-split-reasons/driver-manifest.json",
+      "target_stages": ["1-1", "1-2"],
+      "maximum_seconds": 900,
+      "decision_requires": ["angle_reason_events"]
+    },
+    {
+      "id": "cache-no-global-sync",
+      "family": "CACHE",
+      "kind": "cache_comparator",
+      "build_scope": "NO_BUILD",
+      "restart_class": "GAME_RESTART",
+      "guest_properties": {
+        "debug.egl.blobcache.multifile": "true",
+        "debug.angle.feature_overrides_enabled": "exposeNonConformant*:exposeES32ForTesting",
+        "debug.angle.feature_overrides_disabled": "preferSubmitAtFBOBoundary"
+      },
+      "target_stages": ["1-1", "1-2"],
+      "maximum_seconds": 900
+    },
+    {
+      "id": "cache-current",
+      "family": "CACHE",
+      "kind": "cache_current",
+      "build_scope": "NO_BUILD",
+      "restart_class": "GAME_RESTART",
+      "guest_properties": {
+        "debug.egl.blobcache.multifile": "true",
+        "debug.angle.feature_overrides_enabled": "exposeNonConformant*:exposeES32ForTesting:syncMonolithicPipelinesToBlobCache",
+        "debug.angle.feature_overrides_disabled": "preferSubmitAtFBOBoundary"
+      },
+      "target_stages": ["1-1", "1-2"],
+      "maximum_seconds": 900
+    },
+    {
+      "id": "direct-vulkan",
+      "family": "DIRECT_VULKAN",
+      "kind": "vulkan_canary",
+      "build_scope": "NO_BUILD",
+      "restart_class": "GAME_RESTART",
+      "target_stages": ["1-1"],
+      "maximum_seconds": 480,
+      "stop_on_error_markers": ["in_var_ATTRIBUTE1", "missing from descriptor", "Failed to create graphics pipeline"]
+    }
+  ]
+}

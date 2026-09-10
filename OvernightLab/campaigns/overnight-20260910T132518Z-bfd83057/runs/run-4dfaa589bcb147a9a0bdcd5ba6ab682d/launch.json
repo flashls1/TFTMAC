@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "/usr/bin/open",
+    "-n",
+    "-W",
+    "--env",
+    "TFTMAC_RUNTIME_MODE=advanced_diagnostics",
+    "--env",
+    "TFTMAC_DEV_VCPU=8",
+    "--env",
+    "TFTMAC_AUTONOMOUS_SILENT=1",
+    "/Applications/TFTMAC DEV.app"
+  ],
+  "started_utc": "2026-09-10T13:25:18Z"
+}

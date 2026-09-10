@@ -6,6 +6,7 @@ import Vision
 private let referenceWidth = 2560
 private let referenceHeight = 1440
 private let supportedDimensions: Set<String> = [
+    "1920x1080",
     "2560x1440",
     "2880x1620",
     "3200x1800",

@@ -1,0 +1,12 @@
+{
+  "build_scope": "NO_BUILD",
+  "family": "CONTROL",
+  "id": "control",
+  "kind": "control",
+  "maximum_seconds": 900,
+  "restart_class": "EMULATOR_RESTART",
+  "target_stages": [
+    "1-1",
+    "1-2"
+  ]
+}
