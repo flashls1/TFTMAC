@@ -1,0 +1,24 @@
+{
+  "model": "TFTMAC_CVAR_IMPACT_V1",
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": [],
+  "receipt_sha256": "591705a38188b5c0108566aefe6dc986c20855af81cf86bc18ce49293224afbb",
+  "stats": {
+    "candidate_blocked": 8745,
+    "candidate_measured": 91255,
+    "queue_complete": 82307,
+    "root_ok": 95989,
+    "transport_loss": 8745,
+    "unroot_ok": 91255
+  },
+  "invariants": {
+    "emulator_loss_fails_closed": true,
+    "impact_completion_by_queue_resolution": true,
+    "no_measurement_before_uid2000": true,
+    "overlay_requires_rollback": true,
+    "root_timeout_fails_closed": true,
+    "unroot_timeout_fails_closed": true
+  },
+  "result": "PASS"
+}
