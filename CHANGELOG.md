@@ -16,6 +16,7 @@ This section is the running test/version ledger for the current TFTMAC DEV optim
 - ANGLE revision: `1166eec4c0b125e9e945196acfc549983ef72b18`.
 - Accepted AVD baseline SHA-256: `b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125`.
 - Test protocol: one hypothesis at a time; record `WIN`, `NO WIN`, or `INCONCLUSIVE`; keep proven wins; restore baseline after failures; do not create extra infrastructure merely to explain a loser.
+- Standing versioning policy: preserve the frozen LKG separately and never rewrite it to match the current experiment winner. Improvements advance the DEV working configuration version-by-version; each verified improvement becomes the next working winner, each failed or inconclusive test remains logged with its reason, and testing continues forward from the latest proven winner. Historical controls remain available for comparison and rollback.
 
 #### Baseline — CONTROL_GREEN
 
