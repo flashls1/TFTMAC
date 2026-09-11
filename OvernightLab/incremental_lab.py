@@ -105,6 +105,7 @@ class IncrementalLab(base.OvernightLab):
             "working_profile_sha256": base.sha256_file(working),
             "accepted": [],
             "results": [],
+            "stability_runs": [],
             "queue_index": 0,
             "rollback_verified": True,
         })
@@ -368,12 +369,29 @@ class IncrementalLab(base.OvernightLab):
             f"- Base winner: `{state['base_working_version']}`",
             f"- Working profile SHA-256: `{state['working_profile_sha256']}`",
             f"- Accepted cumulative candidates: {', '.join(x['id'] for x in state['accepted']) or 'none'}",
+            f"- Stability-control runs: {len(state.get('stability_runs', []))}",
             f"- Rollback verified: `{state['rollback_verified']}`", "", "## Results", ""
         ]
         for item in state["results"]:
             lines.append(f"- `{item['candidate']}`: initial={item.get('initial_decision')}, confirmation={item.get('confirmation_decision')}, kept={item.get('kept')}, control={item.get('control_run')}, candidateRun={item.get('candidate_run')}")
+        if state.get("stability_runs"):
+            lines.extend(["", "## Stability controls", ""])
+            for item in state["stability_runs"]:
+                m = item.get("metrics", {})
+                lines.append(f"- `{item['run_id']}`: classification={item['classification']}, profile={item['profile_sha256']}, fps={m.get('fps')}, low1={m.get('low1')}, p95={m.get('p95')}, p99={m.get('p99')}, rollback={item.get('rollback_verified')}")
         out.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return out
+
+    @staticmethod
+    def stability_spec() -> dict[str, Any]:
+        return {
+            "id": "stability-control",
+            "family": "campaign_stability",
+            "cvar": "",
+            "from": "",
+            "to": "",
+            "reason": "Queue-exhaustion stability control using the current working profile without changing any CVar.",
+        }
 
     def run_incremental_campaign(self, duration_seconds: int, resume: bool) -> str:
         if base.LOCK_PATH.exists():
@@ -438,7 +456,33 @@ class IncrementalLab(base.OvernightLab):
                 if latest and any(not bool(r["rollback_verified"]) for r in latest):
                     state["rollback_verified"] = False; self.write_state(cid, state)
                     raise base.LabError("incremental campaign stopped because rollback is unproven", error_class="ROLLBACK_FAILURE", phase="campaign")
-            end_state = "COMPLETE" if state["queue_index"] >= len(specs) else "DEADLINE_COMPLETE"
+
+            # Queue exhausted before the four-hour deadline: accumulate stability evidence only.
+            # No new tuning candidate is invented or admitted in this tail loop.
+            stability = self.stability_spec()
+            while state["queue_index"] >= len(specs) and time.monotonic_ns() < int(state["deadline_monotonic_ns"]):
+                working = Path(state["working_profile_path"])
+                run_id, classification = self.run_profile(cid, stability, "stability-control", working, None)
+                rollback_row = self.db.rows("SELECT rollback_verified FROM runs WHERE run_id=?", (run_id,))
+                rollback_verified = bool(rollback_row and rollback_row[0]["rollback_verified"])
+                state.setdefault("stability_runs", []).append({
+                    "run_id": run_id,
+                    "classification": classification,
+                    "profile_sha256": base.sha256_file(working),
+                    "metrics": self.metrics(run_id),
+                    "rollback_verified": rollback_verified,
+                })
+                if not rollback_verified:
+                    state["rollback_verified"] = False
+                self.write_state(cid, state)
+                self.incremental_report(cid)
+                if classification != "MECHANISM_WORKING" or not rollback_verified:
+                    raise base.LabError(
+                        f"stability-control not green: classification={classification} rollback={rollback_verified}",
+                        error_class="STABILITY_CONTROL_FAILED" if rollback_verified else "ROLLBACK_FAILURE",
+                        phase="campaign")
+
+            end_state = "DEADLINE_COMPLETE" if time.monotonic_ns() >= int(state["deadline_monotonic_ns"]) else ("COMPLETE" if state["queue_index"] >= len(specs) else "DEADLINE_COMPLETE")
             state["campaign_state"] = end_state
             self.write_state(cid, state)
             self.db.execute("UPDATE campaigns SET state=?,ended_utc=? WHERE campaign_id=?", (end_state, utc_now(), cid))
@@ -475,7 +519,9 @@ def main() -> int:
             with tempfile.TemporaryDirectory() as td:
                 for spec in manifest["candidates"][:3]:
                     out=Path(td)/f"{spec['id']}.ini"; receipts.append(lab.build_profile_candidate(current,spec,out)); current=lab.installed_profile
-            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
+            stability = lab.stability_spec()
+            assert stability["id"] == "stability-control" and stability["cvar"] == "" and stability["from"] == stability["to"] == ""
+            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "stability_tail_policy": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
         if args.command == "campaign":
             print(lab.run_incremental_campaign(args.duration, args.resume)); return 0
         if args.command == "status":
