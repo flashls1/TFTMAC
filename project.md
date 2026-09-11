@@ -1,15 +1,15 @@
 # TFTMAC Project Record
 
-> **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-10 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
+> **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-11 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `master` remains merged repository authority; active optimization work is isolated in Clara change `ff2f318b-245d-418a-b86f-e07d55b19826` against the DEV / `advanced_diagnostics` product.  
+**Current development line:** `master` remains merged repository authority. OvernightLab authority reconciliation change `ff2f318b-245d-418a-b86f-e07d55b19826` merged through PR #9 at `bf61c21a723f2f132834acedda860efbb2223d42` and is closed. Current post-merge continuity/live-layer recovery is isolated in Clara change `b42fb30e-2f22-45f0-9d27-00d9e67a58bf`; it does not admit a new performance candidate.  
 **Protected release/LKG:** TFTMAC 2.3.0 build 8 Control/LKG remains separate, frozen, and available as historical rollback/comparison authority.  
 **Current DEV application identity:** TFTMAC 2.3.0 build 8 DEV (`/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`). Test-ledger versions do not change the product release number.  
 **Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
 **Current test series:** `DEV-B8-2026-09-10-A`.  
 **Current verified working winner:** **`DEV-B8-WIN-01`**.  
-**Project record current through:** 2026-09-10 results-first verification pass.
+**Project record current through:** 2026-09-11 incremental-gains doctrine and post-PR-#9 continuity; performance winner remains `DEV-B8-WIN-01`.
 
 ## 0. Living wiki contract
 
@@ -49,10 +49,11 @@ Mandatory companion records:
 1. Start every new candidate from the latest verified DEV winner, currently `DEV-B8-WIN-01`, not from the frozen LKG unless a matched historical control is specifically required.
 2. Change/test one primary hypothesis at a time. Add only a directly-related minimal blocker adjustment when concrete evidence says the intended candidate cannot otherwise execute.
 3. Evaluate net system/gameplay improvement, not FPS alone. FPS is heavily weighted, alongside frame pacing, p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, allocation/churn, stalls, input responsiveness, correctness, stability, and compatibility.
-4. **VERIFIED NET IMPROVEMENT:** integrate it, assign the next `DEV-B8-WIN-##`, update this wiki and `CHANGELOG.md`, then test the next candidate on top of the new winner.
-5. **NOT VERIFIED / INCONCLUSIVE / REGRESSION:** record it in `CHANGELOG.md`, do not integrate it, retain/restore the latest verified winner here, and move forward.
-6. Compounding/synergy is desirable but must be measured. A prior verified win remains integrated while the next factor is tested; the combined configuration must itself verify before promotion.
-7. Never rewrite the frozen LKG to match the DEV winner. LKG is historical control/rollback; DEV is the evolving optimization line.
+4. **60 FPS is the cumulative destination, not a per-candidate gate.** A candidate does not need to reach 60 FPS or clear an arbitrary +5% threshold to be useful.
+5. **VERIFIED REPEATABLE NET IMPROVEMENT:** even when small, integrate it, assign the next `DEV-B8-WIN-##`, update this wiki and `CHANGELOG.md`, then test the next candidate on top of the new winner.
+6. **NOT VERIFIED / INCONCLUSIVE / REGRESSION:** record it in `CHANGELOG.md`, do not integrate it, retain/restore the latest verified winner here, and move forward without building an explanation project around the loser.
+7. Compounding/synergy is the active strategy and must be measured. Each prior verified win remains integrated while the next factor is tested; the combined configuration must verify before promotion. The experiment program asks whether many small clean gains can add up to continuous useful 60 FPS.
+8. Never rewrite the frozen LKG to match the DEV winner. LKG is historical control/rollback; DEV is the evolving optimization line.
 
 ### Current completed-test state
 
@@ -78,6 +79,8 @@ OvernightLab is retained as a **data-preserving telemetry/provenance layer**, no
 - Root-only cache file inventory is opt-in; ordinary performance logging relies on property readback and native telemetry so the observer does not restart/disrupt ADB just to collect optional metadata.
 - The frozen LKG cache set with global pipeline sync remains historical comparator data. OvernightLab's normal control now applies the WIN-01 cache properties with global sync removed.
 - Generated campaigns, SQLite state, compiled caches/binaries and reports are runtime evidence, not repository source; they must remain locally retained/ignored rather than continually dirtying Git.
+- **Post-merge continuity finding (2026-09-11):** after PR #9 merged and Clara closed the `ff2f318b...` worktree, that worktree's ignored OvernightLab campaign/database/screenshots were no longer present. Bounded searches found no copy in remaining TFTMAC worktrees, `/Volumes/MAC MINI M4/TFTMAC`, Trash, Clara durable areas searched, Spotlight results, or local Time Machine snapshots. Do not claim those derived files remain recoverable.
+- **Raw evidence continuity remains intact:** the authoritative `~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures` store still contains the relevant Sept. 10 DEV sessions and native SQLite telemetry, including `2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f`. The live OvernightLab recovery must start fresh from current authority and may reference surviving native captures; it must not fabricate deleted historical campaign rows.
 
 ### Mandatory update rule after every test
 
@@ -100,11 +103,7 @@ the product UI. The application must also be an engineering laboratory that
 captures the complete runtime behavior well enough to make and reject graphics-
 pipeline changes based on evidence.
 
-The completion standard is not “the emulator process exists” and not “the lobby
-shows 60 FPS.” The user must be able to play through the native Mac window, and
-the logger must preserve every under-target period across the complete run. The
-graphics target is at least 60 useful FPS throughout, not only during selected
-scenes.
+The completion standard is not “the emulator process exists” and not “the lobby shows 60 FPS.” The user must be able to play through the native Mac window, and the logger must preserve every under-target period across the complete run. The ultimate graphics target is at least 60 useful FPS throughout, not only during selected scenes. The optimization path is intentionally incremental: test one exposed/research-backed setting at a time, keep every repeatable net improvement even when small, stack the next experiment on that winner, and measure whether the accumulated gains close the remaining gap to continuous 60 FPS.
 
 ## 2. Current architecture
 

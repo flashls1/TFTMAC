@@ -55,11 +55,27 @@ final class CombatBenchmarkAnalysisTests: XCTestCase {
         XCTAssertEqual(analysis.decision, .reject)
     }
 
-    func testCompletedScreeningBelowFivePercentWeightedFPSImprovementRejects() {
-        let baseline = metrics()
-        let analysis = CombatBenchmarkAnalysis(baseline: baseline, candidate: baseline)
+    func testSmallSubFivePercentWeightedFPSImprovementIsPromising() {
+        let analysis = CombatBenchmarkAnalysis(
+            baseline: metrics(),
+            candidate: metrics(weightedFPS: 51)
+        )
 
-        XCTAssertEqual(analysis.decision, .reject)
+        XCTAssertEqual(analysis.decision, .promising)
+        XCTAssertEqual(analysis.deltas.weightedFPSPercent, 2, accuracy: 0.001)
+    }
+
+    func testTailOnlyIncrementalGainCanBePromisingWithSmallFPSTradeoff() {
+        let analysis = CombatBenchmarkAnalysis(
+            baseline: metrics(),
+            candidate: metrics(
+                weightedFPS: 49.5,
+                p95IntervalMilliseconds: 31,
+                p99IntervalMilliseconds: 49
+            )
+        )
+
+        XCTAssertEqual(analysis.decision, .promising)
     }
 
     func testInvalidCandidateIsInconclusiveAndReportsEveryFailure() {
@@ -118,13 +134,24 @@ final class CombatBenchmarkAnalysisTests: XCTestCase {
         XCTAssertEqual(analysis.decision, .reject)
     }
 
-    func testThresholdGapIsInconclusive() {
-        let analysis = CombatBenchmarkAnalysis(
-            baseline: metrics(),
-            candidate: metrics(weightedFPS: 53, onePercentLowFPS: 16)
-        )
+    func testNeutralComparisonIsInconclusive() {
+        let baseline = metrics()
+        let analysis = CombatBenchmarkAnalysis(baseline: baseline, candidate: baseline)
 
         XCTAssertEqual(analysis.decision, .inconclusive)
+    }
+
+    func testMaterialWeightedFPSRegressionRejectsEvenWithTailImprovement() {
+        let analysis = CombatBenchmarkAnalysis(
+            baseline: metrics(),
+            candidate: metrics(
+                weightedFPS: 47,
+                p95IntervalMilliseconds: 30,
+                p99IntervalMilliseconds: 48
+            )
+        )
+
+        XCTAssertEqual(analysis.decision, .reject)
     }
 
     func testOnePercentLowUsesMeanOfSlowestOnePercent() {

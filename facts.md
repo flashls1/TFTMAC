@@ -1,9 +1,9 @@
 # TFTMAC Facts
 
-> **CURRENT DEV AUTHORITY — 2026-09-10 America/Chicago.** The DEV optimization/versioning records in `project.md` and `CHANGELOG.md` supersede older mutable DEV build, campaign, performance, and readiness claims below. Historical measurements retain their original dates and remain evidence for their recorded configuration only.
+> **CURRENT DEV AUTHORITY — 2026-09-11 America/Chicago.** The DEV optimization/versioning records in `project.md` and `CHANGELOG.md` supersede older mutable DEV build, campaign, performance, and readiness claims below. Historical measurements retain their original dates and remain evidence for their recorded configuration only.
 
-**Authority date:** 2026-09-10 America/Chicago  
-**Current DEV evidence through:** 2026-09-10 results-first verification pass  
+**Authority date:** 2026-09-11 America/Chicago
+**Current DEV evidence through:** 2026-09-11 incremental-gains optimization doctrine; latest performance winner remains `DEV-B8-WIN-01`
 **Purpose:** preserve current facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 ## Mandatory current-authority reading and record-book rule
@@ -18,7 +18,7 @@ For the active results-first pass, also obey `.clara/plans/ff2f318b-245d-418a-b8
 
 **LOCKED RECORD-BOOK POLICY:** every completed DEV optimization test must update the current record books in the same work cycle. A test result is not considered fully recorded until `CHANGELOG.md` contains the exact result and integration decision and `project.md` reflects any change to current winner/state/version progression. Update `facts.md` whenever the result changes a current fact, hard boundary, mandatory rule, runtime/client identity, or authoritative current configuration. Do not copy transient measurements into `facts.md` merely because a test ran; facts stays concise and authoritative, while `CHANGELOG.md` retains the detailed test history.
 
-**LOCKED PROMOTION POLICY:** VERIFIED NET IMPROVEMENT -> integrate it, assign/promote the next working `DEV-B8-WIN-##` identity, update `project.md` and `CHANGELOG.md`, and use that winner as the baseline for the next test. NOT VERIFIED / INCONCLUSIVE / REGRESSION -> log the exact result and reason in `CHANGELOG.md`, do not integrate it, keep/restore the latest verified winner in `project.md`, and move to the next candidate. A small regression in one secondary metric may be accepted when the overall measured system/gameplay result is noticeably better and no correctness, stability, compatibility, or severe-tail regression outweighs the gain.
+**LOCKED PROMOTION POLICY:** continuous useful 60 FPS is the cumulative destination, not a per-candidate minimum. There is **no fixed positive-gain percentage floor** for retaining an optimization. VERIFIED, REPEATABLE NET IMPROVEMENT -> integrate it, assign/promote the next working `DEV-B8-WIN-##` identity, update `project.md` and `CHANGELOG.md`, and use that winner as the baseline for the next test. NOT VERIFIED / INCONCLUSIVE / REGRESSION -> log the exact result and reason in `CHANGELOG.md`, do not integrate it, keep/restore the latest verified winner in `project.md`, and move to the next candidate. A small regression in one secondary metric may be accepted when the overall measured system/gameplay result is better and no correctness, stability, compatibility, or severe-tail regression outweighs the gain. Small verified gains are intentionally retained so they can compound toward the 60-FPS target.
 
 **LOCKED LKG SEPARATION:** the frozen LKG remains separate and immutable. The evolving DEV working winner is never allowed to silently rewrite the historical LKG/control evidence.
 
@@ -466,20 +466,12 @@ Privacy facts:
 
 Decision rules:
 
-- **HOME_RUN:** after the weighted-FPS +5% guard, 1% low +20% or more, jank and
-  severe rates each -30% or more relative, and either weighted FPS +10% or p95
-  interval -15%.
-- **PROMISING:** weighted FPS +5% or more and 1% low +10% or more, with no
-  correctness or tail regression.
-- **REJECT:** gain below 5%, p95/p99 worsens at least 10%, or any boot, render,
-  input, audio, login, memory, cleanup, or usability regression.
-- **INCONCLUSIVE:** invalid workload/coverage/synchronization, incompatible
-  configuration identity, or result between thresholds.
-- A winning candidate still requires a five-minute cold confirmation before
-  normal-use promotion.
-- **LOCKED:** `HOME_RUN`/`PROMISING` are relative candidate decisions, not proof
-  that the product target is met. The separate full-run status remains
-  `TARGET_NOT_MET` until useful-frame cadence holds at least 60 FPS throughout.
+- **HOME_RUN:** a standout broad win: 1% low +20% or more, jank and severe rates each -30% or more relative, and either weighted FPS +10% or p95 interval -15%, without a material veto.
+- **PROMISING:** any valid directional improvement in weighted FPS, 1% low, both p95/p99 tails, or smoothness/jank/missed-vsync behavior, provided no material regression or correctness/usability veto outweighs it. There is no +5% FPS floor.
+- **REJECT:** correctness/usability failure or material regression, including weighted FPS about 5% worse, 1% low about 10% worse, p95/p99 at least 10% worse, or any boot, render, input, audio, login, memory, cleanup, or usability regression.
+- **INCONCLUSIVE:** invalid workload/coverage/synchronization, incompatible configuration identity, or valid evidence with no directional improvement or decisive regression.
+- A `PROMISING` incremental candidate requires the existing cold confirmation before becoming the next DEV working winner; a later full-run check may still veto it if compounding exposes a material regression.
+- **LOCKED:** `HOME_RUN`/`PROMISING` are relative candidate decisions, not proof that the product target is met. The separate full-run status remains `TARGET_NOT_MET` until useful-frame cadence holds at least 60 FPS throughout.
 
 ## 11. Verified results and decisions
 

@@ -1,7 +1,7 @@
 # TFTMAC Benchmark and Analysis Contract
 
-**Authority date:** 2026-09-10 America/Chicago
-**Formula version:** `tftmac-benchmark-v3`
+**Authority date:** 2026-09-11 America/Chicago
+**Formula version:** `tftmac-benchmark-v4`
 **Current DEV runtime:** TFTMAC DEV 2.3.0 build 8 / StockShadow on the M4 Mac mini; current verified optimization baseline `DEV-B8-WIN-01`, 1920×1080 / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE. Historical Build 8 full-run captures remain benchmark evidence for their recorded configurations.
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
@@ -30,7 +30,7 @@ Full runs remain valuable because they include the complete performance envelope
 A lobby, a reported `SRC 60`, an `OUT 60`, a successful launch, or an emulator
 process is never a gameplay benchmark.
 
-The current optimization decision is **net-system efficiency**, with FPS heavily weighted but not exclusive. Direct graphics cadence, 1% low, p95/p99/worst-frame latency, jank, missed-vsync/severe behavior, source freshness and owned-boundary evidence remain primary. CPU/RHI efficiency, memory behavior, allocation/churn, stalls, responsiveness, thermal/power and audio may also be optimization or veto dimensions when directly measured. A small regression in one secondary metric does not automatically reject a candidate when the overall measured result is noticeably better and no correctness/stability/compatibility or severe-tail regression outweighs the gain.
+The current optimization decision is **net-system efficiency**, with FPS heavily weighted but not exclusive. Direct graphics cadence, 1% low, p95/p99/worst-frame latency, jank, missed-vsync/severe behavior, source freshness and owned-boundary evidence remain primary. CPU/RHI efficiency, memory behavior, allocation/churn, stalls, responsiveness, thermal/power and audio may also be optimization or veto dimensions when directly measured. A small regression in one secondary metric does not automatically reject a candidate when the overall measured result is better and no correctness/stability/compatibility or severe-tail regression outweighs the gain. **There is no fixed positive-gain percentage floor:** a repeatable 1–4% improvement or a small pacing/tail win can be worth keeping because the active strategy is to compound verified gains toward continuous 60 FPS.
 
 ## 2. Evidence and claim discipline
 
@@ -109,7 +109,7 @@ Before calculation, create an analysis manifest:
 ```json
 {
   "analysis_schema": "tftmac.benchmark-report.v1",
-  "formula_version": "tftmac-benchmark-v2",
+  "formula_version": "tftmac-benchmark-v4",
   "evidence_mode": "FULL_RUN|BOUNDED_AB|DIAGNOSTIC_ONLY|INVALID",
   "session_id": "<session UUID>",
   "session_database": "<absolute local path>",
@@ -458,10 +458,10 @@ compatibility fields rather than silently assume them.
 
 | Decision | Exact implemented rule |
 | --- | --- |
-| `INCONCLUSIVE` | either run invalid; baseline correctness false; or valid values land between all resolving rules |
-| `REJECT` | candidate correctness false; p95 or p99 interval is at least 10% worse; or weighted FPS gain is below 5% |
-| `HOME_RUN` | after the 5% FPS guard: 1%-low gain at least 20%; jank and severe rates each fall at least 30% relative; and weighted FPS rises at least 10% **or** p95 interval falls at least 15% |
-| `PROMISING` | weighted FPS rises at least 5%; 1%-low rises at least 10%; p95 and p99 intervals do not worsen |
+| `INCONCLUSIVE` | either run invalid; baseline correctness false; or valid evidence has no directional improvement and no decisive material regression |
+| `REJECT` | candidate correctness false; weighted FPS falls at least 5%; 1%-low falls at least 10%; or p95/p99 interval is at least 10% worse |
+| `HOME_RUN` | 1%-low gain at least 20%; jank and severe rates each fall at least 30% relative; and weighted FPS rises at least 10% **or** p95 interval falls at least 15%, without a material veto |
+| `PROMISING` | at least one directly measured improvement signal exists in weighted FPS, 1%-low FPS, both p95/p99 tails, or smoothness rates, and none of the material-regression/correctness vetoes fire; there is no positive +5% floor |
 
 Current code calculates/persists `observer_overhead_invalid` when trace-active
 versus trace-inactive FPS or p95 differs by more than 5% with at least ten
@@ -473,8 +473,7 @@ code_decision: <implemented decision>
 causal_interpretation: INVALID_OBSERVER_OVERHEAD | ELIGIBLE
 ```
 
-A `HOME_RUN` or `PROMISING` bounded result requires one cold confirmation and
-one complete automatic full run before promotion to normal play.
+A `HOME_RUN` or `PROMISING` bounded result requires one cold confirmation before it becomes the next DEV working winner. Promotion from DEV into normal-play/release authority still requires the stronger complete automatic full-run acceptance. This separation lets small verified gains compound without pretending the 60-FPS product target has already been met.
 
 These relative decisions select whether a change is worth retaining; they do
 not redefine the product goal. Every report must separately emit:

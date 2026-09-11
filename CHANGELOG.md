@@ -17,10 +17,20 @@ This section is the running test/version ledger for the current TFTMAC DEV optim
 - Accepted AVD baseline SHA-256: `b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125`.
 - Test protocol: one hypothesis at a time; record `WIN`, `NO WIN`, or `INCONCLUSIVE`; keep proven wins; restore baseline after failures; do not create extra infrastructure merely to explain a loser.
 - Standing versioning policy: preserve the frozen LKG separately and never rewrite it to match the current experiment winner. Improvements advance the DEV working configuration version-by-version; each verified improvement becomes the next working winner, each failed or inconclusive test remains logged with its reason, and testing continues forward from the latest proven winner. Historical controls remain available for comparison and rollback.
-- Promotion rule: **VERIFIED NET IMPROVEMENT = integrate and keep; NOT VERIFIED / INCONCLUSIVE / REGRESSION = log, do not integrate, restore the latest verified winner, and move to the next test.** A candidate does not need every metric to improve. Small regressions in secondary metrics are acceptable when the overall gameplay/system result is noticeably better and there is no correctness, stability, compatibility, or severe-tail regression that outweighs the gain.
+- Promotion rule: **VERIFIED REPEATABLE NET IMPROVEMENT = integrate and keep; NOT VERIFIED / INCONCLUSIVE / REGRESSION = log, do not integrate, restore the latest verified winner, and move to the next test.** There is no fixed positive-gain percentage floor. A candidate does not need to reach 60 FPS or improve every metric. Small regressions in secondary metrics are acceptable when the overall gameplay/system result is better and there is no correctness, stability, compatibility, or severe-tail regression that outweighs the gain.
 - Evaluation weighting: FPS remains a heavily weighted metric but is not the sole optimization target. Frame pacing, p95/p99/worst-frame latency, jank, missed-vsync behavior, CPU/RHI efficiency, memory behavior, allocation/churn, stalls, stability, input responsiveness, and other measured system costs may establish a verified net win even when mean FPS is flat or slightly lower.
-- Compounding rule: every new candidate is tested on top of the latest verified working winner, not repeatedly against the untouched LKG. The goal is cumulative efficiency: retain minimal proven wins so later changes can compound with them. A multiplicative/synergistic benefit is a hypothesis to verify, never an assumption; each combined working version must still pass its own bounded acceptance comparison before promotion.
+- Compounding rule: every new candidate is tested on top of the latest verified working winner, not repeatedly against the untouched LKG. Continuous useful 60 FPS is the ultimate target, while each experiment asks only whether the tested delta produces a repeatable net improvement. Retain small proven wins so later changes can compound with them. A multiplicative/synergistic benefit is a hypothesis to verify, never an assumption; each combined working version must still pass its own bounded acceptance comparison before promotion.
 - Mandatory synchronized record-book rule: after every completed DEV optimization test, update this ledger before starting the next candidate. Also update `project.md` whenever current winner/configuration/test state changes, and update `facts.md` whenever the result changes a current hard fact, mandatory rule, runtime/client identity, protected boundary, or authoritative configuration. The record books must describe the current state before another test begins.
+
+#### Optimization goal doctrine — 2026-09-11
+
+**Outcome:** `CUMULATIVE SMALL-GAINS STRATEGY ADOPTED`
+
+- Continuous useful 60 FPS remains the ultimate target, but no individual candidate must independently reach 60 FPS.
+- The prior executable +5% weighted-FPS floor conflicted with the cumulative strategy because it could discard legitimate small gains before they had a chance to compound.
+- Small valid improvements are now eligible for `PROMISING`, must pass confirmation, and become the next `DEV-B8-WIN-##` only when the net improvement is repeatable and free of material correctness/stability/compatibility/tail regressions.
+- Neutral, invalid, or losing candidates are logged and rolled back; the pass then moves to the next research-exposed setting rather than expanding into speculative infrastructure.
+- `HOME_RUN` remains a useful label for unusually large/broad wins; it is not the only kind of improvement worth retaining.
 
 #### Baseline — CONTROL_GREEN
 
@@ -164,6 +174,18 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 - Corrected authority rules so `facts.md` is first project authority and `project.md` is the living state wiki; credible newer evidence must be validated and used to update those files before a plan/change is finalized.
 - Added the clean-workspace completion rule: the selected managed change cannot be called complete with accidental dirty Git state.
 - Historical Control values (6 vCPU / 5120 MiB / ports 5038/5582/8554) remain valid only when explicitly labeled protected Control/history and no longer describe the current DEV optimization baseline.
+
+#### Post-merge OvernightLab continuity — 2026-09-11
+
+**Outcome:** `SOURCE MERGED / LIVE-LAYER RECOVERY REQUIRED`
+**Performance integration:** `NONE` — `DEV-B8-WIN-01` remains the current winner; no performance candidate was run or promoted.
+
+- PR #9 passed exact-SHA `Validate TFTMAC` CI on `9674294dd557a8ed7250c34deb6e9ca3f8d05f86` and squash-merged to `master` as `bf61c21a723f2f132834acedda860efbb2223d42`.
+- The merged source retains the reconciled schema-2 OvernightLab authority, current-winner control manifest and telemetry policy.
+- After Clara closed the merged `ff2f318b...` worktree, the ignored derived OvernightLab campaign/database/screenshots that existed only under that worktree were no longer locally present. Bounded recovery searches found no copy in the remaining TFTMAC worktrees, live TFTMAC root, Trash, Clara durable areas searched, Spotlight results, or local Time Machine snapshots. The project must not represent those derived files as recovered.
+- The authoritative native DEV capture store remains present under `~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures`. Twelve relevant Sept. 10 capture directories were directly observed for the campaign window, each with `TFTMAC_NATIVE_RUNTIME.sqlite`; the final 22:43 UTC session `2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f` remains present with a 7,368,704-byte native database.
+- Recovery therefore uses surviving native session evidence plus the synchronized record books. A fresh live OvernightLab may be initialized from current authority, but historical derived campaign rows/results must not be synthesized merely to replace deleted local output.
+- This continuity repair does not reopen buffer retention, direct Vulkan, queue-submit-inline, virtual-queue-off, fence-contexts-off, historical global-sync, or any other resolved fast-pass candidate.
 
 ### Documentation
 

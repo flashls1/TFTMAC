@@ -1,13 +1,13 @@
 # TFTMAC Developer Record
 
-> **CURRENT DEV ENGINEERING AUTHORITY — 2026-09-10.** Read `facts.md` first, then `project.md`, then `CHANGELOG.md` before using this engineering map. Older material below remains historical evidence only when it conflicts with those current records.
+> **CURRENT DEV ENGINEERING AUTHORITY — 2026-09-11.** Read `facts.md` first, then `project.md`, then `CHANGELOG.md` before using this engineering map. Older material below remains historical evidence only when it conflicts with those current records.
 
 **Development baseline:** current verified working configuration `DEV-B8-WIN-01` on TFTMAC DEV 2.3.0 build 8 / StockShadow.
 **Effective DEV runtime:** 1920×1080 / 320 dpi / 60 Hz, **8 vCPU**, **6144 MiB (6 GiB)**, host GPU/CoreAudio, OpenGL ES through ANGLE, ADB/console/controller `5041/5586/8556`.
 **Protected Control:** separate immutable normal-play/LKG reference; historical 6-vCPU/5120-MiB Control values are not the DEV baseline.
 **Active campaign model:** results-first, one hypothesis at a time, integrating only verified net improvements and testing the next factor on the latest verified winner.
 **Current winner:** `DEV-B8-WIN-01` removes `syncMonolithicPipelinesToBlobCache` while retaining multifile cache and disabled `preferSubmitAtFBOBoundary`.
-**Primary objective:** improve useful gameplay performance and total system efficiency toward continuous 60 FPS without correctness, login, audio, memory, launch, or cleanup regression.
+**Primary objective:** accumulate repeatable small and large net improvements in useful gameplay performance/system efficiency, one exposed setting at a time, until the combined DEV line can hold continuous useful 60 FPS without correctness, login, audio, memory, launch, or cleanup regression.
 
 This is the engineering working file. It contains code ownership, measurement
 contracts, confirmed and rejected experiments, active hypotheses, and the next
@@ -39,8 +39,8 @@ Rules:
 9. Retain negative results so they are not recycled as “new” ideas.
 10. A launch receipt proves setup, not performance.
 11. Before finalizing any plan or change, re-read `facts.md` and `project.md`; if newer evidence conflicts, validate it and reconcile those authority files before finalization.
-12. Promotion is based on verified **net** improvement, not mean FPS alone; p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, stalls, responsiveness and stability all count.
-13. A verified win becomes the next `DEV-B8-WIN-##` baseline; an unverified/inconclusive/regressing candidate is logged and not integrated.
+12. Promotion is based on verified **repeatable net** improvement, not mean FPS alone; p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, stalls, responsiveness and stability all count. There is no fixed positive-gain floor: small clean gains are intentionally eligible so they can compound.
+13. A verified win becomes the next `DEV-B8-WIN-##` baseline even when the gain is small; an unverified/inconclusive/regressing candidate is logged, rolled back, and not integrated.
 14. Do not declare a selected managed change complete with accidental dirty Git state.
 15. OvernightLab telemetry is retained across minor configuration drift; comparability/promotion eligibility is separate from whether the data is worth keeping. Core client/RHI mismatch is data-only and cannot promote the current DEV line.
 16. OvernightLab normal control always starts from the latest verified DEV winner; historical LKG/global-sync and rejected candidates remain cataloged evidence, not automatic queue entries.
@@ -347,18 +347,14 @@ role—not the ephemeral token prefix/suffix.
 
 | Decision | Rule |
 | --- | --- |
-| HOME_RUN | after the weighted-FPS +5% guard: 1% low +20%, jank and severe each -30% relative, and either weighted FPS +10% or p95 interval -15% |
-| PROMISING | weighted FPS +5%, 1% low +10%, and p95/p99 intervals no worse |
-| REJECT | weighted FPS gain below 5%, p95/p99 interval +10% worse, or candidate correctness/usability failure |
-| INCONCLUSIVE | invalid/mismatched workload, coverage, clock, observer, or threshold gap |
+| HOME_RUN | standout broad win: 1% low +20%, jank and severe each -30% relative, and either weighted FPS +10% or p95 interval -15%, without a material veto |
+| PROMISING | any valid directional gain in weighted FPS, 1% low, both p95/p99 tails, or smoothness rates when no material regression/correctness veto fires; no +5% positive floor |
+| REJECT | correctness/usability failure or material regression: weighted FPS -5%, 1% low -10%, p95/p99 interval +10% worse, or an equivalent operational veto |
+| INCONCLUSIVE | invalid/mismatched workload, coverage, clock, observer, or valid evidence with no directional signal |
 
-Any HOME_RUN/PROMISING result needs a five-minute cold confirmation. Rollback is
-select Control and restart. A failed active candidate records correctness
-rejection and saves Control automatically.
+Any HOME_RUN/PROMISING result needs a five-minute cold confirmation before becoming the next DEV winner. Rollback is select the latest verified winner and restart. A failed active candidate records the rejection/failure and restores that winner automatically.
 
-Relative decisions select the better implementation; they do not lower the
-goal. Report `TARGET_NOT_MET` until a complete automatic run holds at least 60
-useful FPS throughout with no missed-vsync equivalents or severe stalls.
+Relative decisions select the better implementation; they do not lower the goal. Small verified wins are intentionally retained and compounded. Report `TARGET_NOT_MET` until a complete automatic run holds at least 60 useful FPS throughout with no missed-vsync equivalents or severe stalls.
 
 ## 7. Retained results
 

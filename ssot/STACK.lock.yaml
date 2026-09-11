@@ -1,6 +1,6 @@
 schema: 3
 frozen_at: "2026-09-02T07:59:18Z"
-reconciled_at: "2026-09-10 America/Chicago"
+reconciled_at: "2026-09-11 America/Chicago"
 phase0_status: PASS
 
 authority:
@@ -10,7 +10,7 @@ authority:
   documentation_authority: "facts.md > project.md > CHANGELOG.md > benchmark.md + dev.md + supporting references"
   authority_inputs: "ssot/AUTHORITY_INPUTS.sha256"
   runtime_authority_sha256: "3607fef47c7ca0b7ebd3ced416e0b3eb9e7dd37143624b97da2670ee283c7169"
-  authority_inputs_sha256: "3ab439c575e87ea9127cc939d7aed43148e1d3c135479a6edb89addf402d9e62"
+  authority_inputs_sha256: "a32d76a14a956aa0523b5c65f57654beab8a5b3107ac8eea372d034913948a63"
   zengate_version: "2.3"
   zengate_score: 95.8
   zengate_result: "PASS"
@@ -258,7 +258,7 @@ current_gameplay_capture:
   advanced_source_causal_logger: "partial_source_schema_and_cpp_abi_not_live_accepted"
 
 development_verification:
-  native_test_inventory: 110
+  native_test_inventory: 112
   causal_cpp_abi_test: PASS
   causal_event_bytes: 96
   causal_ring_capacity: 256
