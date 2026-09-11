@@ -284,7 +284,7 @@ class IncrementalLab(base.OvernightLab):
             # candidate relaunch; the exact candidate value cannot be satisfied by stale LKG
             # evidence because every admitted candidate changes to a distinct value.
             current = self.adb("shell", "cat", remote_log, timeout=10, check=False)
-            if current.status == 0 and rx.search(current.stdout):
+            if current.returncode == 0 and rx.search(current.stdout):
                 return True
             if ctx.capture:
                 for path in list(ctx.capture.glob("*logcat*.txt")) + list(ctx.capture.glob("*.log")):
