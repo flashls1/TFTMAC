@@ -2483,8 +2483,8 @@ actor TFTMACRuntimeService {
 
     private static let highPerfHashes = [
         "debug-ramdisk.img": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
-        "DeviceProfiles.ini": "aa9672cd730e5e3c32e6c9a793a4ef98bef90d80124c7e22b196d2e174af07e1",
-        "profile-transaction.sh": "5718319c56995d00613b930acb5bc0a8e7b107d165fb819e748b0fcb050bff7f"
+        "DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
+        "profile-transaction.sh": "7d7d89df8db6927b09d4e2866aac932f9924b729584797e8364077102eeb5835"
     ]
 
     private func highPerfReceipt(_ base: RuntimeExperimentConfigurationReceipt) -> RuntimeExperimentConfigurationReceipt {
