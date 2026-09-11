@@ -1417,6 +1417,16 @@ class OvernightLab:
             fallback_emulator_stop = True
             self.stop_owned_emulator()
         avd_recovery = self.recover_avd_transaction()
+        # QEMU can be fully gone while ADB still advertises the just-dead serial for
+        # a short transport-retirement window.  Rollback proof must wait for both
+        # observations to converge, but it remains bounded and fail-closed.
+        quiescence_deadline = time.monotonic() + 10
+        while time.monotonic() < quiescence_deadline:
+            qemu_stopped = not self.owned_emulator_pids()
+            adb_stopped = self.adb("get-state", timeout=5, check=False).returncode != 0
+            if qemu_stopped and adb_stopped:
+                break
+            time.sleep(0.5)
         emulator_stopped = not self.owned_emulator_pids() and self.adb("get-state", timeout=5, check=False).returncode != 0
         dev_stopped = self.command(["/usr/bin/pgrep", "-f", "^/Applications/TFTMAC DEV\\.app/Contents/MacOS/TFTMACDEVCore$"], check=False).returncode != 0
         native_restored = False

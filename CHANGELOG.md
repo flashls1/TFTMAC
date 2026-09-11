@@ -162,6 +162,17 @@ This is the first pass after repairing the DEV-only profile transaction far enou
 
 `DEV-B8-WIN-01` therefore remains the exact next-test baseline. Continue only with unresolved or new evidence-backed one-factor settings; retain any repeatable net improvement even when small, but do not reinterpret a material regression as a win.
 
+#### V4 shader-background clean-retest attempt — 2026-09-11
+
+**Campaign:** `incremental-20260911T210746Z-64c4f370`
+**Outcome:** `INCONCLUSIVE / AUTH_BLOCKED / NOT INTEGRATED`
+**Integration:** `NONE` — `DEV-B8-WIN-01` remains the working winner.
+
+- The matched `DEV-B8-WIN-01` control completed valid 1-5 combat measurement and rollback.
+- The one-factor candidate `r.ShaderPipelineCache.BackgroundBatchSize 20 -> 4` applied successfully, but the official client remained on the Riot credential screen for the full bounded login window. No candidate 1-5 performance window exists, so this run is not a performance rejection or gain.
+- Candidate cleanup restored the profile, AVD, DEV application integrity and frozen LKG integrity, but the run recorded `rollback_verified=false` because the verifier sampled ADB `get-state` immediately after fallback QEMU shutdown while the dead serial was still retiring from ADB. Immediate independent post-failure proof showed `QEMU=NONE`, `DEV=NONE`, ADB serial absent, installed DEV integrity PASS, frozen LKG integrity PASS and codesign PASS.
+- The recorded failed run is preserved exactly as evidence; its rollback bit is not rewritten. A governed bounded transport-quiescence verification repair is required before another candidate is admitted.
+
 #### OvernightLab authority/evidence reconciliation — 2026-09-10
 
 **Outcome:** `TOOLING RECONCILED / TELEMETRY PRESERVED`
