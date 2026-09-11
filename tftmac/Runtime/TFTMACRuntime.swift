@@ -4142,6 +4142,66 @@ actor TFTMACRuntimeService {
         telemetry?.recordEvent("ANGLE_DRIVER_RESTORED", payload: ["receipt": receipt])
     }
 
+    private func ensurePrivateHighPerfParent(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        let package = "com.riotgames.league.teamfighttactics"
+        let parent = "/data/user/0/\(package)/files/UnrealGame/TFT/TFT/Saved/Config/Android"
+        let component = "\(package)/com.epicgames.unreal.SplashActivity"
+
+        func parentExists() -> Bool {
+            guard let result = try? Self.adb(paths: paths, ["shell", "test -d \(parent)"], timeout: 5) else { return false }
+            return result.status == 0
+        }
+
+        if parentExists() {
+            telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_PARENT_READY", payload: ["bootstrap_required": false, "path": parent])
+            return
+        }
+
+        telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_PARENT_BOOTSTRAP_STARTED", payload: [
+            "component": component,
+            "path": parent,
+            "reason": "official TFT private config directory missing before HighPerf provisioning"
+        ])
+
+        var launchAccepted = false
+        for _ in 0..<60 {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            if let result = try? Self.adb(paths: paths, ["shell", "am", "start", "-n", component], timeout: 8), result.status == 0 {
+                launchAccepted = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        guard launchAccepted else {
+            throw TFTMACRuntimeError("DEV could not bootstrap the official TFT activity before HighPerf provisioning.")
+        }
+
+        var ready = false
+        for _ in 0..<120 {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            if parentExists() {
+                ready = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+
+        _ = try? Self.adb(paths: paths, ["shell", "am", "force-stop", package], timeout: 15)
+        for _ in 0..<40 {
+            let pid = try? Self.adb(paths: paths, ["shell", "pidof", package], timeout: 5).output
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if pid?.isEmpty != false { break }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+
+        guard ready, parentExists() else {
+            throw TFTMACRuntimeError("Official TFT did not create its private HighPerf config directory during bounded bootstrap.")
+        }
+        telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_PARENT_READY", payload: ["bootstrap_required": true, "path": parent])
+    }
+
     private func provisionPrivateHighPerf(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         guard tftPackageVersion == "versionName=18.1-5423749", let session = expectedSessionMarker?.split(separator: "=").last else {
             throw TFTMACRuntimeError("DEV HighPerf requires the validated official TFT version and native session identity.")
@@ -4150,6 +4210,7 @@ actor TFTMACRuntimeService {
         try prepareANGLEDriverOverride(paths: paths, telemetry: telemetry)
         highPerfOperationInProgress = true
         defer { highPerfOperationInProgress = false }
+        try await ensurePrivateHighPerfParent(paths: paths, telemetry: telemetry)
         _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
         _ = try Self.adb(paths: paths, ["shell", "setprop debug.hwui.renderer skiagl"], timeout: 10)
         let hwui = try Self.adb(paths: paths, ["shell", "getprop debug.hwui.renderer"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
