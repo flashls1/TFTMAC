@@ -37,12 +37,12 @@
   "expected_normal_rhi": "OPENGL_ES_ANGLE",
   "angle_revision": "1166eec4c0b125e9e945196acfc549983ef72b18",
   "current_dev_hashes": {
-    "Contents/MacOS/TFTMACDEVCore": "4ab773e9c9a59dd07c18f060eeb2332b86bede2b6735dc089973543eded6ae46",
-    "Contents/MacOS/TFTMACDEVLauncher": "17a8cca7ba72469ea7b31334ef8d6526b9e260ec69f6c1602d1284f41f523e5d",
+    "Contents/MacOS/TFTMACDEVCore": "08d446122561b4a7e25ff9476e4c2464b6a675999bcd8034d8fe88a403c7a6a4",
+    "Contents/MacOS/TFTMACDEVLauncher": "63903cbb811e43048630e176818235d0b2dddb1663cd494f26efd514bfe73f18",
     "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
     "Contents/Resources/DEVHighPerf/profile-transaction.sh": "7d7d89df8db6927b09d4e2866aac932f9924b729584797e8364077102eeb5835",
     "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
-    "Contents/Resources/TFTMACVulkanProbe.apk": "1ac43b122606b2742fa9ae532440ebdf96cfde85e1ae0a2d0d805947a362b4f6"
+    "Contents/Resources/TFTMACVulkanProbe.apk": "b9193525e0a796367adf397243982d7d629e738dd464b4d220631952e4a1b4f0"
   },
   "frozen_lkg_hashes": {
     "Contents/MacOS/TFTMACDEVCore": "89dbdce12e8e0b5524108bfc5444bdc31783e023d1b0a34a01653fd84a889cd4",

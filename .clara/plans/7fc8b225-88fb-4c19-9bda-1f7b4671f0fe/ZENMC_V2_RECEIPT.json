@@ -1,0 +1,24 @@
+{
+  "model": "TFTMAC_CVAR_STAGE_INODE_V2",
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": [],
+  "receipt_sha256": "6cbe61a22e876084c40be022bb278bcd2c51c8b9c0d482771413532623f4283f",
+  "stats": {
+    "candidate_blocked": 3971,
+    "candidate_visible": 94182,
+    "failure_after_write": 1847,
+    "measured": 86446,
+    "rollback_verified": 93662,
+    "trajectories": 100000
+  },
+  "invariants": {
+    "candidate_verified_in_all_zygote_namespaces": true,
+    "current_winner_restored_before_normal_quit": true,
+    "engine_proof_before_measurement": true,
+    "no_unmount_or_remount": true,
+    "rollback_required_after_any_candidate_write": true,
+    "stage_inode_preserved": true
+  },
+  "result": "PASS"
+}
