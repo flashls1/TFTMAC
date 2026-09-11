@@ -6,7 +6,7 @@
 **Current development line:** `master` remains merged repository authority. Active gain-search work is isolated in Clara change `7fc8b225-88fb-4c19-9bda-1f7b4671f0fe`. V4 shader retest campaign `incremental-20260911T210746Z-64c4f370` ended AUTH_BLOCKED before candidate measurement and exposed a cleanup-verification timing race; no performance candidate was promoted.
 **Protected release/LKG:** TFTMAC 2.3.0 build 8 Control/LKG remains separate, frozen, and available as historical rollback/comparison authority.  
 **Current DEV application identity:** TFTMAC 2.3.0 build 8 DEV (`/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`). Test-ledger versions do not change the product release number.  
-**Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
+**Current observed client:** production `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`, but 2026-09-11 live audit found `installer=null` / shell initiation and a newer official Google Play/Riot build available. This is a package-authority/update regression; do not treat this client as the current authoritative matchmaking/performance baseline until Google Play ownership/currentness is restored.  
 **Current test series:** `DEV-B8-2026-09-10-A`.  
 **Current verified working winner:** **`DEV-B8-WIN-01`**.  
 **Project record current through:** 2026-09-11 V4 shader-background retest attempt `incremental-20260911T210746Z-64c4f370`; candidate measurement was AUTH_BLOCKED, independent post-failure quiescence/integrity is green, and performance winner remains `DEV-B8-WIN-01` with no `DEV-B8-WIN-02` created.
@@ -86,6 +86,14 @@ OvernightLab is retained as a **data-preserving telemetry/provenance layer**, no
 - Generated campaigns, SQLite state, compiled caches/binaries and reports are runtime evidence, not repository source; they must remain locally retained/ignored rather than continually dirtying Git.
 - **Post-merge continuity finding (2026-09-11):** after PR #9 merged and Clara closed the `ff2f318b...` worktree, that worktree's ignored OvernightLab campaign/database/screenshots were no longer present. Bounded searches found no copy in remaining TFTMAC worktrees, `/Volumes/MAC MINI M4/TFTMAC`, Trash, Clara durable areas searched, Spotlight results, or local Time Machine snapshots. Do not claim those derived files remain recoverable.
 - **Raw evidence continuity remains intact:** the authoritative `~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures` store still contains the relevant Sept. 10 DEV sessions and native SQLite telemetry, including `2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f`. The live OvernightLab recovery must start fresh from current authority and may reference surviving native captures; it must not fabricate deleted historical campaign rows.
+
+### Riot client update gate and update-diff rule
+
+- Google Play (`com.android.vending`) must remain the production TFT installer/update authority; a shell-installed/mirror-owned package is not `MATCH_READY` even when it launches.
+- Do not hard-pin a Riot version as permanently current. On launch/update checks, observe the production package and official Play listing; if Play exposes Install/Update or installer authority is wrong, route to the official Play flow before matchmaking/performance work.
+- For every Riot update, preserve three stopped-app snapshots: `PRE_UPDATE`, `POST_PLAY_UPDATE` before first TFT launch, and `POST_RIOT_INIT` after Riot's own first-launch content update settles. Each snapshot records package/version/install source, split/APK paths and hashes, readable package/data file inventory, and graphics/runtime fingerprint.
+- Generate machine-readable diffs for every added/removed/modified readable file with old/new size/hash, plus focused native-library/engine/graphics-pipeline changes.
+- Establish a matched post-update gameplay baseline before resuming one-factor tuning. Attribute any client-update gain/regression to the Riot update first; never claim it as a TFTMAC setting win.
 
 ### Mandatory update rule after every test
 

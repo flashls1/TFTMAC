@@ -1,0 +1,26 @@
+{
+  "invariants": {
+    "auth_stays_official_ui_only": true,
+    "control_lkg_immutable": true,
+    "interrupted_update_fails_closed": true,
+    "matched_baseline_required_before_post_update_tuning": true,
+    "no_ready_while_play_update_or_install_visible": true,
+    "no_ready_without_google_play_ownership": true,
+    "pbe_rejected": true,
+    "three_phase_audit_required_after_transition": true
+  },
+  "model": "TFTMAC_RIOT_GOOGLE_PLAY_UPDATE_AUDIT_V6",
+  "receipt_sha256": "35f5fb871effa8c187654a94734b1c8001555484f9f22bdfc82e1672e14d6ad6",
+  "seed": 20260911,
+  "stats": {
+    "audit_complete": 36018,
+    "auth_required": 4246,
+    "interrupted": 1235,
+    "ready": 93516,
+    "trajectories": 100000,
+    "update_required": 42551
+  },
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": []
+}

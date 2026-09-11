@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Riot/Google Play package-authority regression discovered — 2026-09-11
+
+- Live DEV audit found the production package `com.riotgames.league.teamfighttactics` at `18.1-5423749` / `8423749`, but package install source was `installer=null`, `initiatingPackageName=com.android.shell` rather than `com.android.vending`.
+- PBE was explicitly absent; the foreground process/activity was the production Riot package, so the defect is stale/update ownership, not wrong-server/PBE selection.
+- A newer official Riot/Google Play client was available. The existing project contract already required Google Play ownership, so the live shell-owned state is a regression and the old client is not valid as the continuing matchmaking/performance authority.
+- New mandatory rule: each client update captures `PRE_UPDATE`, `POST_PLAY_UPDATE`, and `POST_RIOT_INIT` inventories, complete readable-file before/after diffs, package/split hashes, engine/native-library/graphics-pipeline identity changes, and a matched gameplay baseline before optimization resumes.
+- `DEV-B8-WIN-01` remains the TFTMAC configuration winner; client-update remediation must preserve it and must not mutate protected Control/LKG.
+
 ### DEV test ledger — 2026-09-10 results-first pass
 
 This section is the running test/version ledger for the current TFTMAC DEV optimization line. Preserve the installed/frozen DEV build identity separately from experiment outcomes: a test result does **not** silently change the app release version. Each new experiment should append its exact delta, workload, outcome, measured evidence, integration decision, reasoning, and rollback state so completed work is not rediscovered or repeated.
