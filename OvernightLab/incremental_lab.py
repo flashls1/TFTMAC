@@ -225,7 +225,7 @@ class IncrementalLab(base.OvernightLab):
             # Mutate only its bytes while TFT is stopped so every inherited mount sees the
             # candidate without unmounting/remounting or changing the protected LKG source.
             ctx.profile_overlay_applied = True
-            self.adb("shell", "sh", "-c", f"cat {candidate_remote} > {original_stage} && sync", timeout=15)
+            self.adb("shell", "dd", f"if={candidate_remote}", f"of={original_stage}", "conv=fsync", timeout=15)
             after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
             after_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
             after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
@@ -254,7 +254,7 @@ class IncrementalLab(base.OvernightLab):
                 baseline_sha = self.adb("shell", "sha256sum", baseline_remote, timeout=10).stdout.split()[0]
                 if baseline_sha != self.installed_profile_sha:
                     raise base.LabError("rollback baseline staging hash mismatch", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
-                self.adb("shell", "sh", "-c", f"cat {baseline_remote} > {original_stage} && sync", timeout=15)
+                self.adb("shell", "dd", f"if={baseline_remote}", f"of={original_stage}", "conv=fsync", timeout=15)
                 after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
                 after_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
                 after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
