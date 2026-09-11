@@ -9,7 +9,7 @@
 **Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
 **Current test series:** `DEV-B8-2026-09-10-A`.  
 **Current verified working winner:** **`DEV-B8-WIN-01`**.  
-**Project record current through:** 2026-09-11 post-PR-#9 authority rehydration; performance winner remains the 2026-09-10 results-first verification state.
+**Project record current through:** 2026-09-11 incremental-gains doctrine and post-PR-#9 continuity; performance winner remains `DEV-B8-WIN-01`.
 
 ## 0. Living wiki contract
 
@@ -49,10 +49,11 @@ Mandatory companion records:
 1. Start every new candidate from the latest verified DEV winner, currently `DEV-B8-WIN-01`, not from the frozen LKG unless a matched historical control is specifically required.
 2. Change/test one primary hypothesis at a time. Add only a directly-related minimal blocker adjustment when concrete evidence says the intended candidate cannot otherwise execute.
 3. Evaluate net system/gameplay improvement, not FPS alone. FPS is heavily weighted, alongside frame pacing, p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, allocation/churn, stalls, input responsiveness, correctness, stability, and compatibility.
-4. **VERIFIED NET IMPROVEMENT:** integrate it, assign the next `DEV-B8-WIN-##`, update this wiki and `CHANGELOG.md`, then test the next candidate on top of the new winner.
-5. **NOT VERIFIED / INCONCLUSIVE / REGRESSION:** record it in `CHANGELOG.md`, do not integrate it, retain/restore the latest verified winner here, and move forward.
-6. Compounding/synergy is desirable but must be measured. A prior verified win remains integrated while the next factor is tested; the combined configuration must itself verify before promotion.
-7. Never rewrite the frozen LKG to match the DEV winner. LKG is historical control/rollback; DEV is the evolving optimization line.
+4. **60 FPS is the cumulative destination, not a per-candidate gate.** A candidate does not need to reach 60 FPS or clear an arbitrary +5% threshold to be useful.
+5. **VERIFIED REPEATABLE NET IMPROVEMENT:** even when small, integrate it, assign the next `DEV-B8-WIN-##`, update this wiki and `CHANGELOG.md`, then test the next candidate on top of the new winner.
+6. **NOT VERIFIED / INCONCLUSIVE / REGRESSION:** record it in `CHANGELOG.md`, do not integrate it, retain/restore the latest verified winner here, and move forward without building an explanation project around the loser.
+7. Compounding/synergy is the active strategy and must be measured. Each prior verified win remains integrated while the next factor is tested; the combined configuration must verify before promotion. The experiment program asks whether many small clean gains can add up to continuous useful 60 FPS.
+8. Never rewrite the frozen LKG to match the DEV winner. LKG is historical control/rollback; DEV is the evolving optimization line.
 
 ### Current completed-test state
 
@@ -102,11 +103,7 @@ the product UI. The application must also be an engineering laboratory that
 captures the complete runtime behavior well enough to make and reject graphics-
 pipeline changes based on evidence.
 
-The completion standard is not “the emulator process exists” and not “the lobby
-shows 60 FPS.” The user must be able to play through the native Mac window, and
-the logger must preserve every under-target period across the complete run. The
-graphics target is at least 60 useful FPS throughout, not only during selected
-scenes.
+The completion standard is not “the emulator process exists” and not “the lobby shows 60 FPS.” The user must be able to play through the native Mac window, and the logger must preserve every under-target period across the complete run. The ultimate graphics target is at least 60 useful FPS throughout, not only during selected scenes. The optimization path is intentionally incremental: test one exposed/research-backed setting at a time, keep every repeatable net improvement even when small, stack the next experiment on that winner, and measure whether the accumulated gains close the remaining gap to continuous 60 FPS.
 
 ## 2. Current architecture
 

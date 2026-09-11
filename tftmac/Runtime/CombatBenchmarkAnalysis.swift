@@ -187,10 +187,9 @@ struct CombatBenchmarkAnalysis: Equatable, Sendable {
         guard baselineValidity.isValid, candidateValidity.isValid else { return .inconclusive }
         guard baseline.correctnessPassed else { return .inconclusive }
         guard candidate.correctnessPassed else { return .reject }
-        if deltas.p95IntervalPercent >= 10 || deltas.p99IntervalPercent >= 10 { return .reject }
-        if deltas.weightedFPSPercent < 5 { return .reject }
+        if hasMaterialRegression(deltas) { return .reject }
         if isHomeRun(baseline: baseline, candidate: candidate, deltas: deltas) { return .homeRun }
-        if isPromising(deltas) { return .promising }
+        if hasDirectionalImprovement(deltas) { return .promising }
         return .inconclusive
     }
 
@@ -205,11 +204,20 @@ struct CombatBenchmarkAnalysis: Equatable, Sendable {
             && (deltas.weightedFPSPercent >= 10 || deltas.p95IntervalPercent <= -15)
     }
 
-    private static func isPromising(_ deltas: CombatBenchmarkDeltas) -> Bool {
-        deltas.weightedFPSPercent >= 5
-            && deltas.onePercentLowFPSPercent >= 10
-            && deltas.p95IntervalPercent <= 0
-            && deltas.p99IntervalPercent <= 0
+    private static func hasMaterialRegression(_ deltas: CombatBenchmarkDeltas) -> Bool {
+        deltas.weightedFPSPercent <= -5
+            || deltas.onePercentLowFPSPercent <= -10
+            || deltas.p95IntervalPercent >= 10
+            || deltas.p99IntervalPercent >= 10
+    }
+
+    private static func hasDirectionalImprovement(_ deltas: CombatBenchmarkDeltas) -> Bool {
+        deltas.weightedFPSPercent > 0
+            || deltas.onePercentLowFPSPercent > 0
+            || (deltas.p95IntervalPercent < 0 && deltas.p99IntervalPercent < 0)
+            || deltas.jankRatePercentagePoints < 0
+            || deltas.severeRatePercentagePoints < 0
+            || deltas.missedVsyncRatePercentagePoints < 0
     }
 
     private static func relativeReductionIsAtLeast30Percent(from baseline: Double, to candidate: Double) -> Bool {
