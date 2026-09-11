@@ -165,6 +165,18 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 - Added the clean-workspace completion rule: the selected managed change cannot be called complete with accidental dirty Git state.
 - Historical Control values (6 vCPU / 5120 MiB / ports 5038/5582/8554) remain valid only when explicitly labeled protected Control/history and no longer describe the current DEV optimization baseline.
 
+#### Post-merge OvernightLab continuity — 2026-09-11
+
+**Outcome:** `SOURCE MERGED / LIVE-LAYER RECOVERY REQUIRED`
+**Performance integration:** `NONE` — `DEV-B8-WIN-01` remains the current winner; no performance candidate was run or promoted.
+
+- PR #9 passed exact-SHA `Validate TFTMAC` CI on `9674294dd557a8ed7250c34deb6e9ca3f8d05f86` and squash-merged to `master` as `bf61c21a723f2f132834acedda860efbb2223d42`.
+- The merged source retains the reconciled schema-2 OvernightLab authority, current-winner control manifest and telemetry policy.
+- After Clara closed the merged `ff2f318b...` worktree, the ignored derived OvernightLab campaign/database/screenshots that existed only under that worktree were no longer locally present. Bounded recovery searches found no copy in the remaining TFTMAC worktrees, live TFTMAC root, Trash, Clara durable areas searched, Spotlight results, or local Time Machine snapshots. The project must not represent those derived files as recovered.
+- The authoritative native DEV capture store remains present under `~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures`. Twelve relevant Sept. 10 capture directories were directly observed for the campaign window, each with `TFTMAC_NATIVE_RUNTIME.sqlite`; the final 22:43 UTC session `2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f` remains present with a 7,368,704-byte native database.
+- Recovery therefore uses surviving native session evidence plus the synchronized record books. A fresh live OvernightLab may be initialized from current authority, but historical derived campaign rows/results must not be synthesized merely to replace deleted local output.
+- This continuity repair does not reopen buffer retention, direct Vulkan, queue-submit-inline, virtual-queue-off, fence-contexts-off, historical global-sync, or any other resolved fast-pass candidate.
+
 ### Documentation
 
 - Reconciled current Build 8 runtime, automatic-logging, and graphics-causality

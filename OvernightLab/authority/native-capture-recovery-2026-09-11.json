@@ -1,0 +1,106 @@
+{
+  "capture_count": 12,
+  "capture_root": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures",
+  "captures": [
+    {
+      "capture_id": "2026-09-10T15-56-47.461Z-ecd07248-8fc5-44d9-818c-eb975ca1f3be",
+      "capture_mtime_utc": "2026-09-10T15:58:32.679582Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T15-56-47.461Z-ecd07248-8fc5-44d9-818c-eb975ca1f3be",
+      "native_db_bytes": 2297856,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T15-56-47.461Z-ecd07248-8fc5-44d9-818c-eb975ca1f3be/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "1c3f88f87bed70b9135c8cabf2c7a99630b55394b51c36a1ba29b96f4b7e3549"
+    },
+    {
+      "capture_id": "2026-09-10T16-01-19.641Z-de4d51a4-cb88-4ea3-b887-501059bf9f33",
+      "capture_mtime_utc": "2026-09-10T16:02:29.306286Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T16-01-19.641Z-de4d51a4-cb88-4ea3-b887-501059bf9f33",
+      "native_db_bytes": 1228800,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T16-01-19.641Z-de4d51a4-cb88-4ea3-b887-501059bf9f33/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "a163c8e609c697adc6e21cdae85d8a7a9cea9e2f61fb275e2126fd98424415b5"
+    },
+    {
+      "capture_id": "2026-09-10T16-03-38.498Z-75921468-c167-4020-813b-717a34edad98",
+      "capture_mtime_utc": "2026-09-10T16:04:06.060240Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T16-03-38.498Z-75921468-c167-4020-813b-717a34edad98",
+      "native_db_bytes": 3014656,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T16-03-38.498Z-75921468-c167-4020-813b-717a34edad98/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "c010939db47a3583f5cd3d09645ce6a2acad741a966351aee05469812880518d"
+    },
+    {
+      "capture_id": "2026-09-10T19-02-30.967Z-25f5f0d2-9438-4bee-b18e-a0480f077ccc",
+      "capture_mtime_utc": "2026-09-10T19:03:37.801019Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-02-30.967Z-25f5f0d2-9438-4bee-b18e-a0480f077ccc",
+      "native_db_bytes": 970752,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-02-30.967Z-25f5f0d2-9438-4bee-b18e-a0480f077ccc/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "f24247d580ba2d1d05f0679134ac1b45150bba5e591b8b9fc6d263418eb18ad2"
+    },
+    {
+      "capture_id": "2026-09-10T19-05-48.892Z-0190e735-918b-4313-9d21-6717621db0bd",
+      "capture_mtime_utc": "2026-09-10T19:08:21.868615Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-05-48.892Z-0190e735-918b-4313-9d21-6717621db0bd",
+      "native_db_bytes": 1892352,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-05-48.892Z-0190e735-918b-4313-9d21-6717621db0bd/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "3e75a395ad48c088a06e0f1e2641b0d18b00d9cfa45db5a32e6e565c23751a30"
+    },
+    {
+      "capture_id": "2026-09-10T19-21-58.830Z-41bbd0db-143a-4f90-b885-21c09b84a52c",
+      "capture_mtime_utc": "2026-09-10T19:22:42.380242Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-21-58.830Z-41bbd0db-143a-4f90-b885-21c09b84a52c",
+      "native_db_bytes": 417792,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-21-58.830Z-41bbd0db-143a-4f90-b885-21c09b84a52c/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "99d78b98cf38aeae4ce63aa25a06fbbe84c12e502adfc2d7d132d7d3865e447f"
+    },
+    {
+      "capture_id": "2026-09-10T19-33-36.532Z-f0a8e114-e572-4902-afa0-0ae7a534b1a9",
+      "capture_mtime_utc": "2026-09-10T19:36:07.970710Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-33-36.532Z-f0a8e114-e572-4902-afa0-0ae7a534b1a9",
+      "native_db_bytes": 491520,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-33-36.532Z-f0a8e114-e572-4902-afa0-0ae7a534b1a9/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "4517335b08d477186d1e8bbd2d45444f87e45bc58e83b3ed377f7b241ab10f8f"
+    },
+    {
+      "capture_id": "2026-09-10T19-37-43.322Z-b2c259ea-4c69-449a-ac6e-d7664f937f02",
+      "capture_mtime_utc": "2026-09-10T19:37:54.695350Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-37-43.322Z-b2c259ea-4c69-449a-ac6e-d7664f937f02",
+      "native_db_bytes": 413696,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-37-43.322Z-b2c259ea-4c69-449a-ac6e-d7664f937f02/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "2d3d2f19d8c1c21e02ba59069b07c13799f76fc5345c2870334b87ea6eeaa9a7"
+    },
+    {
+      "capture_id": "2026-09-10T19-39-23.992Z-18472c55-cc15-4fad-89f4-be355775114a",
+      "capture_mtime_utc": "2026-09-10T19:40:24.362009Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-39-23.992Z-18472c55-cc15-4fad-89f4-be355775114a",
+      "native_db_bytes": 413696,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-39-23.992Z-18472c55-cc15-4fad-89f4-be355775114a/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "90a6637a4d59d3f5b83fcf153e91bff278581ad9706a52138cb2549b1da81d9a"
+    },
+    {
+      "capture_id": "2026-09-10T19-41-41.388Z-917d9ab1-4ef2-4e23-aa85-5d02a2cb1f09",
+      "capture_mtime_utc": "2026-09-10T19:42:04.041359Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-41-41.388Z-917d9ab1-4ef2-4e23-aa85-5d02a2cb1f09",
+      "native_db_bytes": 3158016,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-41-41.388Z-917d9ab1-4ef2-4e23-aa85-5d02a2cb1f09/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "0b98009b3fc2e32d176c14092c8b6a532a4864ca20aeffa9cf54b59b513d8aeb"
+    },
+    {
+      "capture_id": "2026-09-10T19-45-09.532Z-9d9d31f1-4359-4b57-bd0b-4ed818d72db8",
+      "capture_mtime_utc": "2026-09-10T22:48:18.078823Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-45-09.532Z-9d9d31f1-4359-4b57-bd0b-4ed818d72db8",
+      "native_db_bytes": 20217856,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T19-45-09.532Z-9d9d31f1-4359-4b57-bd0b-4ed818d72db8/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "1eed4156c8115f0c9aeed107d9eafaa9adc5f2869b17ea35a95a857e797be46f"
+    },
+    {
+      "capture_id": "2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f",
+      "capture_mtime_utc": "2026-09-10T22:43:36.939990Z",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f",
+      "native_db_bytes": 7368704,
+      "native_db_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "native_db_sha256": "57d02353d93523aced0f7993ae4dcf4be555c5486dd567c07714edd96846d3cd"
+    }
+  ],
+  "observed_utc": "2026-09-11T05:06:09Z",
+  "schema": 1,
+  "window_end_utc": "2026-09-11T00:00:00Z",
+  "window_start_utc": "2026-09-10T15:30:00Z"
+}

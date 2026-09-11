@@ -1,6 +1,6 @@
 schema: 3
 frozen_at: "2026-09-02T07:59:18Z"
-reconciled_at: "2026-09-10 America/Chicago"
+reconciled_at: "2026-09-11 America/Chicago"
 phase0_status: PASS
 
 authority:
@@ -10,7 +10,7 @@ authority:
   documentation_authority: "facts.md > project.md > CHANGELOG.md > benchmark.md + dev.md + supporting references"
   authority_inputs: "ssot/AUTHORITY_INPUTS.sha256"
   runtime_authority_sha256: "3607fef47c7ca0b7ebd3ced416e0b3eb9e7dd37143624b97da2670ee283c7169"
-  authority_inputs_sha256: "3ab439c575e87ea9127cc939d7aed43148e1d3c135479a6edb89addf402d9e62"
+  authority_inputs_sha256: "1760a9bd96fac11c8dfb9927808de69eb3969ad69b438a9b3e9b0a2b6dafe634"
   zengate_version: "2.3"
   zengate_score: 95.8
   zengate_result: "PASS"

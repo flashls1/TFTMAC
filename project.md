@@ -78,6 +78,8 @@ OvernightLab is retained as a **data-preserving telemetry/provenance layer**, no
 - Root-only cache file inventory is opt-in; ordinary performance logging relies on property readback and native telemetry so the observer does not restart/disrupt ADB just to collect optional metadata.
 - The frozen LKG cache set with global pipeline sync remains historical comparator data. OvernightLab's normal control now applies the WIN-01 cache properties with global sync removed.
 - Generated campaigns, SQLite state, compiled caches/binaries and reports are runtime evidence, not repository source; they must remain locally retained/ignored rather than continually dirtying Git.
+- **Post-merge continuity finding (2026-09-11):** after PR #9 merged and Clara closed the `ff2f318b...` worktree, that worktree's ignored OvernightLab campaign/database/screenshots were no longer present. Bounded searches found no copy in remaining TFTMAC worktrees, `/Volumes/MAC MINI M4/TFTMAC`, Trash, Clara durable areas searched, Spotlight results, or local Time Machine snapshots. Do not claim those derived files remain recoverable.
+- **Raw evidence continuity remains intact:** the authoritative `~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures` store still contains the relevant Sept. 10 DEV sessions and native SQLite telemetry, including `2026-09-10T22-43-10.664Z-a5718134-6211-4bcb-8bd6-c17b134e8a6f`. The live OvernightLab recovery must start fresh from current authority and may reference surviving native captures; it must not fabricate deleted historical campaign rows.
 
 ### Mandatory update rule after every test
 
