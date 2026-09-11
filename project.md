@@ -1,15 +1,15 @@
 # TFTMAC Project Record
 
-> **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-10 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
+> **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-11 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `master` remains merged repository authority; active optimization work is isolated in Clara change `ff2f318b-245d-418a-b86f-e07d55b19826` against the DEV / `advanced_diagnostics` product.  
+**Current development line:** `master` remains merged repository authority. OvernightLab authority reconciliation change `ff2f318b-245d-418a-b86f-e07d55b19826` merged through PR #9 at `bf61c21a723f2f132834acedda860efbb2223d42` and is closed. Current post-merge continuity/live-layer recovery is isolated in Clara change `b42fb30e-2f22-45f0-9d27-00d9e67a58bf`; it does not admit a new performance candidate.  
 **Protected release/LKG:** TFTMAC 2.3.0 build 8 Control/LKG remains separate, frozen, and available as historical rollback/comparison authority.  
 **Current DEV application identity:** TFTMAC 2.3.0 build 8 DEV (`/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`). Test-ledger versions do not change the product release number.  
 **Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
 **Current test series:** `DEV-B8-2026-09-10-A`.  
 **Current verified working winner:** **`DEV-B8-WIN-01`**.  
-**Project record current through:** 2026-09-10 results-first verification pass.
+**Project record current through:** 2026-09-11 post-PR-#9 authority rehydration; performance winner remains the 2026-09-10 results-first verification state.
 
 ## 0. Living wiki contract
 
