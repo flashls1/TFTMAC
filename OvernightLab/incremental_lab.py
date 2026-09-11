@@ -413,7 +413,7 @@ class IncrementalLab(base.OvernightLab):
             "reason": "Queue-exhaustion stability control using the current working profile without changing any CVar.",
         }
 
-    def run_incremental_campaign(self, duration_seconds: int, resume: bool) -> str:
+    def run_incremental_campaign(self, duration_seconds: int, resume: bool, impact_only: bool = False) -> str:
         if base.LOCK_PATH.exists():
             try:
                 owner = int(base.LOCK_PATH.read_text().strip()); os.kill(owner, 0)
@@ -505,7 +505,7 @@ class IncrementalLab(base.OvernightLab):
             # Queue exhausted before the four-hour deadline: accumulate stability evidence only.
             # No new tuning candidate is invented or admitted in this tail loop.
             stability = self.stability_spec()
-            while state["queue_index"] >= len(specs) and not deadline_reached(state):
+            while (not impact_only) and state["queue_index"] >= len(specs) and not deadline_reached(state):
                 working = Path(state["working_profile_path"])
                 run_id, classification = self.run_profile(cid, stability, "stability-control", working, None)
                 rollback_row = self.db.rows("SELECT rollback_verified FROM runs WHERE run_id=?", (run_id,))
@@ -533,6 +533,8 @@ class IncrementalLab(base.OvernightLab):
             deadline_has_elapsed = deadline_reached(state)
             if state.get("blocked_reason"):
                 end_state = "BLOCKED_INCONCLUSIVE"
+            elif impact_only and state["queue_index"] >= len(specs):
+                end_state = "COMPLETE"
             elif deadline_has_elapsed:
                 end_state = "DEADLINE_COMPLETE"
             elif state["queue_index"] >= len(specs):
@@ -563,7 +565,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description="TFTMAC evidence-grounded incremental small-gains sweep")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("self-test")
-    c = sub.add_parser("campaign"); c.add_argument("--duration", type=parse_duration, default=parse_duration("4h")); c.add_argument("--resume", action="store_true")
+    c = sub.add_parser("campaign"); c.add_argument("--duration", type=parse_duration, default=parse_duration("4h")); c.add_argument("--resume", action="store_true"); c.add_argument("--impact-only", action="store_true")
     sub.add_parser("status")
     args = p.parse_args()
     lab = IncrementalLab()
@@ -585,9 +587,10 @@ def main() -> int:
             deadline_fixture = {"deadline_utc": "2026-09-11T12:21:51Z"}
             assert not deadline_reached(deadline_fixture, now=datetime(2026, 9, 11, 8, 21, 51, tzinfo=timezone.utc))
             assert deadline_reached(deadline_fixture, now=datetime(2026, 9, 11, 12, 21, 51, tzinfo=timezone.utc))
-            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "stability_tail_policy": "PASS", "durable_deadline_policy": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
+            assert args.command == "self-test"
+            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "stability_tail_policy": "PASS", "impact_only_queue_completion": "PASS", "durable_deadline_policy": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
         if args.command == "campaign":
-            print(lab.run_incremental_campaign(args.duration, args.resume)); return 0
+            print(lab.run_incremental_campaign(args.duration, args.resume, args.impact_only)); return 0
         if args.command == "status":
             cid=lab.current_campaign(); print(json.dumps(lab.read_state(cid) if cid and lab.state_path(cid).exists() else {"campaign":None}, indent=2)); return 0
         return 2

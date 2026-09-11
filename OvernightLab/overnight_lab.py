@@ -925,23 +925,41 @@ class OvernightLab:
         atomic_json(ctx.run_dir / "vulkan-profile-delta.json", {"differences": [[list(k), old, new] for k, old, new in differences], "sha256": sha256_file(path)})
         return path
 
+    def wait_adb_uid(self, expected_uid: str, *, timeout: float, error_message: str, error_class: str) -> None:
+        """Wait through an adbd restart and prove the exact shell privilege state."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.owned_emulator_pids():
+                raise LabError(
+                    "owned emulator exited during ADB privilege transition",
+                    error_class=error_class, component="adb", phase="candidate_apply")
+            remaining = max(0.25, deadline - time.monotonic())
+            try:
+                ready = self.command(
+                    [str(self.adb_path), "-P", str(self.adb_port), "-s", self.serial, "wait-for-device"],
+                    timeout=min(5.0, remaining), check=False)
+            except LabError:
+                ready = None
+            if ready is not None and ready.returncode == 0:
+                uid = self.adb("shell", "id", "-u", timeout=min(4.0, remaining), check=False)
+                if uid.returncode == 0 and uid.stdout.strip() == expected_uid:
+                    return
+            time.sleep(0.25)
+        raise LabError(error_message, error_class=error_class, component="adb", phase="candidate_apply")
+
     def adb_root(self) -> None:
         self.command([str(self.adb_path), "-P", str(self.adb_port), "-s", self.serial, "root"], timeout=20)
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            r = self.adb("shell", "id", "-u", timeout=4, check=False)
-            if r.returncode == 0 and r.stdout.strip() == "0": return
-            time.sleep(0.5)
-        raise LabError("ADB root did not become effective", error_class="ADB_ROOT_FAILED", phase="candidate_apply")
+        self.wait_adb_uid(
+            "0", timeout=45.0,
+            error_message="ADB root did not become effective",
+            error_class="ADB_ROOT_FAILED")
 
     def adb_unroot(self) -> None:
         self.command([str(self.adb_path), "-P", str(self.adb_port), "-s", self.serial, "unroot"], timeout=20)
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            r = self.adb("shell", "id", "-u", timeout=4, check=False)
-            if r.returncode == 0 and r.stdout.strip() == "2000": return
-            time.sleep(0.5)
-        raise LabError("ADB shell privilege was not restored", error_class="ADB_UNROOT_FAILED", phase="candidate_apply")
+        self.wait_adb_uid(
+            "2000", timeout=45.0,
+            error_message="ADB shell privilege was not restored",
+            error_class="ADB_UNROOT_FAILED")
 
     def apply_vulkan_overlay(self, ctx: RunContext, profile: Path) -> None:
         target = self.authority["device_profile_target"]
