@@ -146,6 +146,22 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 
 **Current scoreboard:** one verified fast win — `cache-no-global-sync`; buffer retention, direct Vulkan, queue-submit-inline, virtual-queue-off and fence-contexts-off are not promoted.
 
+#### Valid one-factor impact retest — 2026-09-11
+
+**Campaign:** `incremental-20260911T203403Z-cc03b671`  
+**Outcome:** `NO NEW WINNER / WIN-01 PRESERVED`  
+**Integration:** `NONE` — every non-winning candidate was rolled back to `DEV-B8-WIN-01`; installed DEV integrity, frozen LKG integrity, codesign, AVD restoration, profile restoration and runtime cleanup passed.
+
+This is the first pass after repairing the DEV-only profile transaction far enough to obtain real candidate CVar execution and matched native 1-5 combat evidence. It resolves the earlier infrastructure-only uncertainty without changing the protected Control or frozen LKG.
+
+- **`r.pso.PrecompileThreadPoolSize 4 -> 2` — `NO WIN / REJECTED`.** Matched control: 57.617 FPS, 39.594 1% low, 18.989 ms p95, 25.966 ms p99, 0.00529 jank rate. Candidate: 50.120 FPS, 22.838 1% low, 31.828 ms p95, 49.588 ms p99, 0.19461 jank rate. Delta: **-13.01% mean FPS, -42.32% 1% low, +67.61% p95 interval, +90.97% p99 interval**, with severe intervals introduced. Candidate CVar effectiveness was proven and rollback passed. Do not recycle this value in the current pass.
+- **`r.ShaderPipelineCache.BackgroundBatchSize 20 -> 4` — `INCONCLUSIVE / NOT INTEGRATED`.** The matched control was valid. Candidate startup proved the profile transaction/rollback path, but the official client remained on the Riot credential screen for the bounded login window and ended `AUTH_BLOCKED` before 1-5 measurement. This is **not** a performance rejection; one clean retest remains warranted before this candidate is retired.
+- **`a.Budget.BudgetMs 6.0 -> 5.0` — `NO WIN / REJECTED`.** Matched control: 57.895 FPS, 29.661 1% low, 23.011 ms p95, 33.627 ms p99, 0.03099 jank rate, 0.00563 severe rate. Candidate: 52.873 FPS, 37.954 1% low, 19.612 ms p95, 26.097 ms p99, 0.01326 jank rate, zero severe intervals. The candidate materially improved tails (**+27.96% 1% low, -14.77% p95, -22.39% p99**) but reduced mean FPS **8.67%**. Under the net-gameplay doctrine that mean loss outweighs the tail improvement here; do not integrate.
+- **`a.Budget.BudgetMs 5.0 -> 4.0` — `SKIPPED_PARENT_NOT_ACCEPTED`.** The 5 ms parent did not win, so 4 ms was not admitted.
+- **Rollback/integrity:** all completed runs restored the latest verified winner and reported rollback verified. Post-campaign static authority verified installed DEV, frozen LKG, PBE exclusion and codesign; no owned DEV/emulator process remained.
+
+`DEV-B8-WIN-01` therefore remains the exact next-test baseline. Continue only with unresolved or new evidence-backed one-factor settings; retain any repeatable net improvement even when small, but do not reinterpret a material regression as a win.
+
 #### OvernightLab authority/evidence reconciliation — 2026-09-10
 
 **Outcome:** `TOOLING RECONCILED / TELEMETRY PRESERVED`
