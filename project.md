@@ -1,17 +1,71 @@
 # TFTMAC Project Record
 
-> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+> **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-10 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `master` is the merged authority; new product work is developed in isolated Clara managed changes against the DEV / `advanced_diagnostics` product first.
-**Current installed release:** protected TFTMAC 2.3.0 build 8 Control, a separate signed Control unlock wrapper, and an isolated TFTMAC DEV stock-shadow diagnostic launcher; protected Control executable SHA-256 `d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2` was restored and re-verified on 2026-09-04.
-**Project record through:** 2026-09-04 America/Chicago
+**Current development line:** `master` remains merged repository authority; active optimization work is isolated in Clara change `ff2f318b-245d-418a-b86f-e07d55b19826` against the DEV / `advanced_diagnostics` product.  
+**Protected release/LKG:** TFTMAC 2.3.0 build 8 Control/LKG remains separate, frozen, and available as historical rollback/comparison authority.  
+**Current DEV application identity:** TFTMAC 2.3.0 build 8 DEV (`/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`). Test-ledger versions do not change the product release number.  
+**Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
+**Current test series:** `DEV-B8-2026-09-10-A`.  
+**Current verified working winner:** **`DEV-B8-WIN-01`**.  
+**Project record current through:** 2026-09-10 results-first verification pass.
 
-This is the continuity document for a new developer or a new chat. It records
-what TFTMAC is, why the architecture changed, what has been built, what the
-evidence says, and what remains unfinished. Immutable/current facts live in
-`facts.md`; exact benchmark formulas and current run findings live in
-`benchmark.md`; engineering hypotheses and next code work live in `dev.md`.
+## 0. Living wiki contract
+
+This file is the project wiki/continuity SSOT for the **current** TFTMAC DEV state. It must answer, without reconstructing old chats: what the project is, what is currently installed/running, what the latest verified working configuration is, what version/test series is active, which improvements have been integrated, which candidates are rejected or unresolved, and what baseline the next test must use.
+
+Mandatory companion records:
+
+- `facts.md` — hard facts, boundaries, mandatory authority rules.
+- `CHANGELOG.md` — detailed append-only experiment/version ledger with every completed test, measured outcome, integration YES/NO, reasoning, and rollback result.
+- `.clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/RECOVERY_CONSTRAINTS_2026-09-10.md` — active results-first execution constraints for this pass.
+
+### Current DEV working configuration — `DEV-B8-WIN-01`
+
+- 1920x1080, 320 DPI, 60 Hz.
+- 8 vCPU, 6144 MiB guest RAM, host GPU.
+- OpenGL through ANGLE remains the selected game route.
+- `debug.egl.blobcache.multifile=true`.
+- `debug.angle.feature_overrides_enabled=exposeNonConformant*:exposeES32ForTesting`.
+- `debug.angle.feature_overrides_disabled=preferSubmitAtFBOBoundary`.
+- **`syncMonolithicPipelinesToBlobCache` is removed from the preferred working configuration.**
+- This is a verified net frame-pacing/tail-latency improvement: the exact 1-5 30-window comparison showed p95 15.9% better, p99 19.4% better, jank/window 67.9% lower, missed-vsync/window 70.3% lower, severe intervals 1 vs 7, and worst interval 42.2% better, with mean FPS 1.5% lower at that stage; earlier 1-2 and 1-4 comparisons also improved mean FPS.
+
+### Current promotion/versioning model
+
+1. Start every new candidate from the latest verified DEV winner, currently `DEV-B8-WIN-01`, not from the frozen LKG unless a matched historical control is specifically required.
+2. Change/test one primary hypothesis at a time. Add only a directly-related minimal blocker adjustment when concrete evidence says the intended candidate cannot otherwise execute.
+3. Evaluate net system/gameplay improvement, not FPS alone. FPS is heavily weighted, alongside frame pacing, p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, allocation/churn, stalls, input responsiveness, correctness, stability, and compatibility.
+4. **VERIFIED NET IMPROVEMENT:** integrate it, assign the next `DEV-B8-WIN-##`, update this wiki and `CHANGELOG.md`, then test the next candidate on top of the new winner.
+5. **NOT VERIFIED / INCONCLUSIVE / REGRESSION:** record it in `CHANGELOG.md`, do not integrate it, retain/restore the latest verified winner here, and move forward.
+6. Compounding/synergy is desirable but must be measured. A prior verified win remains integrated while the next factor is tested; the combined configuration must itself verify before promotion.
+7. Never rewrite the frozen LKG to match the DEV winner. LKG is historical control/rollback; DEV is the evolving optimization line.
+
+### Current completed-test state
+
+- `cache-no-global-sync` — **VERIFIED WIN / INTEGRATED** as `DEV-B8-WIN-01`.
+- Buffer-view retention (`dev-observed-reuse-cache-r14`) — **NO WIN / NOT INTEGRATED**.
+- Direct Vulkan — **NO WIN / NOT INTEGRATED** for the fast-pass; compatibility failure path preserved.
+- Queue Submit Inline — **NO WIN / BOOT-INCOMPATIBLE / NOT INTEGRATED**.
+- Virtual Queue Off — **NO WIN / NOT INTEGRATED** from prior official-client combat result.
+- Fence Contexts Off — **NO WIN / NOT INTEGRATED** from prior official-client combat result.
+- ASG draw flush 400 µs — historical/experimental; **not reopened in this pass**.
+- Inverse `preferSubmitAtFBOBoundary` check — **INCONCLUSIVE / NOT ACTUALLY APPLIED / NOT INTEGRATED**.
+
+The exact measurements and reasoning for each entry live in `CHANGELOG.md`; this wiki carries only the current state needed to choose the next action correctly.
+
+### Mandatory update rule after every test
+
+After **every completed DEV optimization test**, before moving to the next candidate:
+
+- update `CHANGELOG.md` with exact delta, workload/stage, result, key metrics, net decision, integration YES/NO, reasoning, and rollback/integrity state;
+- update `project.md` if the current winner, working configuration, test-series state, rejected/unresolved list, runtime/client identity, or next-test baseline changed;
+- update `facts.md` if and only if a current hard fact, mandatory process rule, runtime/client identity, protected boundary, or authoritative configuration changed;
+- preserve detailed historical evidence rather than deleting/rewording old results into a new conclusion;
+- do not begin the next test with stale record books.
+
+This is the continuity document for a new developer or a new chat. Older architecture/history below remains useful background. Exact benchmark formulas and current run findings also live in `benchmark.md`; engineering hypotheses and next code work live in `dev.md`.
 
 ## 1. Goal
 

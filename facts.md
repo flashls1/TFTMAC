@@ -1,10 +1,26 @@
 # TFTMAC Facts
 
-> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+> **CURRENT DEV AUTHORITY — 2026-09-10 America/Chicago.** The DEV optimization/versioning records in `project.md` and `CHANGELOG.md` supersede older mutable DEV build, campaign, performance, and readiness claims below. Historical measurements retain their original dates and remain evidence for their recorded configuration only.
 
-**Authority date:** 2026-09-04 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-04T21:55:24Z
-**Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
+**Authority date:** 2026-09-10 America/Chicago  
+**Current DEV evidence through:** 2026-09-10 results-first verification pass  
+**Purpose:** preserve current facts and hard boundaries that future TFTMAC work must not casually reinterpret.
+
+## Mandatory current-authority reading and record-book rule
+
+Before planning, running, changing, interpreting, or resuming any TFTMAC DEV optimization test, read the current versions of **all three** of these records:
+
+1. `facts.md` — hard project facts, safety boundaries, current authority pointers, and mandatory process rules.
+2. `project.md` — living project wiki: what TFTMAC/DEV is, current working winner, current runtime/client identity, current test series, and current optimization state.
+3. `CHANGELOG.md` — append-only DEV test/version ledger: exact tests already attempted, outcomes, metrics, integration YES/NO, reasoning, rollback state, and `DEV-B8-WIN-##` progression.
+
+For the active results-first pass, also obey `.clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/RECOVERY_CONSTRAINTS_2026-09-10.md`.
+
+**LOCKED RECORD-BOOK POLICY:** every completed DEV optimization test must update the current record books in the same work cycle. A test result is not considered fully recorded until `CHANGELOG.md` contains the exact result and integration decision and `project.md` reflects any change to current winner/state/version progression. Update `facts.md` whenever the result changes a current fact, hard boundary, mandatory rule, runtime/client identity, or authoritative current configuration. Do not copy transient measurements into `facts.md` merely because a test ran; facts stays concise and authoritative, while `CHANGELOG.md` retains the detailed test history.
+
+**LOCKED PROMOTION POLICY:** VERIFIED NET IMPROVEMENT -> integrate it, assign/promote the next working `DEV-B8-WIN-##` identity, update `project.md` and `CHANGELOG.md`, and use that winner as the baseline for the next test. NOT VERIFIED / INCONCLUSIVE / REGRESSION -> log the exact result and reason in `CHANGELOG.md`, do not integrate it, keep/restore the latest verified winner in `project.md`, and move to the next candidate. A small regression in one secondary metric may be accepted when the overall measured system/gameplay result is noticeably better and no correctness, stability, compatibility, or severe-tail regression outweighs the gain.
+
+**LOCKED LKG SEPARATION:** the frozen LKG remains separate and immutable. The evolving DEV working winner is never allowed to silently rewrite the historical LKG/control evidence.
 
 This file separates durable product facts from mutable observations and historical
 results. A statement becomes a project fact only when it has direct machine,
