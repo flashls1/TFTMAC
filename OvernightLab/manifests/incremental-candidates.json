@@ -6,20 +6,57 @@
   "maximum_seconds_per_run": 720,
   "candidates": [
     {
+      "id": "shader-background-batch-4-retest",
+      "family": "unreal_shader_cache_contention",
+      "cvar": "r.ShaderPipelineCache.BackgroundBatchSize",
+      "from": "20",
+      "to": "4",
+      "reason": "One clean retest because the prior effective candidate was AUTH_BLOCKED before performance measurement; reduce burst background PSO cache compile work during interactive gameplay."
+    }
+  ],
+  "pending_candidates": [
+    {
+      "id": "pso-precompile-threads-3",
+      "family": "unreal_cpu_contention",
+      "cvar": "r.pso.PrecompileThreadPoolSize",
+      "from": "4",
+      "to": "3",
+      "reason": "Midpoint refinement after 2 threads caused a major throughput regression; test whether a mild concurrency reduction lowers contention without starving PSO precompile throughput."
+    },
+    {
+      "id": "animation-budget-5_5ms",
+      "family": "unreal_animation_budget",
+      "cvar": "a.Budget.BudgetMs",
+      "from": "6.0",
+      "to": "5.5",
+      "reason": "Midpoint refinement after 5ms materially improved 1% low and p95/p99 but lost too much mean FPS; test whether 5.5ms preserves tail gains without the material mean-FPS regression."
+    },
+    {
+      "id": "shader-batch-time-2ms",
+      "family": "unreal_shader_cache_contention",
+      "cvar": "r.ShaderPipelineCache.BatchTime",
+      "from": "4",
+      "to": "2",
+      "reason": "Reduce the current per-frame shader pipeline precompile budget to lower interactive compile contention while preserving the existing cache path."
+    },
+    {
+      "id": "opengl-remote-compile-services-2",
+      "family": "unreal_opengl_compile_contention",
+      "cvar": "Android.OpenGL.NumRemoteProgramCompileServices",
+      "from": "4",
+      "to": "2",
+      "reason": "Test whether two remote OpenGL program compile services reduce concurrent CPU pressure on the 8-vCPU guest without increasing shader stalls."
+    }
+  ],
+  "resolved_candidates": [
+    {
       "id": "pso-precompile-threads-2",
       "family": "unreal_cpu_contention",
       "cvar": "r.pso.PrecompileThreadPoolSize",
       "from": "4",
       "to": "2",
-      "reason": "Reduce concurrent PSO precompile CPU contention on the 8-vCPU guest during interactive/heavy gameplay."
-    },
-    {
-      "id": "shader-background-batch-4",
-      "family": "unreal_shader_cache_contention",
-      "cvar": "r.ShaderPipelineCache.BackgroundBatchSize",
-      "from": "20",
-      "to": "4",
-      "reason": "Reduce burst background PSO cache compile work during interactive gameplay."
+      "status": "REJECT",
+      "reason": "Valid matched 1-5 candidate regressed mean FPS 13.01%, 1% low 42.32%, p95 interval 67.61%, and p99 interval 90.97%; rollback verified in campaign incremental-20260911T203403Z-cc03b671."
     },
     {
       "id": "animation-budget-5ms",
@@ -27,7 +64,8 @@
       "cvar": "a.Budget.BudgetMs",
       "from": "6.0",
       "to": "5.0",
-      "reason": "Apply earlier skeletal-animation budgeting during unit-dense combat to protect game-thread frame time."
+      "status": "REJECT",
+      "reason": "Valid matched 1-5 candidate improved tails but reduced mean FPS 8.67%; net regression under current promotion doctrine; rollback verified in campaign incremental-20260911T203403Z-cc03b671."
     },
     {
       "id": "animation-budget-4ms",
@@ -35,8 +73,8 @@
       "cvar": "a.Budget.BudgetMs",
       "from": "5.0",
       "to": "4.0",
-      "requires_parent": "animation-budget-5ms",
-      "reason": "Conditional refinement only after a confirmed 5ms animation-budget win."
+      "status": "SKIPPED_PARENT_NOT_ACCEPTED",
+      "reason": "The 5ms parent did not win, so this conditional refinement was not admitted."
     }
   ]
 }
