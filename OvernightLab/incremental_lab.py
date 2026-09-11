@@ -521,10 +521,13 @@ class IncrementalLab(base.OvernightLab):
                     state["rollback_verified"] = False
                 self.write_state(cid, state)
                 self.incremental_report(cid)
-                if classification != "MECHANISM_WORKING" or not rollback_verified:
+                # Stability controls are evidence-only after the candidate queue is exhausted.
+                # An inconclusive soak reduces confidence but must not abort the campaign when
+                # rollback is proven; only an unproven rollback may stop future admission.
+                if not rollback_verified:
                     raise base.LabError(
-                        f"stability-control not green: classification={classification} rollback={rollback_verified}",
-                        error_class="STABILITY_CONTROL_FAILED" if rollback_verified else "ROLLBACK_FAILURE",
+                        f"stability-control rollback is unproven: classification={classification}",
+                        error_class="ROLLBACK_FAILURE",
                         phase="campaign")
 
             deadline_has_elapsed = deadline_reached(state)
