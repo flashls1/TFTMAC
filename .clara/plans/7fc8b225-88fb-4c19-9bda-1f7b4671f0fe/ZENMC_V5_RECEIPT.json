@@ -1,0 +1,22 @@
+{
+  "invariants": {
+    "bounded_10s_wait": true,
+    "no_runtime_mutation_during_wait": true,
+    "no_success_while_adb_transport_live": true,
+    "no_success_while_qemu_alive": true,
+    "timeout_fails_closed": true
+  },
+  "model": "TFTMAC_ROLLBACK_TRANSPORT_QUIESCENCE_V5",
+  "receipt_sha256": "84d08a40f71061e472d8872d2b99940da7709172d5ede69d461b7ee7bde5355c",
+  "seed": 20260911,
+  "stats": {
+    "immediate": 6142,
+    "linger_resolved": 93651,
+    "qemu_reappeared": 0,
+    "timeout": 207,
+    "trajectories": 100000
+  },
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": []
+}
