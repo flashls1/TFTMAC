@@ -212,7 +212,7 @@ class IncrementalLab(base.OvernightLab):
                 raise base.LabError("TFT process remained alive before candidate profile mutation", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
             self.verify_profile_views(expected, phase="candidate_apply")
             before_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
-            before_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+            before_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
             before_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
             self.adb("shell", "mkdir", "-p", stage)
             self.adb("push", str(profile), candidate_remote, timeout=20)
@@ -227,7 +227,7 @@ class IncrementalLab(base.OvernightLab):
             ctx.profile_overlay_applied = True
             self.adb("shell", "sh", "-c", f"cat {candidate_remote} > {original_stage} && sync", timeout=15)
             after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
-            after_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+            after_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
             after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
             if (after_inode, after_meta, after_context) != (before_inode, before_meta, before_context):
                 raise base.LabError("candidate stage inode or metadata changed", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
@@ -249,14 +249,14 @@ class IncrementalLab(base.OvernightLab):
                 if self.adb("shell", "pidof", self.package, timeout=5, check=False).stdout.strip():
                     raise base.LabError("TFT process remained alive before profile restoration", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
                 before_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
-                before_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+                before_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
                 before_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
                 baseline_sha = self.adb("shell", "sha256sum", baseline_remote, timeout=10).stdout.split()[0]
                 if baseline_sha != self.installed_profile_sha:
                     raise base.LabError("rollback baseline staging hash mismatch", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
                 self.adb("shell", "sh", "-c", f"cat {baseline_remote} > {original_stage} && sync", timeout=15)
                 after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
-                after_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+                after_meta = self.adb("shell", "stat", "-c", "%u:%g:%a", original_stage, timeout=10).stdout.strip()
                 after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
                 if (after_inode, after_meta, after_context) != (before_inode, before_meta, before_context):
                     raise base.LabError("rollback stage inode or metadata changed", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
