@@ -11,7 +11,7 @@ import sqlite3
 import statistics
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +28,22 @@ def utc_now() -> str:
 
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("UTC deadline must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def deadline_reached(state: dict[str, Any], *, now: Optional[datetime] = None) -> bool:
+    if "deadline_utc" not in state:
+        raise base.LabError(
+            "campaign checkpoint is missing durable deadline_utc",
+            error_class="CAMPAIGN_DEADLINE_MIGRATION_REQUIRED", component="campaign", phase="resume")
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return current >= parse_utc(str(state["deadline_utc"]))
 
 
 class IncrementalLab(base.OvernightLab):
@@ -83,22 +99,26 @@ class IncrementalLab(base.OvernightLab):
     def create_incremental_campaign(self, deadline_seconds: int) -> str:
         self.verify_static_authority()
         self.ensure_incremental_candidates()
-        cid = "incremental-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
+        started = datetime.now(timezone.utc).replace(microsecond=0)
+        started_utc = started.isoformat().replace("+00:00", "Z")
+        deadline_utc = (started + timedelta(seconds=deadline_seconds)).isoformat().replace("+00:00", "Z")
+        cid = "incremental-" + started.strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
         cdir = self.campaign_dir(cid)
         cdir.mkdir(parents=True, exist_ok=False)
         working = cdir / "working-profile.ini"
         shutil.copy2(self.installed_profile, working)
         self.db.execute(
             "INSERT INTO campaigns(campaign_id,started_utc,state,authority_sha256,candidate_manifest_sha256,lkg_integrity_passed,pbe_evidence_admitted) VALUES(?,?,?,?,?,1,0)",
-            (cid, utc_now(), "RUNNING", base.sha256_file(base.AUTHORITY_PATH), base.sha256_file(MANIFEST_PATH)))
+            (cid, started_utc, "RUNNING", base.sha256_file(base.AUTHORITY_PATH), base.sha256_file(MANIFEST_PATH)))
         base.ACTIVE_PATH.write_text(cid + "\n", encoding="utf-8")
         self.write_checkpoint(cid, queue_index=0, state="RUNNING", phase="INCREMENTAL_CAMPAIGN_START", current_candidate=None, current_run=None, failure=None)
         self.write_state(cid, {
             "schema": 1,
             "campaign": "TFTMAC_INCREMENTAL_SMALL_GAINS_V1",
             "campaign_id": cid,
-            "started_utc": utc_now(),
-            "deadline_monotonic_ns": time.monotonic_ns() + deadline_seconds * 1_000_000_000,
+            "started_utc": started_utc,
+            "duration_seconds": int(deadline_seconds),
+            "deadline_utc": deadline_utc,
             "base_working_version": self.authority["working_version"],
             "installed_profile_sha256": self.installed_profile_sha,
             "working_profile_path": str(working),
@@ -404,6 +424,11 @@ class IncrementalLab(base.OvernightLab):
         try:
             cid = self.current_campaign() if resume else None
             if cid and self.state_path(cid).exists():
+                state = self.read_state(cid)
+                if "deadline_utc" not in state:
+                    raise base.LabError(
+                        "existing campaign requires an evidence-backed durable deadline migration",
+                        error_class="CAMPAIGN_DEADLINE_MIGRATION_REQUIRED", component="campaign", phase="resume")
                 self.reconcile_resume(cid)
                 state = self.read_state(cid)
                 state.pop("blocked_reason", None)
@@ -419,7 +444,7 @@ class IncrementalLab(base.OvernightLab):
                 state = self.read_state(cid)
             specs = list(self.incremental_manifest["candidates"])
             while state["queue_index"] < len(specs):
-                if time.monotonic_ns() >= int(state["deadline_monotonic_ns"]):
+                if deadline_reached(state):
                     break
                 spec = specs[state["queue_index"]]
                 parent = spec.get("requires_parent")
@@ -452,7 +477,7 @@ class IncrementalLab(base.OvernightLab):
                 candidate_id, candidate_class = self.run_profile(cid, spec, "candidate-initial", candidate_profile, str(spec["to"]))
                 initial = self.compare(control_id, candidate_id) if candidate_class == "MECHANISM_WORKING" else {"decision": "INCONCLUSIVE", "reason": candidate_class}
                 item: dict[str, Any] = {"candidate": spec["id"], "control_run": control_id, "candidate_run": candidate_id, "initial_decision": initial["decision"], "initial_comparison": initial, "kept": False}
-                if initial["decision"] in {"PROMISING", "HOME_RUN"} and time.monotonic_ns() < int(state["deadline_monotonic_ns"]):
+                if initial["decision"] in {"PROMISING", "HOME_RUN"} and not deadline_reached(state):
                     confirm_control, cc = self.run_profile(cid, spec, "control-confirm", working, str(spec["from"]) if base.sha256_file(working) != self.installed_profile_sha else None)
                     if cc != "CONTROL_VALID":
                         confirmation = {"decision": "INCONCLUSIVE", "reason": f"confirmation control={cc}"}
@@ -480,7 +505,7 @@ class IncrementalLab(base.OvernightLab):
             # Queue exhausted before the four-hour deadline: accumulate stability evidence only.
             # No new tuning candidate is invented or admitted in this tail loop.
             stability = self.stability_spec()
-            while state["queue_index"] >= len(specs) and time.monotonic_ns() < int(state["deadline_monotonic_ns"]):
+            while state["queue_index"] >= len(specs) and not deadline_reached(state):
                 working = Path(state["working_profile_path"])
                 run_id, classification = self.run_profile(cid, stability, "stability-control", working, None)
                 rollback_row = self.db.rows("SELECT rollback_verified FROM runs WHERE run_id=?", (run_id,))
@@ -502,10 +527,10 @@ class IncrementalLab(base.OvernightLab):
                         error_class="STABILITY_CONTROL_FAILED" if rollback_verified else "ROLLBACK_FAILURE",
                         phase="campaign")
 
-            deadline_reached = time.monotonic_ns() >= int(state["deadline_monotonic_ns"])
+            deadline_has_elapsed = deadline_reached(state)
             if state.get("blocked_reason"):
                 end_state = "BLOCKED_INCONCLUSIVE"
-            elif deadline_reached:
+            elif deadline_has_elapsed:
                 end_state = "DEADLINE_COMPLETE"
             elif state["queue_index"] >= len(specs):
                 end_state = "COMPLETE"
@@ -554,7 +579,10 @@ def main() -> int:
                     out=Path(td)/f"{spec['id']}.ini"; receipts.append(lab.build_profile_candidate(current,spec,out)); current=lab.installed_profile
             stability = lab.stability_spec()
             assert stability["id"] == "stability-control" and stability["cvar"] == "" and stability["from"] == stability["to"] == ""
-            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "stability_tail_policy": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
+            deadline_fixture = {"deadline_utc": "2026-09-11T12:21:51Z"}
+            assert not deadline_reached(deadline_fixture, now=datetime(2026, 9, 11, 8, 21, 51, tzinfo=timezone.utc))
+            assert deadline_reached(deadline_fixture, now=datetime(2026, 9, 11, 12, 21, 51, tzinfo=timezone.utc))
+            print(json.dumps({"static": static, "incremental_manifest": "PASS", "exact_one_cvar_generation": "PASS", "stability_tail_policy": "PASS", "durable_deadline_policy": "PASS", "candidate_receipts": receipts}, indent=2)); return 0
         if args.command == "campaign":
             print(lab.run_incremental_campaign(args.duration, args.resume)); return 0
         if args.command == "status":
