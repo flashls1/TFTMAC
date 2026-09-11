@@ -1377,10 +1377,15 @@ class OvernightLab:
 
     def request_dev_quit(self) -> None:
         # Prefer the normal AppKit quit path so TFTMAC can seal capture state and restore the AVD.
-        self.command(
-            ["/usr/bin/osascript", "-e", 'tell application id "com.flashls1.tftmac.dev" to quit'],
-            timeout=15, check=False,
-        )
+        # A wedged AppleEvent must not mask the experiment result or skip the existing
+        # bounded process fallback below.
+        try:
+            self.command(
+                ["/usr/bin/osascript", "-e", 'tell application id "com.flashls1.tftmac.dev" to quit'],
+                timeout=15, check=False,
+            )
+        except LabError:
+            pass
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and self.dev_core_running():
             time.sleep(0.25)

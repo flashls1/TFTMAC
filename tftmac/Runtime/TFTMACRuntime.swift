@@ -4145,7 +4145,7 @@ actor TFTMACRuntimeService {
     private func ensurePrivateHighPerfParent(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         let package = "com.riotgames.league.teamfighttactics"
         let parent = "/data/user/0/\(package)/files/UnrealGame/TFT/TFT/Saved/Config/Android"
-        let component = "\(package)/com.epicgames.unreal.SplashActivity"
+        let component = "\(package)/com.epicgames.unreal.GameActivity"
 
         func parentExists() -> Bool {
             guard let result = try? Self.adb(paths: paths, ["shell", "test -d \(parent)"], timeout: 5) else { return false }
@@ -4210,7 +4210,6 @@ actor TFTMACRuntimeService {
         try prepareANGLEDriverOverride(paths: paths, telemetry: telemetry)
         highPerfOperationInProgress = true
         defer { highPerfOperationInProgress = false }
-        try await ensurePrivateHighPerfParent(paths: paths, telemetry: telemetry)
         _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
         _ = try Self.adb(paths: paths, ["shell", "setprop debug.hwui.renderer skiagl"], timeout: 10)
         let hwui = try Self.adb(paths: paths, ["shell", "getprop debug.hwui.renderer"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4226,6 +4225,10 @@ actor TFTMACRuntimeService {
         }
         do {
             try await changeHighPerfADBD(paths: paths, root: true)
+            // The official package private tree is root-only at this boundary.
+            // Bootstrap Unreal only when that tree is absent, then stop TFT before
+            // applying the unchanged verified LKG profile transaction.
+            try await ensurePrivateHighPerfParent(paths: paths, telemetry: telemetry)
             let identity = try Self.adb(paths: paths, ["shell", "getprop ro.boot.tftmac.session"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
             guard identity == String(session) else { throw TFTMACRuntimeError("DEV HighPerf guest session mismatch.") }
             _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("DeviceProfiles.ini").path, "/data/local/tmp/tftmac-native-profile.ini"], timeout: 15)
