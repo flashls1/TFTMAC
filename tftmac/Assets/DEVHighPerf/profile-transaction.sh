@@ -93,12 +93,44 @@ fi
 mount -o bind "$stage/DeviceProfiles.ini" "$target"
 [ "$(mount_count)" = 1 ] && [ "$(sha "$target")" = "$expected" ] || fail 'mount verification failed'
 [ "$(metadata "$target")" = '0:0 444' ] && [ "$(context "$target")" = "$ctx" ] || fail 'mounted metadata mismatch'
-zygotes=$(pidof zygote64)
-[ -n "$zygotes" ] || fail 'zygote missing'
-for zygote in $zygotes; do
-  case "$zygote" in *[!0-9]*|'') fail 'invalid zygote PID' ;; esac
-  [ "$(nsenter -t "$zygote" -m -- sha256sum "$target" | cut -d ' ' -f 1)" = "$expected" ] || fail "zygote mount namespace mismatch: $zygote"
+verified_zygotes=
+last_zygotes=
+consecutive=0
+attempt=0
+while [ "$attempt" -lt 60 ]; do
+  zygotes=$(pidof zygote64 2>/dev/null || true)
+  all_visible=yes
+  current_zygotes=
+  if [ -z "$zygotes" ]; then
+    all_visible=no
+  else
+    for zygote in $zygotes; do
+      case "$zygote" in *[!0-9]*|'') all_visible=no; continue ;; esac
+      [ -d "/proc/$zygote" ] || { all_visible=no; continue; }
+      current_zygotes="${current_zygotes}${current_zygotes:+ }$zygote"
+      observed=$(nsenter -t "$zygote" -m -- sha256sum "$target" 2>/dev/null | cut -d ' ' -f 1 || true)
+      [ "$observed" = "$expected" ] || all_visible=no
+    done
+  fi
+  if [ "$all_visible" = yes ] && [ -n "$current_zygotes" ]; then
+    if [ "$current_zygotes" = "$last_zygotes" ]; then
+      consecutive=$((consecutive + 1))
+    else
+      consecutive=1
+    fi
+    last_zygotes="$current_zygotes"
+    if [ "$consecutive" -ge 2 ]; then
+      verified_zygotes="$current_zygotes"
+      break
+    fi
+  else
+    consecutive=0
+    last_zygotes="$current_zygotes"
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.25
 done
+[ -n "$verified_zygotes" ] || fail "zygote mount namespace convergence timed out: last=${last_zygotes:-none}"
 echo MOUNT_VERIFIED > "$stage/state"
 sync
-printf 'MOUNT_VERIFIED sha256=%s owner=0:0 mode=444 context=%s zygotes=%s original_present=%s\n' "$expected" "$ctx" "$zygotes" "$(cat "$stage/present")"
+printf 'MOUNT_VERIFIED sha256=%s owner=0:0 mode=444 context=%s zygotes=%s original_present=%s convergence_polls=%s\n' "$expected" "$ctx" "$verified_zygotes" "$(cat "$stage/present")" "$attempt"

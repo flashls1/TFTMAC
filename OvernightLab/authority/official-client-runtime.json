@@ -2,7 +2,11 @@
   "schema_version": 2,
   "client_scope": "OFFICIAL_LIVE",
   "working_version": "DEV-B8-WIN-01",
-  "authority_sources": ["facts.md", "project.md", "CHANGELOG.md"],
+  "authority_sources": [
+    "facts.md",
+    "project.md",
+    "CHANGELOG.md"
+  ],
   "evidence_reuse_policy": {
     "minor_configuration_drift": "PRESERVE_AND_LABEL_DATA_ONLY_UNLESS_MATCHED_TO_CURRENT_WINNER",
     "core_pipeline_or_client_mismatch": "PRESERVE_RAW_EVIDENCE_BUT_EXCLUDE_FROM_CURRENT_PROMOTION",
@@ -40,7 +44,7 @@
     "Contents/MacOS/TFTMACDEVCore": "08d446122561b4a7e25ff9476e4c2464b6a675999bcd8034d8fe88a403c7a6a4",
     "Contents/MacOS/TFTMACDEVLauncher": "63903cbb811e43048630e176818235d0b2dddb1663cd494f26efd514bfe73f18",
     "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
-    "Contents/Resources/DEVHighPerf/profile-transaction.sh": "7d7d89df8db6927b09d4e2866aac932f9924b729584797e8364077102eeb5835",
+    "Contents/Resources/DEVHighPerf/profile-transaction.sh": "45649f06f1e4eef4711b7fec8e949120acab3bf30bfea9b664192cb907dc91ab",
     "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
     "Contents/Resources/TFTMACVulkanProbe.apk": "b9193525e0a796367adf397243982d7d629e738dd464b4d220631952e4a1b4f0"
   },
