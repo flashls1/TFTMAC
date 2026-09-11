@@ -457,6 +457,11 @@ private func classifierSelfTest() -> Bool {
         imageWidth: referenceWidth,
         imageHeight: referenceHeight
     )
+    let crossLineErrorTrap = EvidenceMatcher(lines: [
+        OCRLine(text: "Brawler", normalized: "BRAWLER", compact: "BRAWLER", confidence: 1, boundingBox: .zero),
+        OCRLine(text: "r", normalized: "R", compact: "R", confidence: 1, boundingBox: .zero),
+        OCRLine(text: "Ornn", normalized: "ORNN", compact: "ORNN", confidence: 1, boundingBox: .zero),
+    ])
     return shopCost(red: 37, green: 51, blue: 65) == 1
         && shopCost(red: 19, green: 53, blue: 44) == 2
         && shopCost(red: 28, green: 32, blue: 72) == 3
@@ -466,6 +471,8 @@ private func classifierSelfTest() -> Bool {
         && boardOccupancy(in: [noisyOccupancy])?.capacity == 4
         && postCombatPhase == "post_combat"
         && planningPhase == "planning"
+        && crossLineErrorTrap.has("ERROR")
+        && !crossLineErrorTrap.hasLineLocal("ERROR")
 }
 
 private func emitDebugLines(_ lines: [OCRLine]) {
@@ -502,6 +509,18 @@ private final class EvidenceMatcher {
 
     func hasAny(_ phrases: [String]) -> Bool {
         phrases.contains(where: has)
+    }
+
+    func hasLineLocal(_ phrase: String) -> Bool {
+        let needle = compactText(normalizedText(phrase))
+        guard !needle.isEmpty else {
+            return false
+        }
+        return lines.contains { $0.compact.contains(needle) }
+    }
+
+    func hasAnyLineLocal(_ phrases: [String]) -> Bool {
+        phrases.contains { hasLineLocal($0) }
     }
 
     func matchedText(for phrases: [String], limit: Int = 4) -> [String] {
@@ -679,7 +698,7 @@ private func classify(lines: [OCRLine]) -> Classification {
     }) && lines.contains(where: {
         $0.normalized == "+" && $0.boundingBox.minX >= 0.75 && $0.boundingBox.midY >= 0.90
     })
-    if matcher.hasAny(strongErrorMarkers) || (matcher.has("ERROR") && !hasTopBarErrorCurrency) {
+    if matcher.hasAnyLineLocal(strongErrorMarkers) || (matcher.hasLineLocal("ERROR") && !hasTopBarErrorCurrency) {
         return Classification(
             state: .error,
             stage: nil,

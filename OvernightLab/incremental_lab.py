@@ -406,6 +406,14 @@ class IncrementalLab(base.OvernightLab):
             if cid and self.state_path(cid).exists():
                 self.reconcile_resume(cid)
                 state = self.read_state(cid)
+                state.pop("blocked_reason", None)
+                state["campaign_state"] = "RUNNING"
+                last_rollback = self.db.one(
+                    "SELECT rollback_verified FROM runs WHERE campaign_id=? ORDER BY started_utc DESC LIMIT 1", (cid,))
+                if last_rollback is not None:
+                    state["rollback_verified"] = bool(last_rollback["rollback_verified"])
+                self.write_state(cid, state)
+                self.db.execute("UPDATE campaigns SET state='RUNNING',ended_utc=NULL WHERE campaign_id=?", (cid,))
             else:
                 cid = self.create_incremental_campaign(duration_seconds)
                 state = self.read_state(cid)
@@ -425,10 +433,22 @@ class IncrementalLab(base.OvernightLab):
                 base.atomic_json(self.campaign_dir(cid) / f"candidate-{spec['id']}.delta.json", delta_receipt)
                 # Fresh matched control then candidate.
                 control_id, control_class = self.run_profile(cid, spec, "control-initial", working, str(spec["from"]) if base.sha256_file(working) != self.installed_profile_sha else None)
+                control_rollback_row = self.db.one("SELECT rollback_verified FROM runs WHERE run_id=?", (control_id,))
+                control_rollback_verified = bool(control_rollback_row and control_rollback_row["rollback_verified"])
+                state["rollback_verified"] = control_rollback_verified
                 if control_class != "CONTROL_VALID":
-                    state["rollback_verified"] = False if control_class == "INCONCLUSIVE" else state["rollback_verified"]
-                    state["results"].append({"candidate": spec["id"], "initial_decision": "CONTROL_NOT_GREEN", "control_run": control_id, "kept": False})
-                    self.write_state(cid, state); break
+                    state["blocked_reason"] = {
+                        "kind": "CONTROL_NOT_GREEN",
+                        "run_id": control_id,
+                        "classification": control_class,
+                        "rollback_verified": control_rollback_verified,
+                    }
+                    state["results"].append({
+                        "candidate": spec["id"], "initial_decision": "CONTROL_NOT_GREEN",
+                        "control_run": control_id, "rollback_verified": control_rollback_verified, "kept": False})
+                    self.write_state(cid, state)
+                    self.incremental_report(cid)
+                    break
                 candidate_id, candidate_class = self.run_profile(cid, spec, "candidate-initial", candidate_profile, str(spec["to"]))
                 initial = self.compare(control_id, candidate_id) if candidate_class == "MECHANISM_WORKING" else {"decision": "INCONCLUSIVE", "reason": candidate_class}
                 item: dict[str, Any] = {"candidate": spec["id"], "control_run": control_id, "candidate_run": candidate_id, "initial_decision": initial["decision"], "initial_comparison": initial, "kept": False}
@@ -482,11 +502,24 @@ class IncrementalLab(base.OvernightLab):
                         error_class="STABILITY_CONTROL_FAILED" if rollback_verified else "ROLLBACK_FAILURE",
                         phase="campaign")
 
-            end_state = "DEADLINE_COMPLETE" if time.monotonic_ns() >= int(state["deadline_monotonic_ns"]) else ("COMPLETE" if state["queue_index"] >= len(specs) else "DEADLINE_COMPLETE")
+            deadline_reached = time.monotonic_ns() >= int(state["deadline_monotonic_ns"])
+            if state.get("blocked_reason"):
+                end_state = "BLOCKED_INCONCLUSIVE"
+            elif deadline_reached:
+                end_state = "DEADLINE_COMPLETE"
+            elif state["queue_index"] >= len(specs):
+                end_state = "COMPLETE"
+            else:
+                end_state = "BLOCKED_INCONCLUSIVE"
             state["campaign_state"] = end_state
             self.write_state(cid, state)
             self.db.execute("UPDATE campaigns SET state=?,ended_utc=? WHERE campaign_id=?", (end_state, utc_now(), cid))
-            self.write_checkpoint(cid, queue_index=int(state["queue_index"]), state=end_state, phase="COMPLETE", current_candidate=None, current_run=None, failure=None)
+            blocked = state.get("blocked_reason")
+            self.write_checkpoint(
+                cid, queue_index=int(state["queue_index"]), state=end_state,
+                phase="BLOCKED" if end_state == "BLOCKED_INCONCLUSIVE" else "COMPLETE",
+                current_candidate=None, current_run=None,
+                failure=canonical_json(blocked) if blocked else None)
             self.incremental_report(cid)
             self.generate_report(cid)
             return cid
