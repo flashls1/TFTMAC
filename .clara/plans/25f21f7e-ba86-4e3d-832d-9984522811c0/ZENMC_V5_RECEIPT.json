@@ -1,0 +1,34 @@
+{
+  "invariants": {
+    "deadline_stops_new_admission": true,
+    "explicit_combat_precedence": true,
+    "frozen_lkg_never_mutated": true,
+    "non_green_control_resumes_same_queue_index": true,
+    "planning_or_fight_precedes_score_fallback": true,
+    "promotion_still_requires_positive_confirmation": true,
+    "rollback_failure_stops_advance": true,
+    "score_fallback_requires_no_shop_and_no_fight": true,
+    "time_bonus_post_combat_precedes_score_fallback": true
+  },
+  "model": "TFTMAC_INCREMENTAL_4H_LIFECYCLE_V5_STAGE15_PHASE",
+  "receipt_sha256": "d5731f249d5921d102216af7324e8ee72b02b4491e3e0db0ba21a647a1588d5a",
+  "result": "PASS",
+  "schema": 1,
+  "seed": 20260911,
+  "source_operation_id": "tftmac-4h-zenmc-v5-stage15-phase-20260911-v1",
+  "stats": {
+    "deadline_blocks": 7629,
+    "explicit_combat": 17940,
+    "explicit_planning": 25035,
+    "explicit_post": 4569,
+    "promotions": 9911,
+    "resumed_same_index": 10636,
+    "rollback_blocks": 3521,
+    "score_fallback_combat": 31256,
+    "score_with_fight_planning": 11239,
+    "score_with_shop_not_fallback": 6312
+  },
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": []
+}
