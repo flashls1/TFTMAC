@@ -1,0 +1,23 @@
+{
+  "invariants": {
+    "disappeared_pid_not_permanent_blocker": true,
+    "new_current_zygote_cannot_be_ignored": true,
+    "no_per_zygote_mount_created": true,
+    "no_tft_launch_before_two_consecutive_complete_current_set_passes": true,
+    "rollback_preserved": true,
+    "timeout_fails_closed": true
+  },
+  "model": "TFTMAC_ZYGOTE_MOUNT_CONVERGENCE_V3",
+  "receipt_sha256": "802ce97aecbde25ee6931eb894daa6376e5cef48ce81b1466cdf7b93883cf931",
+  "stats": {
+    "pass": 99411,
+    "rollback": 589,
+    "secondary_appeared": 28433,
+    "secondary_disappeared": 2910,
+    "timeout": 589,
+    "trajectories": 100000
+  },
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": []
+}
