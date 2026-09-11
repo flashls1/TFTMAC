@@ -657,14 +657,21 @@ def main() -> int:
             static = lab.verify_static_authority()
             manifest = lab.incremental_manifest
             assert manifest["baseline"] == lab.authority["working_version"]
-            assert [x["id"] for x in manifest["candidates"]] == ["pso-precompile-threads-2","shader-background-batch-4","animation-budget-5ms","animation-budget-4ms"]
-            # prove exact candidate generation against the current installed profile
+            active = list(manifest["candidates"])
+            pending = list(manifest.get("pending_candidates", []))
+            resolved = list(manifest.get("resolved_candidates", []))
+            assert len(active) == 1, "record-book policy requires exactly one admitted candidate per campaign"
+            all_ids = [x["id"] for x in active + pending + resolved]
+            assert len(all_ids) == len(set(all_ids)), "candidate ids must be unique across active/pending/resolved sets"
+            assert all(x.get("status") for x in resolved), "resolved candidates require terminal status"
+            # Prove exact one-CVar generation for every active/pending candidate against
+            # the current installed winner while keeping resolved history non-executable.
             import tempfile
             receipts=[]
-            current=lab.installed_profile
             with tempfile.TemporaryDirectory() as td:
-                for spec in manifest["candidates"][:3]:
-                    out=Path(td)/f"{spec['id']}.ini"; receipts.append(lab.build_profile_candidate(current,spec,out)); current=lab.installed_profile
+                for spec in active + pending:
+                    out=Path(td)/f"{spec['id']}.ini"
+                    receipts.append(lab.build_profile_candidate(lab.installed_profile,spec,out))
             stability = lab.stability_spec()
             assert stability["id"] == "stability-control" and stability["cvar"] == "" and stability["from"] == stability["to"] == ""
             deadline_fixture = {"deadline_utc": "2026-09-11T12:21:51Z"}
