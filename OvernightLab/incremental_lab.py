@@ -170,32 +170,68 @@ class IncrementalLab(base.OvernightLab):
                 raise base.LabError(f"unapproved profile drift at line {i+1}", error_class="CANDIDATE_CONFIG_CONTAMINATED", component="profile", phase="candidate_apply")
         return {"changes": changed, "base_sha256": base.sha256_file(base_profile), "candidate_sha256": base.sha256_file(out)}
 
+    def zygote64_pids(self) -> list[str]:
+        raw = self.adb("shell", "pidof", "zygote64", timeout=10).stdout.strip()
+        pids = raw.split()
+        if not pids or any(not pid.isdigit() for pid in pids):
+            raise base.LabError(
+                f"invalid zygote64 process set: {raw!r}",
+                error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+        return pids
+
+    def verify_profile_views(self, expected_sha: str, *, phase: str) -> None:
+        target = self.authority["device_profile_target"]
+        original_stage = self.authority["highperf_stage_profile"]
+        stage_sha = self.adb("shell", "sha256sum", original_stage, timeout=10).stdout.split()[0]
+        target_sha = self.adb("shell", "sha256sum", target, timeout=10).stdout.split()[0]
+        if stage_sha != expected_sha or target_sha != expected_sha:
+            raise base.LabError(
+                f"profile view mismatch during {phase}: stage={stage_sha} target={target_sha} expected={expected_sha}",
+                error_class="PROFILE_OVERLAY_FAILED", component="profile", phase=phase)
+        for pid in self.zygote64_pids():
+            visible = self.adb(
+                "shell", "nsenter", "-t", pid, "-m", "--", "sha256sum", target, timeout=10
+            ).stdout.split()[0]
+            if visible != expected_sha:
+                raise base.LabError(
+                    f"zygote profile view mismatch during {phase}: pid={pid} observed={visible} expected={expected_sha}",
+                    error_class="PROFILE_OVERLAY_FAILED", component="profile", phase=phase)
+
     def apply_profile_overlay(self, ctx: base.RunContext, profile: Path) -> None:
         target = self.authority["device_profile_target"]
         original_stage = self.authority["highperf_stage_profile"]
         expected = self.installed_profile_sha
+        wanted = base.sha256_file(profile)
+        stage = f"/data/local/tmp/tftmac-incremental-{ctx.run_id[-12:]}"
+        candidate_remote = stage + "/candidate.ini"
+        baseline_remote = stage + "/baseline.ini"
         self.adb("shell", "am", "force-stop", self.package, timeout=15)
         self.adb_root()
         try:
-            current_sha = self.adb("shell", "sha256sum", target).stdout.split()[0]
-            original_sha = self.adb("shell", "sha256sum", original_stage).stdout.split()[0]
-            if current_sha != expected or original_sha != expected:
-                raise base.LabError(
-                    f"current native profile mount is not the accepted installed baseline: target={current_sha} stage={original_sha}",
-                    error_class="PROFILE_BASELINE_MISMATCH", component="profile", phase="candidate_apply")
-            stage = f"/data/local/tmp/tftmac-incremental-{ctx.run_id[-12:]}"
+            if self.adb("shell", "pidof", self.package, timeout=5, check=False).stdout.strip():
+                raise base.LabError("TFT process remained alive before candidate profile mutation", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+            self.verify_profile_views(expected, phase="candidate_apply")
+            before_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
+            before_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+            before_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
             self.adb("shell", "mkdir", "-p", stage)
-            self.adb("push", str(profile), stage + "/DeviceProfiles.ini", timeout=20)
-            self.adb("shell", "chmod", "444", stage + "/DeviceProfiles.ini")
-            context = self.adb("shell", "ls", "-Zd", target).stdout.split()[0]
-            self.adb("shell", "chcon", context, stage + "/DeviceProfiles.ini")
-            self.adb("shell", "umount", target)
-            self.adb("shell", "mount", "-o", "bind", stage + "/DeviceProfiles.ini", target)
-            observed = self.adb("shell", "sha256sum", target).stdout.split()[0]
-            wanted = base.sha256_file(profile)
-            if observed != wanted:
-                raise base.LabError("incremental profile overlay hash mismatch", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+            self.adb("push", str(profile), candidate_remote, timeout=20)
+            self.adb("push", str(self.installed_profile), baseline_remote, timeout=20)
+            if self.adb("shell", "sha256sum", candidate_remote, timeout=10).stdout.split()[0] != wanted:
+                raise base.LabError("candidate staging hash mismatch", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+            if self.adb("shell", "sha256sum", baseline_remote, timeout=10).stdout.split()[0] != expected:
+                raise base.LabError("baseline staging hash mismatch", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+            # The native HighPerf stage inode is already bind-mounted into zygote's namespace.
+            # Mutate only its bytes while TFT is stopped so every inherited mount sees the
+            # candidate without unmounting/remounting or changing the protected LKG source.
             ctx.profile_overlay_applied = True
+            self.adb("shell", "sh", "-c", f"cat {candidate_remote} > {original_stage} && sync", timeout=15)
+            after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
+            after_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+            after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
+            if (after_inode, after_meta, after_context) != (before_inode, before_meta, before_context):
+                raise base.LabError("candidate stage inode or metadata changed", error_class="PROFILE_OVERLAY_FAILED", component="profile", phase="candidate_apply")
+            self.verify_profile_views(wanted, phase="candidate_apply")
         finally:
             self.adb_unroot()
         self.adb("shell", "am", "start", "-n", f"{self.package}/{self.game_activity}", timeout=20)
@@ -203,15 +239,29 @@ class IncrementalLab(base.OvernightLab):
     def restore_profile_overlay(self, ctx: base.RunContext) -> bool:
         if not ctx.profile_overlay_applied:
             return True
-        target = self.authority["device_profile_target"]
         original_stage = self.authority["highperf_stage_profile"]
+        stage = f"/data/local/tmp/tftmac-incremental-{ctx.run_id[-12:]}"
+        baseline_remote = stage + "/baseline.ini"
         try:
             self.adb("shell", "am", "force-stop", self.package, timeout=10, check=False)
             self.adb_root()
             try:
-                self.adb("shell", "umount", target, timeout=10)
-                self.adb("shell", "mount", "-o", "bind", original_stage, target, timeout=10)
-                ok = self.adb("shell", "sha256sum", target).stdout.split()[0] == self.installed_profile_sha
+                if self.adb("shell", "pidof", self.package, timeout=5, check=False).stdout.strip():
+                    raise base.LabError("TFT process remained alive before profile restoration", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
+                before_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
+                before_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+                before_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
+                baseline_sha = self.adb("shell", "sha256sum", baseline_remote, timeout=10).stdout.split()[0]
+                if baseline_sha != self.installed_profile_sha:
+                    raise base.LabError("rollback baseline staging hash mismatch", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
+                self.adb("shell", "sh", "-c", f"cat {baseline_remote} > {original_stage} && sync", timeout=15)
+                after_inode = self.adb("shell", "stat", "-c", "%i", original_stage, timeout=10).stdout.strip()
+                after_meta = self.adb("shell", "stat", "-c", "%u:%g %a", original_stage, timeout=10).stdout.strip()
+                after_context = self.adb("shell", "ls", "-Zd", original_stage, timeout=10).stdout.split()[0]
+                if (after_inode, after_meta, after_context) != (before_inode, before_meta, before_context):
+                    raise base.LabError("rollback stage inode or metadata changed", error_class="ROLLBACK_FAILURE", component="profile", phase="rollback")
+                self.verify_profile_views(self.installed_profile_sha, phase="rollback")
+                ok = True
             finally:
                 self.adb_unroot()
             ctx.profile_overlay_applied = False
