@@ -1,0 +1,23 @@
+{
+  "invariants": {
+    "clear_failure_fails_closed": true,
+    "cold_boot_without_pin_required_for_acceptance": true,
+    "control_secret_immutable": true,
+    "delete_dev_secret_only_after_clear": true,
+    "missing_secret_fails_closed": true,
+    "win01_settings_unchanged": true
+  },
+  "model": "TFTMAC_DEV_NO_PIN_MIGRATION_V7",
+  "receipt_sha256": "f685a89bdbb1257a37456fa646bf7129369d2c5e8b27d3035fef2be52e009bfa",
+  "seed": 20260911,
+  "stats": {
+    "already_unlocked_no_credential": 37908,
+    "clear_failure_fail_closed": 175,
+    "cold_boot_pass": 59223,
+    "migration_success": 59244,
+    "missing_secret_fail_closed": 2442
+  },
+  "trajectories": 100000,
+  "violation_count": 0,
+  "violations": []
+}
