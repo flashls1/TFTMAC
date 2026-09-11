@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "model": "TFTMAC_INCREMENTAL_4H_LIFECYCLE_V4",
+  "seed": 20260911,
+  "trajectories": 100000,
+  "current_campaign_migration": {
+    "started_utc": "2026-09-11T08:21:51Z",
+    "duration_seconds": 14400,
+    "deadline_utc": "2026-09-11T12:21:51Z"
+  },
+  "invariants": {
+    "absolute_deadline_immutable": true,
+    "admitted_run_may_finish_then_seal": true,
+    "current_migration_is_start_plus_14400": true,
+    "frozen_lkg_never_mutated": true,
+    "legacy_missing_deadline_fails_closed": true,
+    "no_run_admission_at_or_after_deadline": true,
+    "post_queue_stability_only": true,
+    "queue_and_stack_survive_restart": true,
+    "restart_never_resets_or_extends_deadline": true,
+    "rollback_failure_stops_admission": true
+  },
+  "stats": {
+    "admitted_before_deadline": 573481,
+    "deadline_blocks": 7206,
+    "legacy_migrations": 14286,
+    "restart_events": 201632,
+    "rollback_blocks": 19987,
+    "stability_runs": 231875
+  },
+  "violation_count": 0,
+  "violations": [],
+  "result": "PASS",
+  "receipt_sha256": "77576f5db814d315d11a8af9992340a778f416239780182dc46fea4646440766",
+  "source_operation_id": "god-3dd0cd23-502e-4d8d-a81f-79f6b2245fe0"
+}
