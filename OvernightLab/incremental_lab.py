@@ -275,10 +275,19 @@ class IncrementalLab(base.OvernightLab):
 
     def wait_profile_value(self, ctx: base.RunContext, cvar: str, expected: str, timeout: int = 45) -> bool:
         rx = re.compile(rf"Pushing Device Profile CVar: \[\[{re.escape(cvar)}:.*? -> {re.escape(expected)}\]\]")
+        remote_log = f"/sdcard/Android/data/{self.package}/files/UnrealGame/TFT/TFT/Saved/Logs/TFT.log"
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            # Candidate relaunch happens inside the already-running native DEV session, so the
+            # native capture's sealed highperf-engine-boot.log is intentionally the original
+            # LKG launch proof. Read the current official TFT engine log in-guest for the
+            # candidate relaunch; the exact candidate value cannot be satisfied by stale LKG
+            # evidence because every admitted candidate changes to a distinct value.
+            current = self.adb("shell", "cat", remote_log, timeout=10, check=False)
+            if current.status == 0 and rx.search(current.stdout):
+                return True
             if ctx.capture:
-                for path in list(ctx.capture.glob("*engine*.log")) + list(ctx.capture.glob("*logcat*.txt")) + list(ctx.capture.glob("*.log")):
+                for path in list(ctx.capture.glob("*logcat*.txt")) + list(ctx.capture.glob("*.log")):
                     if rx.search(base.safe_text(path)):
                         return True
             if not self.dev_core_running() or not self.owned_emulator_pids():
