@@ -249,6 +249,24 @@ class IncrementalLab(base.OvernightLab):
             (c["id"], c["family"], c["kind"], c["build_scope"], c["restart_class"], definition, base.sha256_bytes(definition.encode())))
         return c
 
+    def wait_native_tft_ready(self, ctx: base.RunContext, timeout: int = 180) -> None:
+        if not ctx.capture:
+            raise base.LabError("native capture is unavailable while waiting for LKG readiness", error_class="CAPTURE_FAILURE", component="runtime", phase="identity")
+        events = ctx.capture / "native-events.jsonl"
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            text = base.safe_text(events)
+            if '"kind":"RUNTIME_FAILED"' in text:
+                raise base.LabError("native DEV reported runtime failure before LKG readiness", error_class="NATIVE_RUNTIME_FAILED", component="runtime", phase="identity")
+            if ('"kind":"DEV_PRIVATE_HIGHPERF_MOUNT_VERIFIED"' in text and
+                    '"kind":"DEV_HIGHPERF_ENGINE_TARGETS_ACCEPTED"' in text and
+                    '"kind":"TFT_READY_FOR_USER"' in text):
+                return
+            if not self.dev_core_running() or not self.owned_emulator_pids():
+                raise base.LabError("DEV stopped before verified LKG readiness", error_class="BOOT_FAILURE", component="runtime", phase="identity")
+            time.sleep(0.5)
+        raise base.LabError("verified LKG readiness timed out", error_class="LKG_READY_TIMEOUT", component="runtime", phase="identity")
+
     def run_profile(self, cid: str, spec: dict[str, Any], role: str, profile: Path, expected_cvar_value: Optional[str]) -> tuple[str, str]:
         c = self.register_run_candidate(spec, role, profile, profile)
         ctx = self.new_run(cid, c)
@@ -262,6 +280,12 @@ class IncrementalLab(base.OvernightLab):
             self.wait_for_device(ctx)
             self.apply_session_properties_before_tft(ctx)
             self.wait_for_shell_and_package(ctx)
+            # Native DEV may briefly launch TFT to create its private config tree before
+            # installing the verified LKG profile. Never treat that bootstrap PID as the
+            # measured workload. Wait for the native owner to prove the unchanged LKG is
+            # mounted, consumed by Unreal, and ready for the user before control
+            # measurement or a one-factor candidate overlay begins.
+            self.wait_native_tft_ready(ctx)
             if base.sha256_file(profile) != self.installed_profile_sha:
                 self.apply_profile_overlay(ctx, profile)
             deadline = time.monotonic() + 120
