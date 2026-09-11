@@ -1,8 +1,8 @@
 # TFTMAC Build 8 documentation and machine-readable authority inputs
 # Regenerate only after reviewing the complete authority change set.
 
-3ba1fd9c4a946a4bc89a9f4994af1a27cd3fe061c79a3f28669b35dde2586fec  facts.md
-8d8cf83fea6d756fd069a8ffe5e9b4649c31503b7e73bea75b4fae39191a7e79  project.md
+371a0d743548cd6349779352b9d11d0d4179547da4e0d2946fe6ce151c27656e  facts.md
+2bcf20562cd8355e03d7d325bf880bf0d81d170fe162a06ccaaf9e9653e1f3ed  project.md
 a91b5af9a15da1a519d336d5b78c6f7fb5d59de9970f99afb448c3a26d8ed54c  dev.md
 87eb1d0585e7c244a9f0a0eca74078f005ee2c8e7c6ab1ea737fc6c6be897720  benchmark.md
 143af322d05e3ac8ccae92baf279ed8e6e8f62ce5bd2f757e045868e1f20c2c8  TFTMAC_GPU_RUNTIME_SSOT.md

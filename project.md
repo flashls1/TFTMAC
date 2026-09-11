@@ -3,13 +3,13 @@
 > **LIVING WIKI / CURRENT DEV STATE — updated 2026-09-11 America/Chicago.** This top section is the current mutable project state. Older dated sections below are preserved as project history and must not override this section when they conflict with newer verified evidence.
 
 **Project:** native macOS TFT client experience using the official Android TFT package  
-**Current development line:** `master` remains merged repository authority. OvernightLab authority reconciliation change `ff2f318b-245d-418a-b86f-e07d55b19826` merged through PR #9 at `bf61c21a723f2f132834acedda860efbb2223d42` and is closed. Current post-merge continuity/live-layer recovery is isolated in Clara change `b42fb30e-2f22-45f0-9d27-00d9e67a58bf`; it does not admit a new performance candidate.  
+**Current development line:** `master` remains merged repository authority. The evidence-grounded four-hour incremental sweep is recorded in Clara change `25f21f7e-ba86-4e3d-832d-9984522811c0`; campaign `incremental-20260911T082151Z-1f32770a` reached `DEADLINE_COMPLETE` with no promoted candidate and no change to the verified winner.
 **Protected release/LKG:** TFTMAC 2.3.0 build 8 Control/LKG remains separate, frozen, and available as historical rollback/comparison authority.  
 **Current DEV application identity:** TFTMAC 2.3.0 build 8 DEV (`/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`). Test-ledger versions do not change the product release number.  
 **Current official client:** `com.riotgames.league.teamfighttactics` `18.1-5423749`, versionCode `8423749`.  
 **Current test series:** `DEV-B8-2026-09-10-A`.  
 **Current verified working winner:** **`DEV-B8-WIN-01`**.  
-**Project record current through:** 2026-09-11 incremental-gains doctrine and post-PR-#9 continuity; performance winner remains `DEV-B8-WIN-01`.
+**Project record current through:** 2026-09-11 terminal four-hour incremental sweep; performance winner remains `DEV-B8-WIN-01`, with no `DEV-B8-WIN-02` created.
 
 ## 0. Living wiki contract
 
@@ -65,6 +65,11 @@ Mandatory companion records:
 - Fence Contexts Off — **NO WIN / NOT INTEGRATED** from prior official-client combat result.
 - ASG draw flush 400 µs — historical/experimental; **not reopened in this pass**.
 - Inverse `preferSubmitAtFBOBoundary` check — **INCONCLUSIVE / NOT ACTUALLY APPLIED / NOT INTEGRATED**.
+- `r.pso.PrecompileThreadPoolSize 4 -> 2` — **INCONCLUSIVE / NOT INTEGRATED**; valid control, candidate overlay failed on ADB unroot before admissible candidate measurement.
+- `r.ShaderPipelineCache.BackgroundBatchSize 20 -> 4` — **INCONCLUSIVE / NOT INTEGRATED**; valid control, candidate overlay failed on ADB unroot before admissible candidate measurement.
+- `a.Budget.BudgetMs 6.0 -> 5.0` — **INCONCLUSIVE / NOT INTEGRATED**; valid control, candidate overlay failed because ADB root did not become effective.
+- `a.Budget.BudgetMs 5.0 -> 4.0` — **SKIPPED / NOT INTEGRATED** because its 5 ms parent did not confirm.
+- Four-hour sweep stability tail — three valid 1-5 `DEV-B8-WIN-01` soaks at 57.687 / 58.657 / 59.789 FPS mean, plus one rollback-clean inconclusive soak. No configuration promotion resulted.
 
 The exact measurements and reasoning for each entry live in `CHANGELOG.md`; this wiki carries only the current state needed to choose the next action correctly.
 
