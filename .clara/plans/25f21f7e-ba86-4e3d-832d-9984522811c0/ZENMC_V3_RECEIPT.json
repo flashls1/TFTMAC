@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "model": "TFTMAC_INCREMENTAL_4H_LIFECYCLE_V3",
+  "seed": 20260911,
+  "trajectories": 100000,
+  "exact_classifier_regression": {
+    "ocr_lines": ["Brawler", "r", "Ornn"],
+    "cross_line_compact": "BRAWLERRORNN",
+    "cross_line_contains_ERROR": true,
+    "line_local_contains_ERROR": false
+  },
+  "invariants": {
+    "deadline_prevents_next_run_admission": true,
+    "frozen_lkg_never_mutated": true,
+    "inconclusive_does_not_imply_rollback_failure": true,
+    "line_local_error_markers_only": true,
+    "non_green_control_never_advances_queue": true,
+    "original_deadline_preserved": true,
+    "promotion_requires_positive_confirmation": true,
+    "rollback_failure_stops_future_admission": true,
+    "stability_tail_no_mutation": true,
+    "verified_blocked_control_resumes_same_index": true
+  },
+  "stats": {
+    "blocked_controls": 55895,
+    "deadline_blocks": 0,
+    "promotions": 59392,
+    "resumed_same_index": 55895,
+    "rollback_fail_blocks": 82380,
+    "stability_runs": 1622197,
+    "verified_rollback_blocks": 55895
+  },
+  "violation_count": 0,
+  "violations": [],
+  "result": "PASS",
+  "receipt_sha256": "052d36aeda6fc63d8a67b07e312166c1e4106e246be5485fa856c76d9573ea30",
+  "source_operation_id": "god-a4e54a38-a063-45a4-a96c-fb521a1825db"
+}
