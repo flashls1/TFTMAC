@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "change_id": "25f21f7e-ba86-4e3d-832d-9984522811c0",
+  "observed_date": "2026-09-11 America/Chicago",
+  "result": "PASS",
+  "zenmc_qualification": "ZENMC_REQUIRED",
+  "simplest_viable_mechanism": "reuse installed TFTMAC DEV + existing OvernightLab lifecycle/native telemetry/profile bind overlay; zero per-candidate rebuilds",
+  "scope": [
+    "reconcile exact current DEVHighPerf source resources",
+    "generalize one-CVar profile overlay",
+    "incremental candidate manifest and matched comparison",
+    "four-hour durable local campaign",
+    "logging, confirmation, cumulative campaign stack, rollback",
+    "source delivery after campaign"
+  ],
+  "excluded": [
+    "PBE/historical candidate factory",
+    "protected Control/LKG mutation",
+    "new app/SDK/emulator/AVD/VM",
+    "direct Vulkan and rejected transport candidates",
+    "MSAA2/material-quality/half-rate animation/blind resolution downgrade",
+    "hot-loop state machine unless later evidence proves launch overhead is dominant",
+    "unbounded profiling or speculative observability"
+  ],
+  "complexity_economics": "PASS",
+  "removal_test": "Every retained addition is required for exact one-factor generation, durable four-hour continuation, matched decision/confirmation, or verified rollback. No new service/store/runtime layer is introduced."
+}
