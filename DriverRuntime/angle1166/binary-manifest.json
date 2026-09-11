@@ -1,0 +1,168 @@
+{
+  "schema": 1,
+  "variants": {
+    "reference": {
+      "AngleLibraries.apk": {
+        "byte_count": 7297323,
+        "sha256": "df9fe5d7c91c69b630e2991668d61fb3365f9418ed993718f13fa099144c7fe6"
+      },
+      "apk-libraries.json": {
+        "byte_count": 436,
+        "sha256": "dd97ac8b9ec4d462a9fc66f2ab66de4f672cd3a256fbdf469fcf48da4cadfd70"
+      },
+      "args.gn": {
+        "byte_count": 196,
+        "sha256": "d5a8890374baab78c63b2cfdbee3c3b44b0800ac6e1f114841094c7bb6b848c5"
+      },
+      "libEGL_angle.so": {
+        "byte_count": 308072,
+        "sha256": "ffcec5286dbfe2ed66712850bc6612d8a116fead174040932d68a57066d5cbcd"
+      },
+      "libGLESv1_CM_angle.so": {
+        "byte_count": 283336,
+        "sha256": "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127"
+      },
+      "libGLESv2_angle.so": {
+        "byte_count": 6069712,
+        "sha256": "4bc0b73c6ba2e8c295e4b0685ab5635540fc7c3b775c7c0735a333b3dff23819"
+      },
+      "libfeature_support_angle.so": {
+        "byte_count": 319768,
+        "sha256": "7891e47a956c2754022f798608bc2aeb37f6c416f03f85e4029cdd2ff3e44b01"
+      }
+    },
+    "reuse": {
+      "AndroidManifest-test.xml": {
+        "byte_count": 3024,
+        "sha256": "517e95ffc346afe823b11a7a5dceeaec5bd81c8e964190f27e29780a87ab2d71"
+      },
+      "AngleLibraries.apk": {
+        "byte_count": 7295763,
+        "sha256": "adeebb18b50b908102a12f4eaad70ac150dbf3e62ab1f3b2b2f9f073d73efa27"
+      },
+      "angle_end2end_tests-debug.apk": {
+        "byte_count": 39953989,
+        "sha256": "07bf5d9ee5281014ef3e056beb154e39e9bf562a31880f98b327b6580dd4bef6"
+      },
+      "apk-libraries.json": {
+        "byte_count": 436,
+        "sha256": "a6af6a606f5dd61844f12baa500831617a37c79785f7e97aa52e79645e182be3"
+      },
+      "args.gn": {
+        "byte_count": 196,
+        "sha256": "d5a8890374baab78c63b2cfdbee3c3b44b0800ac6e1f114841094c7bb6b848c5"
+      },
+      "libEGL_angle.so": {
+        "byte_count": 308072,
+        "sha256": "2af48c412a92820ee0e4c91b2a311cdf2fac0b22e63815989a0e4d64e6659056"
+      },
+      "libGLESv1_CM_angle.so": {
+        "byte_count": 283336,
+        "sha256": "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127"
+      },
+      "libGLESv2_angle.so": {
+        "byte_count": 6071392,
+        "sha256": "1c6612dbc7b7eb6d72cb28e0c979524997d474e222d8f049158f99958f513611"
+      },
+      "libfeature_support_angle.so": {
+        "byte_count": 319768,
+        "sha256": "b0f21cd20a1685f9602b02fe5e641c7d26c4c66602a3d9253991cabd23377b36"
+      }
+    },
+    "capture": {
+      "AngleLibraries.apk": {
+        "byte_count": 8761787,
+        "sha256": "b5a050a5d67ea591e16d85d8c6a164d582e0fdafc3fd5278e1f0b27c9af834ed"
+      },
+      "angle_end2end_tests-debug.apk": {
+        "byte_count": 42780389,
+        "sha256": "0e79d784dd314ed8a08cca20235909ae65fba0abef3150d09ae6810a87464f62"
+      },
+      "apk-libraries.json": {
+        "byte_count": 436,
+        "sha256": "b719facb6cdf3b1ca78f9a999059e821c301dbc74669ea801cddaa7ace03e8f6"
+      },
+      "args.gn": {
+        "byte_count": 195,
+        "sha256": "0af0655415c63cee75665c8b99bbdbdce58a17a3634ff54cce6662bdcb3c27e1"
+      },
+      "libEGL_angle.so": {
+        "byte_count": 308072,
+        "sha256": "2af48c412a92820ee0e4c91b2a311cdf2fac0b22e63815989a0e4d64e6659056"
+      },
+      "libGLESv1_CM_angle.so": {
+        "byte_count": 283336,
+        "sha256": "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127"
+      },
+      "libGLESv2_angle.so": {
+        "byte_count": 7492616,
+        "sha256": "3611894f3ae3a5dbac7cf937d2baa7221b3bf5b028f1e45d0821c0f281809f41"
+      },
+      "libfeature_support_angle.so": {
+        "byte_count": 319768,
+        "sha256": "b0f21cd20a1685f9602b02fe5e641c7d26c4c66602a3d9253991cabd23377b36"
+      }
+    },
+    "observed-reuse": {
+      "AngleLibraries.apk": {
+        "byte_count": 7323891,
+        "sha256": "08beae458d3923f3403ba4c5fb2bfdf192729a865332e88ae0e1ebc50a552347"
+      },
+      "angle_end2end_tests-debug.apk": {
+        "byte_count": 39944693,
+        "sha256": "64204f64d81cf7d7772ceaf53a72b193d603d21d88a09c5828e0f861f4c718da"
+      },
+      "apk-libraries.json": {
+        "byte_count": 436,
+        "sha256": "e4a7920f19ad202ad65deec3eeebc1bb648acf3684218a4512d8c85dfc20ae60"
+      },
+      "args.gn": {
+        "byte_count": 196,
+        "sha256": "d5a8890374baab78c63b2cfdbee3c3b44b0800ac6e1f114841094c7bb6b848c5"
+      },
+      "libEGL_angle.so": {
+        "byte_count": 308072,
+        "sha256": "2af48c412a92820ee0e4c91b2a311cdf2fac0b22e63815989a0e4d64e6659056"
+      },
+      "libGLESv1_CM_angle.so": {
+        "byte_count": 283336,
+        "sha256": "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127"
+      },
+      "libGLESv2_angle.so": {
+        "byte_count": 6076072,
+        "sha256": "dcf6ad299db62c3a9ceb85f282d393f0d26789a4c265bf6468b171e59564434b"
+      }
+    },
+    "observed-reuse-cache-r14": {
+      "AngleLibraries.apk": {
+        "byte_count": 7323659,
+        "sha256": "9d3e4e879ca9075552e855326a894899da8da8b1ce1ac3c412cfbefabd019f57"
+      },
+      "angle_end2end_tests-debug.apk": {
+        "byte_count": 39944565,
+        "sha256": "88b9db34fed5c0798913fef2adaad2a3af6dc2ccc10f9cc3e257d4ea174bfd1b"
+      },
+      "apk-libraries.json": {
+        "byte_count": 436,
+        "sha256": "86d0de668414b4d25b7b6f6032ee5c1c33e57b06e370222815d9511ff0d5330e"
+      },
+      "args.gn": {
+        "byte_count": 196,
+        "sha256": "d5a8890374baab78c63b2cfdbee3c3b44b0800ac6e1f114841094c7bb6b848c5"
+      },
+      "libEGL_angle.so": {
+        "byte_count": 308072,
+        "sha256": "2af48c412a92820ee0e4c91b2a311cdf2fac0b22e63815989a0e4d64e6659056"
+      },
+      "libGLESv1_CM_angle.so": {
+        "byte_count": 283336,
+        "sha256": "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127"
+      },
+      "libGLESv2_angle.so": {
+        "byte_count": 6076152,
+        "sha256": "183f6086c3eee4eb6e1c62592773bc05eb793f7e373fbb5ca2a604cac2fd3de8"
+      }
+    }
+  },
+  "driver_patch_sha256": "e253ab1b0719c138bbd9d40396da00de5ba11fa3bc51fd4f4a71d4817db3ffdd"
+}

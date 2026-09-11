@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "recorded_utc": "2026-09-06T10:42:04.173284+00:00",
+  "purpose": "Local implementation checkpoint, not gameplay acceptance",
+  "base_commit": "c26b020d660134699c4ca53113d59f2e2ec7b61d",
+  "branch": "clara/fix-dev-launch-keychain-prompts-riot-log-bddd2d6c",
+  "app_build": "r17-keychain-no-ui",
+  "source_sha256": {
+    ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs": "c5d3e1aed6a4d270a3d9df8f147986d027cdae601f0105799a50ebc53724ad3e",
+    "CausalRuntime/ClockHandshake.c": "13e8fae37425c0a9780f4de394b8646f8576c4e1aa4c330bce96e81f20a3b7b5",
+    "CausalRuntime/ClockHandshake.h": "f5d1a18591d42a681ebdb631618a56822feb6e2f54bdaecb8801ba859b151fce",
+    "CausalRuntime/ClockHandshake_integration_test.py": "57ef68eb8afa8c5cbc922623403c64eda6e79dae47c860cbc4fa6b71e05c513c",
+    "CausalRuntime/ClockHandshake_test.c": "f5e17e708068223f3f0d4598bf3825ea1caccb4e1c549292af4eb2e07a6ee84f",
+    "CausalRuntime/NativeClockSession_integration_test.swift": "8276cd273e0535e765a64cd90341681dcd943675b5627c3754ec329ebcbc32cc",
+    "CausalRuntime/validate_guest_clock.py": "7f37c1dc4eaa69d121a8d164b59d8f394a06e227aaa288c7bda603fb7bdd56cd",
+    "DriverRuntime/angle1166/angle-buffer-view-diagnostics-complete.patch": "26bcf8b42404b4b78f4e4742225ee1b10f50687433e34ae624dabb2e892b174e",
+    "DriverRuntime/angle1166/angle-buffer-view-reuse-complete.patch": "e253ab1b0719c138bbd9d40396da00de5ba11fa3bc51fd4f4a71d4817db3ffdd",
+    "DriverRuntime/angle1166/angle-dependencies.txt": "d20dae81d6adbe8d10675abaf536352a7c004b6a85349490263809e7268dd157",
+    "DriverRuntime/angle1166/binary-manifest.json": "de2aaed82b3a038fd6c726c98d3158fdd2f4a53bb9bbac2240081c8701cf6a2b",
+    "DriverRuntime/angle1166/bootstrap-angle.sh": "fe5d6a88cc46dabf2b5571a9db0802975dce55ba197e114adb08217a87a5955a",
+    "DriverRuntime/angle1166/build-android-clock.sh": "aa41c0a1835f50968542b474e6043324c817513c720e110b4be7d2881adfd99b",
+    "DriverRuntime/angle1166/build-capture.sh": "a004b9836fafe1467320e0aa109fc50640c18a09fa02aaed4cd6ec25809fd4c8",
+    "DriverRuntime/angle1166/build-manifest.json": "46c6d918cc1a292cd40946357c68f4d8f7fdea5751fbf5919820fc394f714bda",
+    "DriverRuntime/angle1166/build-observed-reuse.sh": "84f7d7e308f1c8364e477eb6b98042f2f9d6a75cee170245f5b1d6a8d6898dd9",
+    "DriverRuntime/angle1166/build-packages.txt": "0f65f7126a5ad35dca3a26a86551086954ec8d3025d3a508d90a84d5f47ca675",
+    "DriverRuntime/angle1166/build-reference.sh": "d43a28ea53dedc1854bd7c7d84911cf1e541e1b49cb429da74b107736bdaceb6",
+    "DriverRuntime/angle1166/build-reuse.sh": "b7f6226bfdcf8c94dd401a6352e47e7f4f2b4a2194374fd87835c1b92e2cc4b0",
+    "DriverRuntime/angle1166/capture-admission.py": "5777c768fea1cbea3dc38fb2defefaf3fc732b53302580caafef8a109726437a",
+    "DriverRuntime/angle1166/guest-driver-transaction.sh": "1e34918a97c817d84146eb1dec0965ec1bd45de235b57efb5ac0d5652de3c585",
+    "DriverRuntime/angle1166/prepare-driver-manifest.py": "943b7454f5ea1f0b9032ed5c9c9b08f59a9c11fdd537c963c9705eb18dc34757",
+    "TFTMAC.xcodeproj/project.pbxproj": "cf5cb90513db4ce382464ae90fd1d3cb7007f60595208c022a9c44ee66adcd5c",
+    "Tests/TFTMACTests/ANGLEDriverOverrideTests.swift": "463777b82ee2a303137870e550bb64ea4de929611800bba0c3b47d89c2739585",
+    "Tests/TFTMACTests/CombatBenchmarkAnalysisTests.swift": "dae8fd3292a864e53f3912683c46488a2e49e16febe1aa533c9ae81d66509ec4",
+    "Tests/TFTMACTests/DiagnosticArtifactFileTests.swift": "34ca5b1725f169418f5eb35e5ce62348baa7f70c2c07a4276df028eb2b553877",
+    "Tests/TFTMACTests/NativeClockSampleTests.swift": "c2faba4009da1e6422c3ed66afe2d3c62dcd658158831173eb6fab68533b1f32",
+    "Tests/TFTMACTests/RiotLoginTests.swift": "43c7c6c0f5d868d74bbc681722e9b9854daeec3770aea8a7d0c378c7262023d1",
+    "Tests/TFTMACTests/RuntimeInputChannelTests.swift": "201af1dd8971bfe47d5f61af85a60c9533246918a5f1695c6fed46430f946f0f",
+    "Tests/TFTMACTests/StartupCurtainStateTests.swift": "9178cd306ef55c46593ffa504a19e7cc2eeb0e07bf59ca9ea70f3f2d8b43f721",
+    "Tests/TFTMACTests/TFTMACGate1Tests.swift": "a21a6de1c663581af6107b83e47796248870d57bd7831691f4a8e378d7956062",
+    "scripts/build-dev-launcher.command": "0c57236ef5869b4471f7fb130fb8adefe3e0945ab4f9c022ba8fbcef35053a51",
+    "scripts/build-native-clock.command": "3f5dfb75c0869289857b2b31e6b5e013dd043c97de7cf58aa8937eae1f0f1b89",
+    "scripts/test-native-clock-session.command": "1876598e75e30192951dd2b87caa306a3142e67b970c370b3c4493600b8c5cf6",
+    "scripts/test-native-clock.command": "c7c729e6395038d64f97b31dd0ee9e59689f38db236f05579e65e07243f66768",
+    "scripts/verify-tftmac.command": "69664f3a062275d2a047d3a0f6d101d1973c1633881aedfcb0a0e71dafb18687",
+    "tftmac/App/AppCoordinator.swift": "43db0d298bfcd247cf333b34a2f25763e5611ba6e20f79101451bf5c0dee7790",
+    "tftmac/App/TFTMACApplication.swift": "a13fee56f4655320a55ed0fa916da39c293c3bd0ef0a7642c5745d67bb40155c",
+    "tftmac/Assets/DEVHighPerf/profile-transaction.sh": "5718319c56995d00613b930acb5bc0a8e7b107d165fb819e748b0fcb050bff7f",
+    "tftmac/Presentation/EmbeddedEmulatorView.swift": "a208c842b4716fc5f19cb288ae30179db492781ac77b728e28a4f5859c128ccc",
+    "tftmac/Runtime/ANGLEDriverOverride.swift": "4ac5e439e46f11eae7c28db752aadea3da64182ac9bc5badeee6121af51efdbc",
+    "tftmac/Runtime/ANGLEViewEvidence.swift": "97627f333b7d101e48d0a838c3bbbf7240055cc27c120ec048c4e8c5c63d97af",
+    "tftmac/Runtime/AVDTransactionGuard.swift": "5a407028933736ee98507174ea7e2b1e4a8010ccb747a8594875b1942f66d732",
+    "tftmac/Runtime/CombatBenchmarkAnalysis.swift": "3f6fc9c848fd0c7a1884489b2aa8671278bae23ab4570ae7dd8de528dbee12e8",
+    "tftmac/Runtime/CombatBenchmarkStore.swift": "fb471d2a75166a272a7ae43bd8f7ad510388684ac20324295a7761fa1ecf7951",
+    "tftmac/Runtime/DiagnosticArtifactFile.swift": "516a7918db3670b25256c0d1a654725c1f599b93aa12126b36d562a34807c111",
+    "tftmac/Runtime/NativeClockSample.swift": "7b5ef302a87aa94ad536366238ef993a0b9f3fddb6a950f408869c068b6a6a16",
+    "tftmac/Runtime/RiotLogin.swift": "b1168f0519d8b97a5de9fc825fe9d9a7feca2686b9590aad91757561dbfa6fcc",
+    "tftmac/Runtime/RuntimeInputChannel.swift": "53d110eb0eacff74fb64ea2c6c2cba94a83ccd403fecd6e9bbf5927cc455174a",
+    "tftmac/Runtime/RuntimeMode.swift": "d9c201622382db2c6f6a84ae0b2237e62c09b787f58529813cea0d6b2c7b4f3b",
+    "tftmac/Runtime/RuntimeModeAuthority.swift": "f625faaccefd2ca0c0587b6c47548f2f9a0e391f2aac46ee9854c2fd08419ee5",
+    "tftmac/Runtime/TFTMACRuntime.swift": "b55e236a8b760e5415530289bd54dc9c48f413bba1281dd1897469cde2d2fde6"
+  },
+  "artifacts": [
+    {
+      "label": "installed DEV core",
+      "path": "/Applications/TFTMAC DEV.app/Contents/MacOS/TFTMACDEVCore",
+      "byte_count": 35570880,
+      "sha256": "ba79729f2e9330749bc64475b361e96c8357d741f92f9083c8bc0d02f3fc228d"
+    },
+    {
+      "label": "protected Control core",
+      "path": "/Applications/TFTMAC.app/Contents/MacOS/TFTMAC",
+      "byte_count": 34357248,
+      "sha256": "d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2"
+    },
+    {
+      "label": "selected driver manifest",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange/dev-observed-reuse-cache-r14/driver-manifest.json",
+      "byte_count": 939,
+      "sha256": "054b8fa9354bb5beb6e501728bbd6f9539f76aceba1e3060fdd9050d4f69cf81"
+    },
+    {
+      "label": "libEGL_angle.so",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange/dev-observed-reuse-cache-r14/libEGL_angle.so",
+      "byte_count": 318544,
+      "sha256": "3452d6aa4316ef132bb55ed9ef1f4045a1d46e8c9f228caa6eb79e01dbad2088"
+    },
+    {
+      "label": "libGLESv2_angle.so",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange/dev-observed-reuse-cache-r14/libGLESv2_angle.so",
+      "byte_count": 6291640,
+      "sha256": "9780d4b99266764416825f31cf84967484f590a5b44896796a519139dad12a51"
+    },
+    {
+      "label": "libGLESv1_CM_angle.so",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange/dev-observed-reuse-cache-r14/libGLESv1_CM_angle.so",
+      "byte_count": 293624,
+      "sha256": "00c696df2157e52f0778b4465c9d2b952712405a3c93e7ee691bfaf2672d32c0"
+    },
+    {
+      "label": "keychain-r17-build.log",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-r17-build.log",
+      "byte_count": 3566,
+      "sha256": "40b4c4dc739e8e4d5bb8c2a0993f59e1550a7ff65a6853c78ddd59f5203a541b"
+    },
+    {
+      "label": "keychain-r17-verify.log",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-r17-verify.log",
+      "byte_count": 31920,
+      "sha256": "287907e815054046e05161b88f5503234292b1d27be8eb455855a294dd0f18e1"
+    },
+    {
+      "label": "r16-login-stall.sample.txt",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/r16-login-stall.sample.txt",
+      "byte_count": 262985,
+      "sha256": "db59d183b75f97c0d260604c0239604f7ce8e87dedd60973591ffb529ff04bb8"
+    },
+    {
+      "label": "keychain-no-ui-test/result.txt",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-no-ui-test/result.txt",
+      "byte_count": 199,
+      "sha256": "e2f74b279f3fb117855717f348b6621558ebfabef1f5060ea71964fbea002766"
+    },
+    {
+      "label": "launch-login-batch-gate.md",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/launch-login-batch-gate.md",
+      "byte_count": 6349,
+      "sha256": "40381eca2b06e02da103a7b75bc32aceb1d535923918eee1808b6091b744c3f8"
+    },
+    {
+      "label": "launch-login-batch-preflight.json",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/launch-login-batch-preflight.json",
+      "byte_count": 270,
+      "sha256": "f65e44f3683b38d14e242677b0298a692bd89f1eee7bc0b1ec1c04246fbf5faa"
+    },
+    {
+      "label": "zygote-relaunch-targeted-gate.md",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/zygote-relaunch-targeted-gate.md",
+      "byte_count": 1850,
+      "sha256": "ecb34185eb12ef06bf4b1d59bf7db86bc86a9d49dfe6fa09716bb37bba2d2d24"
+    },
+    {
+      "label": "shader-cache-identity-targeted-gate.md",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/shader-cache-identity-targeted-gate.md",
+      "byte_count": 2820,
+      "sha256": "12bb78362954d3ab235d16db40abd92f9f40a9b706fd81bad83226329dd97308"
+    },
+    {
+      "label": "adb-restart-targeted-gate.md",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/adb-restart-targeted-gate.md",
+      "byte_count": 2037,
+      "sha256": "d0195abfd07f7716092875082c50d7a528c51dd602703fc04589bae6938df7e4"
+    },
+    {
+      "label": "keychain-no-ui-targeted-gate.md",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-no-ui-targeted-gate.md",
+      "byte_count": 2599,
+      "sha256": "c8ad510db91b274fffaad4bf9779bbc16d3b015f7ec176124c0d493d527f1bee"
+    },
+    {
+      "label": "launch-login-three-cycle-result.json",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/launch-login-three-cycle-result.json",
+      "byte_count": 1173,
+      "sha256": "c0ff226673bb0d872be004a7660d239ea69860ee61889856a474698a1967a8c5"
+    },
+    {
+      "label": "keychain-r17-live-result.json",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-r17-live-result.json",
+      "byte_count": 2960,
+      "sha256": "5ed0cb0bbe26876a33c690a5f5980d48631f673eca83d18d5e3cacbb9ab4374d"
+    },
+    {
+      "label": "keychain-r17-admission.json",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/keychain-r17-admission.json",
+      "byte_count": 954,
+      "sha256": "eabdbb30ad76f0cbef01781a0e06b818c3ed3beab8f9b6a59a3984184ead8ab3"
+    },
+    {
+      "label": "admission-fault-test-result.json",
+      "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/HighPerfResume20260905/admission-fault-test-result.json",
+      "byte_count": 241,
+      "sha256": "f1249da83708501d2c619a036972c8df422f2a9a6ea3ee6643486fce5f5c3b83"
+    },
+    {
+      "label": "closed r17 capture TFTMAC_NATIVE_RUNTIME.sqlite",
+      "path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c/TFTMAC_NATIVE_RUNTIME.sqlite",
+      "byte_count": 5898240,
+      "sha256": "42c6fcdc2f86b41ed79d0749400903b58a1062b65ba6f583c9815cfae1a3ce00"
+    },
+    {
+      "label": "closed r17 capture angle-driver-evidence.json",
+      "path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c/angle-driver-evidence.json",
+      "byte_count": 809,
+      "sha256": "0ab155fe67d53aafbfe4b8b54f8afbeefea6feef94274db89ec7d42823cbcf29"
+    },
+    {
+      "label": "closed r17 capture angle-driver-loaded-maps.txt",
+      "path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c/angle-driver-loaded-maps.txt",
+      "byte_count": 424074,
+      "sha256": "7f07119e2729090d078eec9065500a0af3ab6246dd0e8b410180c4945a9f8167"
+    }
+  ],
+  "copied_evidence_sha256": {
+    "launch-login-batch-gate.md": "40381eca2b06e02da103a7b75bc32aceb1d535923918eee1808b6091b744c3f8",
+    "launch-login-batch-preflight.json": "f65e44f3683b38d14e242677b0298a692bd89f1eee7bc0b1ec1c04246fbf5faa",
+    "zygote-relaunch-targeted-gate.md": "ecb34185eb12ef06bf4b1d59bf7db86bc86a9d49dfe6fa09716bb37bba2d2d24",
+    "shader-cache-identity-targeted-gate.md": "12bb78362954d3ab235d16db40abd92f9f40a9b706fd81bad83226329dd97308",
+    "adb-restart-targeted-gate.md": "d0195abfd07f7716092875082c50d7a528c51dd602703fc04589bae6938df7e4",
+    "keychain-no-ui-targeted-gate.md": "c8ad510db91b274fffaad4bf9779bbc16d3b015f7ec176124c0d493d527f1bee",
+    "launch-login-three-cycle-result.json": "c0ff226673bb0d872be004a7660d239ea69860ee61889856a474698a1967a8c5",
+    "keychain-r17-live-result.json": "5ed0cb0bbe26876a33c690a5f5980d48631f673eca83d18d5e3cacbb9ab4374d",
+    "keychain-r17-admission.json": "eabdbb30ad76f0cbef01781a0e06b818c3ed3beab8f9b6a59a3984184ead8ab3",
+    "admission-fault-test-result.json": "f1249da83708501d2c619a036972c8df422f2a9a6ea3ee6643486fce5f5c3b83"
+  },
+  "validation": {
+    "native_suite": "110 tests passed; source and unsigned Release validation passed",
+    "native_suite_repeated_for_commit": false,
+    "reason": "Only checkpoint documentation and receipts changed after source-hash verification; native source is unchanged from r17 validation.",
+    "live_r17": "Keychain read denied -25293; telemetry continued; clean quit and configuration rollback passed",
+    "driver_coverage": "4329 swap aggregates, no missing/malformed/lost driver events; zero view creations/reuse",
+    "diagnostic_admission": "FAIL: latest short run lacks automatic sealed Perfetto artifact",
+    "continuous_60_fps": "UNPROVEN"
+  },
+  "live_observation_at_commit_preparation": {
+    "session": "2026-09-06T10-39-44.933Z-1aeec1e4-b16a-4462-95e8-b255aa0d8322",
+    "status": "RUNNING",
+    "candidate_driver_event_observed": false,
+    "session_not_modified": true
+  },
+  "exclusions": [
+    "Credentials, raw private captures and generated binaries remain outside Git.",
+    "Four pre-existing .clara/plans/bddd2d6c scratch scripts remain untracked and untouched."
+  ],
+  "publication": "LOCAL_ONLY_NO_PUSH"
+}

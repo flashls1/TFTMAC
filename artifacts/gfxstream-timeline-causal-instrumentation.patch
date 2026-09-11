@@ -1,3 +1,420 @@
+diff --git a/host/CMakeLists.txt b/host/CMakeLists.txt
+index 0a4b48eb8..360d55fb6 100644
+--- a/host/CMakeLists.txt
++++ b/host/CMakeLists.txt
+@@ -162,6 +162,11 @@ target_include_directories(
+         ${GFXSTREAM_REPO_ROOT}/host/vulkan/cereal/common
+         )
+ 
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(gfxstream_backend_static
++        PRIVATE ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
++
+ if (APPLE)
+     target_link_libraries(gfxstream_backend_static PUBLIC "-framework AppKit -framework QuartzCore -framework IOSurface")
+ endif()
+diff --git a/host/gl/CMakeLists.txt b/host/gl/CMakeLists.txt
+index 347529ee7..35751d1b0 100644
+--- a/host/gl/CMakeLists.txt
++++ b/host/gl/CMakeLists.txt
+@@ -67,3 +67,7 @@ target_include_directories(gfxstream-gl-server
+                            ${GFXSTREAM_REPO_ROOT}/host
+                            ${GFXSTREAM_REPO_ROOT}/host/gl
+                            ${GFXSTREAM_REPO_ROOT}/third_party/glm/include)
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(gfxstream-gl-server
++                               PRIVATE ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
+diff --git a/host/gl/color_buffer_gl.cpp b/host/gl/color_buffer_gl.cpp
+index 86147a3bf..50708ca61 100644
+--- a/host/gl/color_buffer_gl.cpp
++++ b/host/gl/color_buffer_gl.cpp
+@@ -33,6 +33,10 @@
+ #include "texture_draw.h"
+ #include "texture_resize.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ namespace host {
+ namespace gl {
+@@ -845,6 +849,19 @@ bool ColorBufferGl::readContents(std::vector<uint8_t>* outContents) {
+ }
+ 
+ bool ColorBufferGl::blitFromCurrentReadBuffer() {
++#if defined(__APPLE__)
++    const bool tftmac_blit_recording =
++        tftmac::causal::InitializeCurrentThreadRecorder();
++    const uint64_t tftmac_blit_started_ns = tftmac_blit_recording
++        ? tftmac::causal::MonotonicTimestampNS()
++        : 0;
++    if (tftmac_blit_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kBegin,
++            tftmac::causal::Boundary::kColorBufferPublish,
++            1505);
++    }
++#endif
+     RenderThreadInfoGl* const tInfo = RenderThreadInfoGl::get();
+     if (!tInfo) {
+         GFXSTREAM_FATAL("Render thread GL not available.");
+@@ -1002,6 +1019,15 @@ bool ColorBufferGl::blitFromCurrentReadBuffer() {
+         unbindFbo();
+     }
+ 
++#if defined(__APPLE__)
++    if (tftmac_blit_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kEnd,
++            tftmac::causal::Boundary::kColorBufferPublish,
++            1505,
++            tftmac::causal::MonotonicTimestampNS() - tftmac_blit_started_ns);
++    }
++#endif
+     return true;
+ }
+ 
+diff --git a/host/gl/display_gl.cpp b/host/gl/display_gl.cpp
+index fe046282e..510fc2ca2 100644
+--- a/host/gl/display_gl.cpp
++++ b/host/gl/display_gl.cpp
+@@ -22,6 +22,10 @@
+ #include "gfxstream/host/display_operations.h"
+ #include "texture_draw.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ namespace host {
+ namespace gl {
+@@ -47,6 +51,22 @@ std::shared_future<void> DisplayGl::post(const Post& post) {
+     }
+     const auto* surfaceGl = static_cast<const DisplaySurfaceGl*>(surface->getImpl());
+ 
++#if defined(__APPLE__)
++    const bool tftmac_post_recording =
++        tftmac::causal::InitializeCurrentThreadRecorder();
++    const uint64_t tftmac_post_started_ns = tftmac_post_recording
++        ? tftmac::causal::MonotonicTimestampNS()
++        : 0;
++    if (tftmac_post_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kBegin,
++            tftmac::causal::Boundary::kSourceFramePublish,
++            1506,
++            0,
++            static_cast<uint32_t>(post.layers.size()));
++    }
++#endif
++
+     bool hasDrawLayer = false;
+     for (const PostLayer& layer : post.layers) {
+         if (!layer.colorBuffer) continue;
+@@ -76,6 +96,17 @@ std::shared_future<void> DisplayGl::post(const Post& post) {
+ 
+     s_egl.eglSwapBuffers(surfaceGl->mDisplay, surfaceGl->mSurface);
+ 
++#if defined(__APPLE__)
++    if (tftmac_post_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kEnd,
++            tftmac::causal::Boundary::kSourceFramePublish,
++            1506,
++            tftmac::causal::MonotonicTimestampNS() - tftmac_post_started_ns,
++            static_cast<uint32_t>(post.layers.size()));
++    }
++#endif
++
+     return getCompletedFuture();
+ }
+ 
+diff --git a/host/gl/emulated_egl_window_surface.cpp b/host/gl/emulated_egl_window_surface.cpp
+index 34ed7cfc3..f06450216 100644
+--- a/host/gl/emulated_egl_window_surface.cpp
++++ b/host/gl/emulated_egl_window_surface.cpp
+@@ -27,6 +27,10 @@
+ #include "gfxstream/containers/Lookup.h"
+ #include "gfxstream/common/logging.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ namespace host {
+ namespace gl {
+@@ -134,7 +138,32 @@ bool EmulatedEglWindowSurface::flushColorBuffer() {
+     mAttachedColorBuffer->touch();
+     auto cbGl = mAttachedColorBuffer->getColorBufferGl();
+     if (cbGl) {
++#if defined(__APPLE__)
++        const bool tftmac_blit_recording =
++            tftmac::causal::InitializeCurrentThreadRecorder();
++        const uint64_t tftmac_blit_started_ns = tftmac_blit_recording
++            ? tftmac::causal::MonotonicTimestampNS()
++            : 0;
++        if (tftmac_blit_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kBegin,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1504,
++                0,
++                mHndl);
++        }
++#endif
+         cbGl->blitFromCurrentReadBuffer();
++#if defined(__APPLE__)
++        if (tftmac_blit_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kEnd,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1504,
++                tftmac::causal::MonotonicTimestampNS() - tftmac_blit_started_ns,
++                mHndl);
++        }
++#endif
+     }
+ 
+     if (needToSet) {
+diff --git a/host/gl/gles2_dec/CMakeLists.txt b/host/gl/gles2_dec/CMakeLists.txt
+index f8091bf8a..105c6c2f2 100644
+--- a/host/gl/gles2_dec/CMakeLists.txt
++++ b/host/gl/gles2_dec/CMakeLists.txt
+@@ -37,3 +37,7 @@ target_include_directories(
+     ${GFXSTREAM_REPO_ROOT}
+     ${GFXSTREAM_REPO_ROOT}/host
+     ${GFXSTREAM_REPO_ROOT}/host/gfxstream_host_decoder_common)
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(gles2_dec PRIVATE
++                               ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
+diff --git a/host/gl/gles2_dec/gles2_dec.cpp b/host/gl/gles2_dec/gles2_dec.cpp
+index 15f609e8d..9e2691a3e 100644
+--- a/host/gl/gles2_dec/gles2_dec.cpp
++++ b/host/gl/gles2_dec/gles2_dec.cpp
+@@ -25,6 +25,10 @@
+ #include "gfxstream/host/ChecksumCalculatorThreadInfo.h"
+ #include "gfxstream/host/ProtocolUtils.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ 
+ typedef unsigned int tsize_t; // Target "size_t", which is 32-bit for now. It may or may not be the same as host's size_t when emugen is compiled.
+@@ -51,6 +55,21 @@ size_t gles2_decoder_context_t::decode(void *buf, size_t len, IOStream *stream,
+ 		std::memcpy(&packetLen, ptr + 4, sizeof(uint32_t));
+ 
+ 		if (end - ptr < packetLen) return ptr - (unsigned char*)buf;
++#if defined(__APPLE__)
++		const bool tftmac_gles_recording =
++		    tftmac::causal::InitializeCurrentThreadRecorder();
++		const uint64_t tftmac_gles_started_ns = tftmac_gles_recording
++		    ? tftmac::causal::MonotonicTimestampNS()
++		    : 0;
++		if (tftmac_gles_recording) {
++		    tftmac::causal::Record(
++		        tftmac::causal::EventKind::kBegin,
++		        tftmac::causal::Boundary::kGfxstreamDecode,
++		        1401,
++		        0,
++		        opcode);
++		}
++#endif
+ 		switch(opcode) {
+ 		case OP_glActiveTexture: {
+ 			gfxstream::base::beginTrace("glActiveTexture decode");
+@@ -10685,9 +10704,18 @@ size_t gles2_decoder_context_t::decode(void *buf, size_t len, IOStream *stream,
+ 			GFXSTREAM_ERROR(stderr, "gles2 Error (post-call): 0x%X in %s", err, lastCall);
+ 		}
+ #endif  // ifdef CHECK_GL_ERRORS
++#if defined(__APPLE__)
++		if (tftmac_gles_recording) {
++		    tftmac::causal::Record(
++		        tftmac::causal::EventKind::kEnd,
++		        tftmac::causal::Boundary::kGfxstreamDecode,
++		        1401,
++		        tftmac::causal::MonotonicTimestampNS() - tftmac_gles_started_ns,
++		        opcode);
++		}
++#endif
+ 		ptr += packetLen;
+ 	} // while
+ 	return ptr - (unsigned char*)buf;
+ }
+ }  // namespace gfxstream
+-
+diff --git a/host/gl/glestranslator/egl/CMakeLists.txt b/host/gl/glestranslator/egl/CMakeLists.txt
+index 103b18e50..2c5c787e8 100644
+--- a/host/gl/glestranslator/egl/CMakeLists.txt
++++ b/host/gl/glestranslator/egl/CMakeLists.txt
+@@ -88,6 +88,11 @@ target_compile_options(
+     EGL_translator_static
+     PRIVATE -Wno-inconsistent-missing-override -Wno-macro-redefined)
+ 
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(EGL_translator_static PRIVATE
++                               ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
++
+ if (APPLE)
+     target_compile_options(EGL_translator_static PRIVATE -Wno-deprecated-declarations)
+     target_compile_options(EGL_translator_static PRIVATE "-Wno-deprecated-declarations")
+diff --git a/host/gl/glestranslator/egl/egl_imp.cpp b/host/gl/glestranslator/egl/egl_imp.cpp
+index 5d5905580..b370c0c72 100644
+--- a/host/gl/glestranslator/egl/egl_imp.cpp
++++ b/host/gl/glestranslator/egl/egl_imp.cpp
+@@ -50,6 +50,10 @@
+ #include "gfxstream/common/logging.h"
+ #include "gfxstream/host/vm_operations.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ #define MAJOR          1
+ #define MINOR          4
+ 
+@@ -1258,8 +1262,30 @@ EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffers(EGLDisplay display, EGLSurface surf
+     }
+ 
+     {
++#if defined(__APPLE__)
++        const bool tftmac_swap_recording =
++            tftmac::causal::InitializeCurrentThreadRecorder();
++        const uint64_t tftmac_swap_started_ns = tftmac_swap_recording
++            ? tftmac::causal::MonotonicTimestampNS()
++            : 0;
++        if (tftmac_swap_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kBegin,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1501);
++        }
++#endif
+         gfxstream::base::AutoLock mutex(*graphicsDriverLock());
+         dpy->nativeType()->swapBuffers(Srfc->native());
++#if defined(__APPLE__)
++        if (tftmac_swap_recording) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kEnd,
++                tftmac::causal::Boundary::kColorBufferPublish,
++                1501,
++                tftmac::causal::MonotonicTimestampNS() - tftmac_swap_started_ns);
++        }
++#endif
+     }
+     return EGL_TRUE;
+ }
+diff --git a/host/renderControl_dec/CMakeLists.txt b/host/renderControl_dec/CMakeLists.txt
+index ed5452739..0fdbefab2 100644
+--- a/host/renderControl_dec/CMakeLists.txt
++++ b/host/renderControl_dec/CMakeLists.txt
+@@ -33,3 +33,7 @@ target_include_directories(
+     ${GFXSTREAM_REPO_ROOT}/include
+     ${GFXSTREAM_REPO_ROOT}/host
+     ${GFXSTREAM_REPO_ROOT}/host/gfxstream_host_decoder_common)
++if(TFTMAC_CAUSAL_RUNTIME_ROOT)
++    target_include_directories(renderControl_dec
++        PRIVATE ${TFTMAC_CAUSAL_RUNTIME_ROOT})
++endif()
+diff --git a/host/renderControl_dec/renderControl_dec.cpp b/host/renderControl_dec/renderControl_dec.cpp
+index 6985c403a..cf29d9942 100644
+--- a/host/renderControl_dec/renderControl_dec.cpp
++++ b/host/renderControl_dec/renderControl_dec.cpp
+@@ -25,6 +25,10 @@
+ #include "gfxstream/host/ChecksumCalculatorThreadInfo.h"
+ #include "gfxstream/host/ProtocolUtils.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ namespace gfxstream {
+ 
+ typedef unsigned int tsize_t; // Target "size_t", which is 32-bit for now. It may or may not be the same as host's size_t when emugen is compiled.
+@@ -1236,6 +1240,16 @@ size_t renderControl_decoder_context_t::decode(void *buf, size_t len, IOStream *
+ 					"renderControl_decoder_context_t::decode, OP_rcFlushWindowColorBufferAsyncWithFrameNumber: GL checksumCalculator failure\n");
+ 			}
+ 			DECODER_DEBUG_LOG("renderControl(%p): rcFlushWindowColorBufferAsyncWithFrameNumber(windowSurface:0x%08x frameNumber:0x%08x )", stream, var_windowSurface, var_frameNumber);
++#if defined(__APPLE__)
++			if (tftmac::causal::InitializeCurrentThreadRecorder()) {
++				tftmac::causal::Record(
++					tftmac::causal::EventKind::kInstant,
++					tftmac::causal::Boundary::kColorBufferPublish,
++					1503,
++					var_frameNumber,
++					var_windowSurface);
++			}
++#endif
+ 			this->rcFlushWindowColorBufferAsyncWithFrameNumber(var_windowSurface, var_frameNumber);
+ 			SET_LASTCALL("rcFlushWindowColorBufferAsyncWithFrameNumber");
+ 			gfxstream::base::endTrace();
+@@ -1621,4 +1635,3 @@ size_t renderControl_decoder_context_t::decode(void *buf, size_t len, IOStream *
+ 	return ptr - (unsigned char*)buf;
+ }
+ }  // namespace gfxstream
+-
+diff --git a/host/render_control.cpp b/host/render_control.cpp
+index 08a80598d..81b4382f6 100644
+--- a/host/render_control.cpp
++++ b/host/render_control.cpp
+@@ -44,6 +44,10 @@
+ #include "vulkan/vk_common_operations.h"
+ #include "vulkan/vk_decoder_global_state.h"
+ 
++#if defined(__APPLE__)
++#include "PipelineEventV1.h"
++#endif
++
+ // defined in guest/goldfish_sync.h
+ #define GOLDFISH_SYNC_VULKAN_SEMAPHORE_SYNC 0x00000001
+ #define GOLDFISH_SYNC_VULKAN_QSRI 0x00000002
+@@ -860,6 +864,21 @@ static void rcCloseColorBuffer(uint32_t colorbuffer)
+ 
+ static int rcFlushWindowColorBuffer(uint32_t windowSurface)
+ {
++#if defined(__APPLE__)
++    const bool tftmac_flush_recording =
++        tftmac::causal::InitializeCurrentThreadRecorder();
++    const uint64_t tftmac_flush_started_ns = tftmac_flush_recording
++        ? tftmac::causal::MonotonicTimestampNS()
++        : 0;
++    if (tftmac_flush_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kBegin,
++            tftmac::causal::Boundary::kColorBufferPublish,
++            1502,
++            0,
++            windowSurface);
++    }
++#endif
+     GRSYNC_DPRINT("waiting for gralloc cb lock");
+     GrallocSyncPostLock lock(*sGrallocSync());
+     GRSYNC_DPRINT("lock gralloc cb lock {");
+@@ -884,6 +903,16 @@ static int rcFlushWindowColorBuffer(uint32_t windowSurface)
+ 
+     GRSYNC_DPRINT("unlock gralloc cb lock }");
+ 
++#if defined(__APPLE__)
++    if (tftmac_flush_recording) {
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kEnd,
++            tftmac::causal::Boundary::kColorBufferPublish,
++            1502,
++            tftmac::causal::MonotonicTimestampNS() - tftmac_flush_started_ns,
++            windowSurface);
++    }
++#endif
+     return 0;
+ }
+ 
 diff --git a/host/vulkan/CMakeLists.txt b/host/vulkan/CMakeLists.txt
 index 67f72cc80..f3cf13e38 100644
 --- a/host/vulkan/CMakeLists.txt
@@ -16,10 +433,18 @@ index 67f72cc80..f3cf13e38 100644
  set_source_files_properties(vk_sub_decoder.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
  set_source_files_properties(vk_decoder_snapshot.cpp PROPERTIES COMPILE_FLAGS -Wno-unused-variable)
 diff --git a/host/vulkan/vk_decoder.cpp b/host/vulkan/vk_decoder.cpp
-index 3174d3256..073f7977d 100644
+index 3174d3256..da8d9cece 100644
 --- a/host/vulkan/vk_decoder.cpp
 +++ b/host/vulkan/vk_decoder.cpp
-@@ -52,6 +52,10 @@
+@@ -30,6 +30,7 @@
+ 
+ #include "vk_decoder.h"
+ 
++#include <atomic>
+ #include <cstring>
+ #include <functional>
+ #include <optional>
+@@ -52,6 +53,10 @@
  #include "vulkan_dispatch.h"
  #include "vulkan_stream.h"
  
@@ -30,14 +455,58 @@ index 3174d3256..073f7977d 100644
  #define MAX_PACKET_LENGTH (400 * 1024 * 1024)  // 400MB
  #define CC_LIKELY(exp) (__builtin_expect(!!(exp), true))
  #define CC_UNLIKELY(exp) (__builtin_expect(!!(exp), false))
-@@ -1481,10 +1485,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -60,6 +65,10 @@ namespace gfxstream {
+ namespace host {
+ namespace vk {
+ 
++#if defined(__APPLE__)
++std::atomic<uint64_t> g_tftmac_direct_submit_id{1};
++#endif
++
+ class VkDecoder::Impl {
+    public:
+     Impl()
+@@ -73,7 +82,16 @@ class VkDecoder::Impl {
+           m_prevSeqno(std::nullopt),
+           m_queueSubmitWithCommandsEnabled(
+               m_state->getFeatures().VulkanQueueSubmitWithCommands.enabled()),
+-          m_snapshotsEnabled(m_state->snapshotsEnabled()) {}
++          m_snapshotsEnabled(m_state->snapshotsEnabled()) {
++#if defined(__APPLE__)
++        if (tftmac::causal::InitializeCurrentThreadRecorder()) {
++            tftmac::causal::Record(
++                tftmac::causal::EventKind::kInstant,
++                tftmac::causal::Boundary::kGfxstreamDecode,
++                9001);
++        }
++#endif
++    }
+     VulkanStream* stream() { return &m_vkStream; }
+     VulkanMemReadingStream* readStream() { return &m_vkMemReadingStream; }
+ 
+@@ -137,6 +155,14 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+         }
+ 
+         if (end - ptr < packetLen) return ptr - (unsigned char*)buf;
++#if defined(__APPLE__)
++        tftmac::causal::Record(
++            tftmac::causal::EventKind::kInstant,
++            tftmac::causal::Boundary::kGfxstreamDecode,
++            1300,
++            0,
++            opcode);
++#endif
+         gfx_logger.record(ptr, std::min(size_t(packetLen + 8), size_t(end - ptr)));
+         stream()->setStream(ioStream);
+         VulkanStream* vkStream = stream();
+@@ -1481,10 +1507,74 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                                     (unsigned long long)fence);
                  }
                  VkResult vkQueueSubmit_VkResult_return = VK_ERROR_OUT_OF_HOST_MEMORY;
 +#if defined(__APPLE__)
 +                uint64_t tftmac_transport_work_id = 0;
 +                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
-+                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                    tftmac::causal::ParseANGLETimelineWorkId(
 +                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
 +                }
 +                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);
@@ -57,12 +526,40 @@ index 3174d3256..073f7977d 100644
 +                const uint64_t tftmac_submit_started_ns = tftmac_owned_submit
 +                    ? tftmac::causal::MonotonicTimestampNS()
 +                    : 0;
++                const bool tftmac_direct_submit_recording =
++                    tftmac::causal::InitializeCurrentThreadRecorder();
++                const uint64_t tftmac_direct_submit_id = tftmac_direct_submit_recording
++                    ? g_tftmac_direct_submit_id.fetch_add(1, std::memory_order_relaxed)
++                    : 0;
++                const uint64_t tftmac_direct_previous_work_id =
++                    tftmac::causal::CurrentThreadTransportWorkId();
++                const uint64_t tftmac_direct_submit_started_ns = tftmac_direct_submit_recording
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_submit_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        0,
++                        submitCount);
++                }
 +#endif
                  if (CC_LIKELY(vk)) {
                      vkQueueSubmit_VkResult_return = m_state->on_vkQueueSubmit(
                          &m_pool, snapshotApiCallHandle, queue, submitCount, pSubmits, fence);
                  }
 +#if defined(__APPLE__)
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_direct_submit_started_ns,
++                        submitCount);
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_previous_work_id);
++                }
 +                if (tftmac_owned_submit) {
 +                    tftmac::causal::Record(
 +                        tftmac::causal::EventKind::kEnd,
@@ -77,14 +574,58 @@ index 3174d3256..073f7977d 100644
                  if ((vkQueueSubmit_VkResult_return) == VK_ERROR_DEVICE_LOST)
                      m_state->on_DeviceLost();
                  vkStream->unsetHandleMapping();
-@@ -22262,10 +22302,46 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+@@ -11562,10 +11652,43 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                                    (unsigned long long)fence);
+                 }
+                 VkResult vkQueueSubmit2_VkResult_return = VK_ERROR_OUT_OF_HOST_MEMORY;
++#if defined(__APPLE__)
++                const bool tftmac_submit2_recording =
++                    tftmac::causal::InitializeCurrentThreadRecorder();
++                const uint64_t tftmac_submit2_id = tftmac_submit2_recording
++                    ? g_tftmac_direct_submit_id.fetch_add(1, std::memory_order_relaxed)
++                    : 0;
++                const uint64_t tftmac_submit2_previous_work_id =
++                    tftmac::causal::CurrentThreadTransportWorkId();
++                const uint64_t tftmac_submit2_started_ns = tftmac_submit2_recording
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++                if (tftmac_submit2_recording) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_submit2_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1202,
++                        0,
++                        submitCount);
++                }
++#endif
+                 if (CC_LIKELY(vk)) {
+                     vkQueueSubmit2_VkResult_return = m_state->on_vkQueueSubmit2(
+                         &m_pool, snapshotApiCallHandle, queue, submitCount, pSubmits, fence);
+                 }
++#if defined(__APPLE__)
++                if (tftmac_submit2_recording) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1202,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_submit2_started_ns,
++                        submitCount,
++                        static_cast<uint16_t>(vkQueueSubmit2_VkResult_return));
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_submit2_previous_work_id);
++                }
++#endif
+                 if ((vkQueueSubmit2_VkResult_return) == VK_ERROR_DEVICE_LOST)
+                     m_state->on_DeviceLost();
+                 vkStream->unsetHandleMapping();
+@@ -22262,10 +22385,74 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
                          ioStream, (unsigned long long)queue, (unsigned long long)submitCount,
                          (unsigned long long)pSubmits, (unsigned long long)fence);
                  }
 +#if defined(__APPLE__)
 +                uint64_t tftmac_transport_work_id = 0;
 +                if (pSubmits && submitCount == 1 && pSubmits[0].signalSemaphoreCount == 2) {
-+                    tftmac::causal::ParseOwnedProbeTimelineWorkId(
++                    tftmac::causal::ParseANGLETimelineWorkId(
 +                        2, pSubmits[0].pNext, &tftmac_transport_work_id);
 +                }
 +                const bool tftmac_owned_submit = (tftmac_transport_work_id != 0);
@@ -104,12 +645,40 @@ index 3174d3256..073f7977d 100644
 +                const uint64_t tftmac_submit_started_ns = tftmac_owned_submit
 +                    ? tftmac::causal::MonotonicTimestampNS()
 +                    : 0;
++                const bool tftmac_direct_submit_recording =
++                    tftmac::causal::InitializeCurrentThreadRecorder();
++                const uint64_t tftmac_direct_submit_id = tftmac_direct_submit_recording
++                    ? g_tftmac_direct_submit_id.fetch_add(1, std::memory_order_relaxed)
++                    : 0;
++                const uint64_t tftmac_direct_previous_work_id =
++                    tftmac::causal::CurrentThreadTransportWorkId();
++                const uint64_t tftmac_direct_submit_started_ns = tftmac_direct_submit_recording
++                    ? tftmac::causal::MonotonicTimestampNS()
++                    : 0;
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_submit_id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kBegin,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        0,
++                        submitCount);
++                }
 +#endif
                  if (CC_LIKELY(vk)) {
                      m_state->on_vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle, queue,
                                                           submitCount, pSubmits, fence);
                  }
 +#if defined(__APPLE__)
++                if (tftmac_direct_submit_recording) {
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kEnd,
++                        tftmac::causal::Boundary::kHostVulkanSubmit,
++                        1201,
++                        tftmac::causal::MonotonicTimestampNS() - tftmac_direct_submit_started_ns,
++                        submitCount);
++                    tftmac::causal::SetThreadTransportWorkId(tftmac_direct_previous_work_id);
++                }
 +                if (tftmac_owned_submit) {
 +                    tftmac::causal::Record(
 +                        tftmac::causal::EventKind::kEnd,
@@ -124,6 +693,25 @@ index 3174d3256..073f7977d 100644
                  vkStream->unsetHandleMapping();
                  if (m_snapshotsEnabled) {
                      m_state->snapshot()->vkQueueSubmitAsyncGOOGLE(&m_pool, snapshotApiCallHandle,
+@@ -23157,6 +23344,18 @@ size_t VkDecoder::Impl::decode(void* buf, size_t len, IOStream* ioStream,
+                 uint64_t id;
+                 memcpy((uint64_t*)&id, *readStreamPtrPtr, sizeof(uint64_t));
+                 *readStreamPtrPtr += sizeof(uint64_t);
++#if defined(__APPLE__)
++                if (id != 0) {
++                    const uint64_t previous_work_id =
++                        tftmac::causal::CurrentThreadTransportWorkId();
++                    tftmac::causal::SetThreadTransportWorkId(id);
++                    tftmac::causal::Record(
++                        tftmac::causal::EventKind::kInstant,
++                        tftmac::causal::Boundary::kGfxstreamDecode,
++                        1101);
++                    tftmac::causal::SetThreadTransportWorkId(previous_work_id);
++                }
++#endif
+                 if (m_logCalls) {
+                     GFXSTREAM_INFO("stream %p: call vkTraceAsyncGOOGLE 0x%llx ", ioStream,
+                                    (unsigned long long)id);
 diff --git a/host/vulkan/vk_decoder_global_state.cpp b/host/vulkan/vk_decoder_global_state.cpp
 index 4316e99ba..36e4ad3cb 100644
 --- a/host/vulkan/vk_decoder_global_state.cpp

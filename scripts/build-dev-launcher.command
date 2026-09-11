@@ -5,7 +5,7 @@ unsetopt BG_NICE
 readonly ROOT="${0:A:h:h}"
 readonly ICON_SOURCE="${ROOT}/tftmac/Assets/TFTMAC-DEV-Icon.png"
 readonly ICON_SOURCE_SHA256="660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945"
-readonly REGISTRY_SHA256="f92cfc78923814d8eb3d8f6f550a4763ba918fe5e1c20088e2863d89ce58eafe"
+readonly REGISTRY_SHA256="68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518"
 readonly TRACE_PROCESSOR_SHA256="d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
 readonly SIGNING_IDENTITY_NAME="${TFTMAC_CODE_SIGN_IDENTITY_NAME:-TFTMAC Local Code Signing}"
 readonly DERIVED="${ROOT}/.build/native-dev"
@@ -45,6 +45,7 @@ readonly PROBE_RECEIPT="${ROOT}/.build/vulkan-probe/build-receipt.json"
 
 readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing-identity.command")"
 [[ -n "${SIGNING_IDENTITY_HASH}" ]] || fail "stable local signing identity is unavailable"
+TFTMAC_CLOCK_SIGN_IDENTITY="${SIGNING_IDENTITY_HASH}" /bin/zsh "${ROOT}/scripts/build-native-clock.command"
 
 /usr/bin/xcodebuild \
   -quiet \
@@ -63,6 +64,12 @@ readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing
 readonly MACOS_DIR="${DIST}/Contents/MacOS"
 readonly RESOURCES_DIR="${DIST}/Contents/Resources"
 readonly INFO="${DIST}/Contents/Info.plist"
+/usr/bin/ditto "${ROOT}/tftmac/Assets/DEVHighPerf" "${RESOURCES_DIR}/DEVHighPerf"
+/usr/bin/ditto "${ROOT}/.build/native-clock/NativeClock" "${RESOURCES_DIR}/NativeClock"
+/bin/mkdir -p "${RESOURCES_DIR}/RiotLogin"
+/bin/cp "${ROOT}/scripts/login-tft-webview.mjs" "${RESOURCES_DIR}/RiotLogin/login-tft-webview.mjs"
+/bin/mkdir -p "${RESOURCES_DIR}/ANGLEDriver"
+/bin/cp "${ROOT}/DriverRuntime/angle1166/guest-driver-transaction.sh" "${RESOURCES_DIR}/ANGLEDriver/guest-driver-transaction.sh"
 /bin/mv "${MACOS_DIR}/TFTMAC" "${MACOS_DIR}/TFTMACDEVCore"
 /usr/bin/xcrun --sdk macosx clang \
   -Os -arch arm64 -mmacosx-version-min=15.0 \

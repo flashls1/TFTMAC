@@ -1,5 +1,13 @@
 import AppKit
 
+enum TFTMACLaunchPolicy {
+    static let autonomousSilentEnvironmentKey = "TFTMAC_AUTONOMOUS_SILENT"
+
+    static func isAutonomousSilent(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        environment[autonomousSilentEnvironmentKey] == "1"
+    }
+}
+
 @main
 enum TFTMACApplication {
     @MainActor private static var coordinator: AppCoordinator?
@@ -10,8 +18,11 @@ enum TFTMACApplication {
         let coordinator = AppCoordinator()
         Self.coordinator = coordinator
         application.delegate = coordinator
-        application.setActivationPolicy(.regular)
-        installMainMenu(on: application, coordinator: coordinator)
+        let silent = TFTMACLaunchPolicy.isAutonomousSilent()
+        application.setActivationPolicy(silent ? .prohibited : .regular)
+        if !silent {
+            installMainMenu(on: application, coordinator: coordinator)
+        }
         application.run()
     }
 
@@ -25,6 +36,13 @@ enum TFTMACApplication {
         appMenu.addItem(withTitle: "About TFTMAC", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         let settings = appMenu.addItem(withTitle: "Performance Lab…", action: #selector(AppCoordinator.showSettings(_:)), keyEquivalent: ",")
         settings.target = coordinator
+        if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev" {
+            let remember = appMenu.addItem(withTitle: "Remember Riot login", action: #selector(AppCoordinator.toggleRememberRiotLogin(_:)), keyEquivalent: "")
+            remember.target = coordinator
+            remember.state = RiotCredentialStore.remember ? .on : .off
+            let saved = appMenu.addItem(withTitle: "Sign in with saved account", action: #selector(AppCoordinator.signInWithSavedAccount(_:)), keyEquivalent: "")
+            saved.target = coordinator
+        }
         appMenu.addItem(.separator())
         let quit = appMenu.addItem(withTitle: "Quit TFTMAC", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = application

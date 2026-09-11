@@ -1,8 +1,34 @@
 # TFTMAC Facts
 
-**Authority date:** 2026-09-02 America/Chicago
-**Observed runtime/source evidence through:** 2026-09-02T13:32:00Z
-**Purpose:** preserve facts and hard boundaries that future TFTMAC work must not casually reinterpret.
+> **CURRENT DEV AUTHORITY — 2026-09-10 America/Chicago.** The DEV optimization/versioning records in `project.md` and `CHANGELOG.md` supersede older mutable DEV build, campaign, performance, and readiness claims below. Historical measurements retain their original dates and remain evidence for their recorded configuration only.
+
+**Authority date:** 2026-09-10 America/Chicago  
+**Current DEV evidence through:** 2026-09-10 results-first verification pass  
+**Purpose:** preserve current facts and hard boundaries that future TFTMAC work must not casually reinterpret.
+
+## Mandatory current-authority reading and record-book rule
+
+Before planning, running, changing, interpreting, or resuming any TFTMAC DEV optimization test, read the current versions of **all three** of these records:
+
+1. `facts.md` — hard project facts, safety boundaries, current authority pointers, and mandatory process rules.
+2. `project.md` — living project wiki: what TFTMAC/DEV is, current working winner, current runtime/client identity, current test series, and current optimization state.
+3. `CHANGELOG.md` — append-only DEV test/version ledger: exact tests already attempted, outcomes, metrics, integration YES/NO, reasoning, rollback state, and `DEV-B8-WIN-##` progression.
+
+For the active results-first pass, also obey `.clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/RECOVERY_CONSTRAINTS_2026-09-10.md`.
+
+**LOCKED RECORD-BOOK POLICY:** every completed DEV optimization test must update the current record books in the same work cycle. A test result is not considered fully recorded until `CHANGELOG.md` contains the exact result and integration decision and `project.md` reflects any change to current winner/state/version progression. Update `facts.md` whenever the result changes a current fact, hard boundary, mandatory rule, runtime/client identity, or authoritative current configuration. Do not copy transient measurements into `facts.md` merely because a test ran; facts stays concise and authoritative, while `CHANGELOG.md` retains the detailed test history.
+
+**LOCKED PROMOTION POLICY:** VERIFIED NET IMPROVEMENT -> integrate it, assign/promote the next working `DEV-B8-WIN-##` identity, update `project.md` and `CHANGELOG.md`, and use that winner as the baseline for the next test. NOT VERIFIED / INCONCLUSIVE / REGRESSION -> log the exact result and reason in `CHANGELOG.md`, do not integrate it, keep/restore the latest verified winner in `project.md`, and move to the next candidate. A small regression in one secondary metric may be accepted when the overall measured system/gameplay result is noticeably better and no correctness, stability, compatibility, or severe-tail regression outweighs the gain.
+
+**LOCKED LKG SEPARATION:** the frozen LKG remains separate and immutable. The evolving DEV working winner is never allowed to silently rewrite the historical LKG/control evidence.
+
+**LOCKED AUTHORITY PRECEDENCE:** `facts.md` is the first project-specific authority. `project.md` is the current living wiki and must agree with it. `CHANGELOG.md` is the detailed test/version ledger. Other plans, handoffs, SSOT/reference files, tests, captures, source comments, or historical documents do not silently override these records. If newer machine/runtime evidence conflicts with `facts.md` or `project.md`, treat that as an authority-staleness signal: validate the newer evidence first, update `facts.md` and `project.md` to the newly proven truth, then continue. Never choose a conflicting lower-level document over `facts.md` without first reconciling the authority records.
+
+**LOCKED PLAN/CHANGE FINALIZATION GATE:** before finalizing any implementation plan, change scope, promotion decision, or completion claim, re-read the current `facts.md` and `project.md`, reconcile them against any newer evidence discovered during the work, and update them first if they are stale. A plan is not final while an unresolved factual conflict exists.
+
+**LOCKED CLEAN-WORKSPACE COMPLETION RULE:** active implementation work may be dirty while it is in progress, but no selected managed change may be declared finalized or complete with accidental dirty state. Intended source/docs must be checkpointed/published; generated or transient artifacts must be restored, ignored, or removed from the worktree without destroying authoritative external evidence; final Git status for the selected change must be clean. Unrelated managed work must be preserved rather than destroyed to manufacture cleanliness.
+
+**LOCKED OVERNIGHTLAB EVIDENCE POLICY:** OvernightLab is retained as a telemetry/provenance tool and must follow the current `facts.md` + `project.md` authority. Historical data is not discarded merely because CPU, RAM, or another secondary configuration value differs from the current winner; preserve requested/effective values and label such evidence non-comparable/data-only unless a valid matched comparison admits it. A wrong official-client identity or wrong selected game RHI/core pipeline for the intended test is a promotion disqualifier, but its already-recorded raw evidence remains forensic data. Resolved negative candidates stay logged and are not automatically rerun. The automatic OvernightLab baseline is the latest verified DEV winner, currently `DEV-B8-WIN-01`, never the frozen LKG unless an explicit historical comparator is requested.
 
 This file separates durable product facts from mutable observations and historical
 results. A statement becomes a project fact only when it has direct machine,
@@ -84,6 +110,15 @@ must never be presented as measurements of this M4 Mac mini.
   identities and deep/strict verification PASS for both installed apps. Neither
   observation rewrites the historical release acceptance result.
 
+### 2.1 Development / release-promotion doctrine
+
+- **LOCKED USER POLICY:** `/Applications/TFTMAC.app` is the protected stable **Control** launcher/runtime. Normal engineering work must not rebuild, patch, overwrite, replace, or install development artifacts over this app.
+- **LOCKED USER POLICY:** active feature development targets the isolated **DEV / `advanced_diagnostics`** product at `/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`, with its separate AVD, ports, state, captures, and launcher.
+- **LOCKED USER POLICY:** Control exists as the always-available known-good rollback/playable launcher while DEV changes are being developed and validated.
+- **LOCKED USER POLICY:** moving accepted DEV functionality into a full production release is a separate, explicit release-promotion operation. Until Flash explicitly authorizes that promotion and its acceptance gates pass, DEV work must not mutate the installed Control artifact.
+- **LOCKED:** build/install scripts and agent workflows must fail closed if a DEV operation would overwrite or drift the protected Control executable, emulator-host identity, AVD, ports, or launcher.
+- **OPERATIONAL NOTE:** because Control and DEV use an exclusive runtime lease, one may need to be cleanly closed before the other launches; this does not authorize changing the Control artifact or configuration.
+
 ## 3. Launch and ADB architecture
 
 - **LOCKED:** launch the emulator through the packaged `TFTMAC Emulator Host.app`
@@ -116,7 +151,31 @@ must never be presented as measurements of this M4 Mac mini.
 
 ## 4. Android runtime and official package
 
-| Item | Current authority |
+### Current DEV optimization runtime — VERIFIED CURRENT (2026-09-10)
+
+| Item | Current DEV authority |
+| --- | --- |
+| Application | `/Applications/TFTMAC DEV.app`, bundle `com.flashls1.tftmac.dev`, version 2.3.0 build 8 |
+| Runtime root | `/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow` |
+| SDK root | `/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK` |
+| Emulator | Android Emulator 37.1.11.0, build 15917651 |
+| AVD | `TFTMAC_Diagnostic_StockShadow_R1` |
+| Ports / serial | ADB `5041`, console `5586`, controller `8556`, serial `emulator-5586` |
+| Guest display | 1920×1080, 320 dpi, 60 Hz |
+| Effective guest CPU | **8 vCPU**; recent verified QEMU launches contain `-cores 8`. These are virtual CPUs scheduled on the 10-core M4 host, not eight dedicated physical host cores. |
+| Effective guest RAM | **6144 MiB (6 GiB)**; recent verified QEMU launches contain `-memory 6144`. |
+| GPU / audio | host GPU / CoreAudio |
+| Current game RHI | **OpenGL ES through ANGLE** (`OPENGL_ES_ANGLE`) |
+| ANGLE revision | `1166eec4c0b125e9e945196acfc549983ef72b18` |
+| Official TFT package | `com.riotgames.league.teamfighttactics` |
+| Current verified TFT build | `18.1-5423749`, version code `8423749` |
+| Working cache winner | `DEV-B8-WIN-01`: multifile cache enabled; `preferSubmitAtFBOBoundary` disabled; `syncMonolithicPipelinesToBlobCache` removed |
+
+The sealed StockShadow AVD file itself remains a restoration baseline and currently contains `hw.cpu.ncore=6` and `hw.ramSize=5120`. The installed `runtime-modes.json` locked profile records 6 vCPU / 6144 MiB, while current `RuntimeModeAuthority.swift` defaults `advanced_diagnostics` effective vCPU to 8 and retains 6144 MiB RAM. The decisive effective-runtime evidence is the launched QEMU command plus runtime receipt: current DEV test launches use **8 vCPU / 6144 MiB** and restore the sealed AVD baseline afterward. Do not edit the stored AVD merely to make its static values look like the transient effective launch.
+
+### Protected Control / historical runtime reference
+
+| Item | Protected Control / last-observed authority |
 | --- | --- |
 | Runtime root | `/Volumes/MAC MINI M4/TFTMAC/Runtime` |
 | SDK root | `/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK` |
@@ -127,7 +186,7 @@ must never be presented as measurements of this M4 Mac mini.
 | WebView provider | `com.google.android.webview` |
 | WebView version observed | 151.0.7922.199 |
 | TFT package | `com.riotgames.league.teamfighttactics` |
-| TFT version observed | `18.1-5402721`, version code `8402721` |
+| TFT version historically observed on protected Control | `18.1-5402721`, version code `8402721`; do not use this as the current DEV client identity |
 | Installer authority | `com.android.vending` / Google Play |
 | Unreal activity | `com.epicgames.unreal.GameActivity` |
 | Riot login activity | `com.riotgames.platformui.mobilefre.MobileFREWebViewActivity` |
@@ -141,20 +200,21 @@ must never be presented as measurements of this M4 Mac mini.
   game content, and the signed TFT package.
 - **LOCKED:** do not mirror, modify, patch, inject into, re-sign, or privately
   distribute Riot's APK or signed assets.
-- **LOCKED:** Riot credentials, Google credentials, CAPTCHA, MFA, and consent are
-  entered manually in the official UI. Do not log or automate them.
+- **LOCKED SECRET BOUNDARY:** never expose Riot/Google credentials, tokens, CAPTCHA/MFA material, or consent data in Git, docs, telemetry, command output, or chat.
+- **VERIFIED CURRENT DEV LOGIN:** DEV has an approved local saved-sign-in mechanism using the protected local `riot-login.json` credential file (`0600`) and code path identified as `DEV_LocalCredentialFile`. Its contents are never project evidence and must never be printed. CAPTCHA, MFA, consent, or other interactive challenges remain manual when required by the official UI.
 - **MUTABLE:** package and WebView versions can change through their official
   stores. Every session must record what was actually installed.
 - **UNKNOWN:** the TFT signer digest has been observed in Android package output,
   but has not yet been promoted as a durable project-authority digest.
 
-## 5. Current graphics and audio pipeline
+## 5. Current DEV graphics and audio pipeline
 
 ```text
-TFT Unreal direct-Vulkan workload
-  -> guest Vulkan command stream
+TFT Unreal OpenGL ES workload
+  -> Android system ANGLE (`libGLESv2_angle.so`)
+  -> ANGLE Vulkan backend / ranchu
   -> gfxstream over virtio-gpu ASG
-  -> MoltenVK Vulkan-to-Metal translation
+  -> host Vulkan / MoltenVK-to-Metal translation
   -> Apple Metal / M4 GPU
   -> Android SurfaceFlinger actual presentation
   -> authenticated raw RGBA frame stream
@@ -166,9 +226,7 @@ Boundary rules:
 
 - Unreal owns game simulation, effects, render-thread/RHI workload, and the
   game's actual frame production.
-- **VERIFIED CURRENT PATH:** the latest stack receipt identifies
-  `UNREAL_ENGINE_VULKAN`. ANGLE may be present for another guest/package path,
-  but is not assumed to render TFT unless a per-run receipt proves it.
+- **VERIFIED CURRENT DEV PATH:** dedicated current-client engine-log evidence selects `OPENGL_ES_ANGLE`. Recent runtime receipts also show `/system/lib64/libGLESv2_angle.so` on the active RHI path. A generic lower-stack classifier may still emit `UNREAL_ENGINE_VULKAN` because Vulkan is used beneath ANGLE; that raw generic classifier is not authoritative for the game's selected RHI. Direct Unreal Vulkan was separately tested and rejected for this fast-pass after Metal vertex-descriptor/missing-attribute failures.
 - ANGLE owns GLES-to-Vulkan translation only when a game selects GLES/EGL and
   Android selects ANGLE for that package. Its ES 3.2 exposure is a compatibility
   route, not general conformance proof.
@@ -182,10 +240,33 @@ Boundary rules:
   TFTMAC for final image presentation. A fast final presenter does not prove the
   upstream game/transport pipeline is fast.
 
-## 6. Proven Control profile
+## 6. Current DEV working profile and protected Control reference
 
-The current control is the following complete configuration. Change one
-declared test factor at a time; do not silently mix profiles.
+### Current DEV working winner — `DEV-B8-WIN-01`
+
+| Variable | Current DEV working authority |
+| --- | --- |
+| App | TFTMAC DEV 2.3.0 build 8 / `com.flashls1.tftmac.dev` |
+| Runtime mode | `advanced_diagnostics` / StockShadow |
+| Guest display | 1920×1080 |
+| Density / refresh | 320 dpi / 60 Hz |
+| Effective vCPU | **8** |
+| Effective guest RAM | **6144 MiB (6 GiB)** |
+| GPU / audio | host / CoreAudio |
+| ADB / console / controller | 5041 / 5586 / 8556 |
+| AVD / serial | `TFTMAC_Diagnostic_StockShadow_R1` / `emulator-5586` |
+| Graphics route | OpenGL ES → ANGLE → Vulkan/gfxstream → MoltenVK/Metal |
+| ASG | 1 MiB write buffer / 16 KiB write step / 32 KiB ring / 800 µs flush |
+| ANGLE enabled | `exposeNonConformant*:exposeES32ForTesting` |
+| ANGLE disabled | `preferSubmitAtFBOBoundary` |
+| Cache | multifile enabled; global monolithic pipeline sync removed (`DEV-B8-WIN-01`) |
+| TFT build | `18.1-5423749` / `8423749` |
+
+These are effective DEV test values proven by live QEMU/runtime receipts. The stored StockShadow AVD baseline intentionally remains 6/5120 for restoration; the runtime transaction/authority applies the effective DEV values and restores baseline on shutdown.
+
+### Protected Control historical baseline
+
+The protected normal-play Control configuration below remains valid as Control/history and rollback context. It is **not** the current DEV optimization baseline. Change one declared DEV test factor at a time; do not silently mix these profiles.
 
 | Variable | Control |
 | --- | --- |
@@ -212,7 +293,7 @@ declared test factor at a time; do not silently mix profiles.
 | TFT FPS cap | 60 |
 | Riot Performance Mode Beta | OFF |
 
-The current settings UI safely exposes only:
+The protected Control/native settings UI historically exposes only:
 
 - vCPU: 4, 6, 8;
 - guest RAM: 4096, 5120, 6144 MiB;
@@ -460,11 +541,11 @@ Decision rules:
 
 ### 2026-09-02 restored play authority
 
-- **VERIFIED CURRENT LAUNCH:** capture
+- **VERIFIED HISTORICAL LAUNCH:** capture
   `2026-09-02T05-54-33.919Z-e13fd9b8-1091-4516-bd6e-66f8b50a912d` passed the
   exclusive-runtime preflight, launched through the packaged Mac host, authorized
   ADB on 5038 / `emulator-5582`, and produced a 1920x1080 first native frame.
-- **VERIFIED CURRENT SETTINGS:** preset `control`, six vCPU, 5120 MiB RAM,
+- **VERIFIED HISTORICAL SETTINGS:** protected Control preset `control`, six vCPU, 5120 MiB RAM,
   1920x1080 at 320 dpi and 60 Hz. This is the normal-play authority restored for
   the user's game; do not restart or replace it during live play.
 - **VERIFIED CONTROL RESULT:** graphics run
@@ -870,17 +951,16 @@ They do not override the current stock-shadow DEV authority.
 
 ## 15. Authority and update rule
 
-Use this precedence for current truth:
+Use this precedence for current project truth:
 
-1. direct current machine/runtime/SQL evidence;
-2. `ssot/runtime-authority.json` and `ssot/STACK.lock.yaml` after reconciliation;
-3. current native source and tests;
-4. `benchmark.md` for formulas, validity, analysis output, and current findings;
-5. `docs/TFTMAC_NATIVE_RUNTIME_KNOWLEDGE_BASE.md` and `dev.md`;
-6. historical campaign docs and SQL, explicitly labeled historical;
-7. plans, simulations, and research as hypotheses only.
+1. `facts.md` — first project-specific authority for current facts, boundaries, and mandatory rules;
+2. `project.md` — living current-state wiki, which must agree with `facts.md`;
+3. newly observed direct machine/runtime/source evidence **only as a reconciliation trigger**: validate it, then update `facts.md`/`project.md` before relying on the new fact in a final plan or change;
+4. `CHANGELOG.md` — detailed append-only test/version history and integration decisions;
+5. reconciled machine-readable authority (`ssot/runtime-authority.json`, `ssot/STACK.lock.yaml`), current native source/tests, and `benchmark.md`;
+6. `docs/TFTMAC_NATIVE_RUNTIME_KNOWLEDGE_BASE.md`, `dev.md`, and other current references after checking them against items 1–5;
+7. historical campaign docs/SQL, plans, simulations, and research as dated evidence or hypotheses only.
 
-`TFTMAC.md`, old launchers, old Node helpers, old source-build plans, and old
-Medium-profile records are not current runtime authority. When a mutable fact
-changes, record the observation time and evidence; do not silently rewrite a
-historical result to look current.
+A conflicting lower-precedence document never wins merely because it is more detailed or newer-looking. If credible newer evidence disagrees with `facts.md`/`project.md`, stop the finalization step, validate the evidence, reconcile the authority records, and only then continue. `TFTMAC.md`, old launchers, old Node helpers, source-build plans, old profiles, and dated handoffs are never allowed to silently become current runtime authority.
+
+Before completion of a selected managed change, verify intended work is committed/published as required and `git status` is clean. Dirty generated test output is not an acceptable finished state.

@@ -1,5 +1,7 @@
 # TFTMAC Continuation Handoff — 2026-09-04
 
+> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+
 Copy this entire document into the next agent. Treat it as the authoritative pointer to current state, then verify the cheap, drift-prone facts locally before changing anything.
 
 ---
@@ -74,9 +76,11 @@ Copy this entire document into the next agent. Treat it as the authoritative poi
 - **GitHub Repository**: `https://github.com/flashls1/TFTMAC.git`
 - **Remote**: `origin`
 - **Branch**: `clara/implement-wave-b-runtime-mode-selection--215ec5a3`
-- **Protected Boundaries**:
-  - Control app at `/Applications/TFTMAC.app` (port 5038, serial `emulator-5582`) must never be modified or stopped.
-  - DEV app at `/Applications/TFTMAC DEV.app` (port 5041, serial `emulator-5586`) is the active isolated engineering target.
+- **Protected Boundaries / Development Doctrine**:
+  - Control app at `/Applications/TFTMAC.app` (port 5038, serial `emulator-5582`) is the protected stable known-good launcher. **Do not rebuild, patch, overwrite, replace, or install development work over Control.** Its executable SHA-256 `d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2` was restored/re-verified after an accidental 2026-09-04 test install.
+  - DEV app at `/Applications/TFTMAC DEV.app` (port 5041, serial `emulator-5586`, bundle `com.flashls1.tftmac.dev`) is the active isolated engineering target for all new features and experiments.
+  - Control remains available as the stable rollback/playable launcher while DEV evolves. The exclusive runtime lease may require Control to be cleanly closed to run DEV, but that never authorizes mutating Control.
+  - Promotion from DEV into a full production release is a separate explicit Flash-authorized release operation after DEV acceptance. Until promotion is authorized, only the DEV install may be replaced by development builds.
 
 ---
 

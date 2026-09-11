@@ -18,6 +18,7 @@
     "adbVendorKeysInjected": false
   },
   "runtimeProfile": {
+    "scope": "PROTECTED_CONTROL_HISTORICAL",
     "id": "tftmac_5gb_native_v1",
     "vcpu": 6,
     "ramMiB": 5120,
@@ -33,6 +34,55 @@
     "tftPerformanceModeBeta": false,
     "activeExperiment": "control"
   },
+  "currentDevWorking": {
+    "observedAt": "2026-09-10",
+    "sourceOfTruth": "facts.md + project.md; validated by RuntimeModeAuthority.swift and current live QEMU/runtime receipts",
+    "workingVersion": "DEV-B8-WIN-01",
+    "application": {
+      "path": "/Applications/TFTMAC DEV.app",
+      "bundleId": "com.flashls1.tftmac.dev",
+      "version": "2.3.0",
+      "build": "8"
+    },
+    "runtime": {
+      "mode": "advanced_diagnostics",
+      "variant": "stock_shadow",
+      "root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
+      "avd": "TFTMAC_Diagnostic_StockShadow_R1",
+      "adbSerial": "emulator-5586",
+      "adbServerPort": 5041,
+      "consolePort": 5586,
+      "controllerPort": 8556,
+      "effectiveVcpu": 8,
+      "effectiveRamMiB": 6144,
+      "storedAvdBaselineVcpu": 6,
+      "storedAvdBaselineRamMiB": 5120,
+      "storedAvdBaselineSHA256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125",
+      "display": "1920x1080",
+      "densityDpi": 320,
+      "refreshHz": 60,
+      "gpu": "host",
+      "audio": "coreaudio",
+      "snapshotPolicy": "cold_no_snapshot"
+    },
+    "package": {
+      "name": "com.riotgames.league.teamfighttactics",
+      "versionName": "18.1-5423749",
+      "versionCode": "8423749"
+    },
+    "graphics": {
+      "selectedGameRHI": "OPENGL_ES_ANGLE",
+      "angleRevision": "1166eec4c0b125e9e945196acfc549983ef72b18",
+      "route": "UNREAL_OPENGL_ES -> ANGLE_VULKAN -> GFXSTREAM_ASG -> HOST_VULKAN_MOLTENVK -> METAL"
+    },
+    "cache": {
+      "multifile": true,
+      "angleEnabled": "exposeNonConformant*:exposeES32ForTesting",
+      "angleDisabled": "preferSubmitAtFBOBoundary",
+      "syncMonolithicPipelinesToBlobCache": false
+    },
+    "promotionState": "VERIFIED_NET_IMPROVEMENT_INTEGRATED"
+  },
   "androidWebView": {
     "package": "com.google.android.webview",
     "preRepairVersion": "133.0.6943.137",
@@ -41,6 +91,7 @@
     "riotLoginActivity": "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
   },
   "package": {
+    "scope": "PROTECTED_CONTROL_HISTORICAL_OBSERVATION",
     "name": "com.riotgames.league.teamfighttactics",
     "versionName": "18.1-5402721",
     "versionCode": "8402721",
@@ -115,6 +166,7 @@
     "primaryTouchReceipt": "PRIMARY_TOUCH_INPUT_ACTIVE"
   },
   "currentHostAudit": {
+    "scope": "HISTORICAL_HOST_AUDIT_2026_08_31",
     "observedAt": "2026-08-31T23:13:30Z",
     "source": "timestamped current-host audit; distinct from finalInstalledRelease historical signing acceptance",
     "releaseIdentityHashesMatch": true,
@@ -124,7 +176,16 @@
     "installedRuntimeVerifier": "BLOCKED_SIGNING_IDENTITY",
     "conclusion": "Release identity hashes match the historical signed Build 8 receipt; current-host trust evaluation is a separate timestamped audit and does not rewrite historical release acceptance."
   },
+  "latestHostSigningRecheck": {
+    "observedAt": "2026-09-02T07:59:18Z",
+    "controlDeepStrictCodesign": "PASS",
+    "devDeepStrictCodesign": "PASS",
+    "signingIdentity": "TFTMAC Local Code Signing",
+    "protectedControlHashesMatch": true,
+    "installedRuntimeVerifier": "PASS"
+  },
   "currentGameplayCapture": {
+    "scope": "HISTORICAL_BUILD8_CAPTURE_2026_08_31",
     "captureId": "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200",
     "storage": "PRIVATE_LOCAL_ONLY",
     "database": {
@@ -158,6 +219,7 @@
     "nextLayer": "ADVANCED_SOURCE_CAUSAL_LOGGER_PARTIAL_NOT_LIVE_ACCEPTED"
   },
   "diagnosticRuntimeEligibility": {
+    "scope": "HISTORICAL_DIAGNOSTIC_ELIGIBILITY_WITH_CURRENT_DEV_POINTERS",
     "repository": "flashls1/tftmac-runtime",
     "commit": "c8aa26ebaa5b977965eb165ad8aac5c98408469f",
     "status": "ISOLATED_NON_COMPARABLE_DIAGNOSTIC_ELIGIBILITY_ONLY",
@@ -177,6 +239,7 @@
       "sourceHooks": "NOT_IMPLEMENTED"
     },
     "ownedProbeCampaign": {
+      "scope": "HISTORICAL_HANDOFF_STATE",
       "sequence": [
         "control",
         "queue_submit_inline",

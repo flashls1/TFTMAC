@@ -5,6 +5,7 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
+import ImageIO
 import Metal
 import SQLite3
 import SwiftProtobuf
@@ -107,6 +108,7 @@ private enum EmulatorInput: Sendable {
     case touch(TouchInput)
     case mouse(MouseInput)
     case keyboard(KeyboardInput)
+    case secureKeyboard(KeyboardInput)
     case secureUnlock(TFTMACGuestUnlockSecret)
 }
 
@@ -232,6 +234,13 @@ private struct GraphicsPipelineSnapshot: Sendable {
     let receipt: GraphicsStackReceipt
 }
 
+private struct GraphicsPipelineSnapshotContext: Sendable {
+    let gamePID: Int32?
+    let currentLayerName: String?
+    let packageVersion: String
+    let configurationSHA256: String
+}
+
 struct StreamFreshnessWindow: Sendable {
     let startedMonotonicNS: UInt64
     let endedMonotonicNS: UInt64
@@ -242,6 +251,14 @@ struct StreamFreshnessWindow: Sendable {
     let longestIdenticalRunMS: Double
     let sequenceDrops: UInt64
     let sampledPixelsPerFrame: Int
+}
+
+struct NativeDrawablePresentation: Sendable {
+    let presentationID: UInt64
+    let sourceSequence: UInt32?
+    let callbackMonotonicNS: UInt64
+    // Metal presentedTime: actual onscreen host time. Zero means dropped/unpresented.
+    let presentedHostTimeNS: UInt64
 }
 
 struct HostPresentationWindow: Sendable {
@@ -260,6 +277,10 @@ struct HostPresentationWindow: Sendable {
     let meanGPUTimeMS: Double?
     let p95GPUTimeMS: Double?
     let maximumGPUTimeMS: Double?
+    let recordsActualPresentations: Bool
+    let lastSubmittedPresentationID: UInt64
+    let actualPresentations: [NativeDrawablePresentation]
+    let actualPresentationLoss: Int
 }
 
 private struct DiagnosticArtifact: Sendable {
@@ -273,11 +294,11 @@ private struct DiagnosticArtifact: Sendable {
     let relativePath: String
     let byteCount: Int64
     let sha256: String
-    let analysisState: String
-    let normalizedRelativePath: String
-    let normalizedSHA256: String
-    let normalizedSummaryCSV: String
-    let traceProcessorSHA256: String
+    var analysisState: String
+    var normalizedRelativePath: String
+    var normalizedSHA256: String
+    var normalizedSummaryCSV: String
+    var traceProcessorSHA256: String
 }
 
 private struct GraphicsPipelineIncident: Sendable {
@@ -328,8 +349,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     private var activeDevFeatureReceiptJSON = "{}"
     private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    init(profile: TFTMACRuntimeProfile, applicationSupport: URL) throws {
-        configurationSHA256 = profile.experimentConfigurationReceipt.sha256
+    init(profile: TFTMACRuntimeProfile, applicationSupport: URL, configurationReceipt: RuntimeExperimentConfigurationReceipt? = nil) throws {
+        configurationSHA256 = (configurationReceipt ?? profile.experimentConfigurationReceipt).sha256
         targetFPS = profile.refreshHz
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -714,6 +735,22 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         }
     }
 
+    fileprivate func recordNativeClockBatch(_ batch: NativeClockBatch) {
+        enqueue {
+            for sample in batch.samples {
+                try self.execute(
+                    "INSERT INTO native_clock_samples(session_id, clock_epoch, guest_boot_id, batch_sequence, sample_sequence, host_t0_ns, guest_t1_ns, guest_t2_ns, host_t3_ns, offset_lower_ns, offset_upper_ns, uncertainty_ns, state, raw_path) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [.text(self.sessionIdentifier), .text(batch.epoch), .text(batch.bootID),
+                     .integer(Int64(batch.index)), .integer(Int64(sample.sequence)),
+                     .integer(Int64(sample.hostT0NS)), .integer(Int64(sample.guestT1NS)),
+                     .integer(Int64(sample.guestT2NS)), .integer(Int64(sample.hostT3NS)),
+                     .integer(sample.offsetLowerNS), .integer(sample.offsetUpperNS),
+                     .integer(Int64(sample.uncertaintyNS)), .text(sample.state), .text(batch.rawURL.path)]
+                )
+            }
+        }
+    }
+
     fileprivate func recordSurfaceFlinger(_ sample: SurfaceFlingerSample, label: String) {
         enqueue {
             try self.execute(
@@ -887,6 +924,20 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                     sample.maximumGPUTimeMS.map(SQLiteValue.real) ?? .null
                 ]
             )
+            if sample.recordsActualPresentations {
+                try self.transaction {
+                    try self.execute("INSERT INTO native_drawable_windows(session_id, ended_monotonic_ns, last_submitted_id, callback_count, lost_records) VALUES(?, ?, ?, ?, ?)",
+                        [.text(self.sessionIdentifier), .integer(Int64(bitPattern: sample.endedMonotonicNS)),
+                         .integer(Int64(sample.lastSubmittedPresentationID)), .integer(Int64(sample.actualPresentations.count)),
+                         .integer(Int64(sample.actualPresentationLoss))])
+                    for frame in sample.actualPresentations {
+                        try self.execute("INSERT INTO native_drawable_presentations(session_id, presentation_id, source_sequence, callback_monotonic_ns, presented_host_time_ns) VALUES(?, ?, ?, ?, ?)",
+                            [.text(self.sessionIdentifier), .integer(Int64(frame.presentationID)),
+                             frame.sourceSequence.map { .integer(Int64($0)) } ?? .null,
+                             .integer(Int64(bitPattern: frame.callbackMonotonicNS)), .integer(Int64(frame.presentedHostTimeNS))])
+                    }
+                }
+            }
         }
     }
 
@@ -950,6 +1001,18 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                     .text(artifact.normalizedRelativePath), .text(artifact.normalizedSHA256),
                     .text(artifact.normalizedSummaryCSV), .text(artifact.traceProcessorSHA256)
                 ]
+            )
+        }
+    }
+
+    fileprivate func recordDiagnosticArtifactAnalysis(_ artifact: DiagnosticArtifact) {
+        enqueue {
+            try self.execute(
+                "UPDATE diagnostic_artifacts SET analysis_state = ?, normalized_relative_path = ?, normalized_sha256 = ?, normalized_summary_csv = ?, trace_processor_sha256 = ? WHERE session_id = ? AND relative_path = ? AND sha256 = ?",
+                [.text(artifact.analysisState), .text(artifact.normalizedRelativePath),
+                 .text(artifact.normalizedSHA256), .text(artifact.normalizedSummaryCSV),
+                 .text(artifact.traceProcessorSHA256), .text(self.sessionIdentifier),
+                 .text(artifact.relativePath), .text(artifact.sha256)]
             )
         }
     }
@@ -1102,29 +1165,31 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         }
     }
 
-    fileprivate func recordInput(_ input: EmulatorInput) {
+    fileprivate func recordInput(_ envelope: RuntimeInputEnvelope<EmulatorInput>) {
+        let input = envelope.payload
+        let enqueued = Int64(bitPattern: envelope.enqueuedMonotonicNS)
         let values: [SQLiteValue]
         switch input {
         case .touch(let touch):
             values = [
-                .text(sessionIdentifier), .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
+                .text(sessionIdentifier), .integer(enqueued),
                 .text("touch"), .integer(Int64(touch.x)), .integer(Int64(touch.y)),
                 .null, .integer(Int64(touch.pressure)), .null, .null
             ]
         case .mouse(let mouse):
             values = [
-                .text(sessionIdentifier), .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
+                .text(sessionIdentifier), .integer(enqueued),
                 .text("mouse"), .integer(Int64(mouse.x)), .integer(Int64(mouse.y)),
                 .integer(Int64(mouse.buttons)), .null, .null, .null
             ]
         case .keyboard(let keyboard):
             values = [
-                .text(sessionIdentifier), .integer(Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)),
+                .text(sessionIdentifier), .integer(enqueued),
                 .text("keyboard"), .null, .null, .null, .null,
                 keyboard.text.map { .integer(Int64($0.count)) } ?? .null,
                 keyboard.key.map(SQLiteValue.text) ?? .null
             ]
-        case .secureUnlock:
+        case .secureUnlock, .secureKeyboard:
             return
         }
         enqueue {
@@ -1132,6 +1197,73 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 "INSERT INTO input_samples(session_id, monotonic_ns, input_kind, x, y, buttons, pressure, character_count, special_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 values
             )
+            try self.execute(
+                "INSERT INTO input_dispatch_samples(session_id, sequence, native_event_monotonic_ns, enqueued_monotonic_ns, status) VALUES(?, ?, ?, ?, 'QUEUED')",
+                [.text(self.sessionIdentifier), .integer(Int64(bitPattern: envelope.sequence)),
+                 envelope.nativeEventMonotonicNS.map { .integer(Int64(bitPattern: $0)) } ?? .null,
+                 .integer(enqueued)]
+            )
+        }
+    }
+
+    fileprivate func recordInputDispatch(sequence: UInt64, startedNS: UInt64) {
+        enqueue {
+            try self.execute(
+                "UPDATE input_dispatch_samples SET dispatched_monotonic_ns = ?, status = 'DISPATCHED' WHERE session_id = ? AND sequence = ?",
+                [.integer(Int64(bitPattern: startedNS)), .text(self.sessionIdentifier), .integer(Int64(bitPattern: sequence))]
+            )
+        }
+    }
+
+    fileprivate func recordInputCompletion(sequence: UInt64, completedNS: UInt64, succeeded: Bool) {
+        enqueue {
+            // An RPC acknowledgement is not a timestamp of consumption by TFT.
+            try self.execute(
+                "UPDATE input_dispatch_samples SET rpc_completed_monotonic_ns = ?, status = ? WHERE session_id = ? AND sequence = ?",
+                [.integer(Int64(bitPattern: completedNS)), .text(succeeded ? "RPC_ACKNOWLEDGED" : "RPC_FAILED"),
+                 .text(self.sessionIdentifier), .integer(Int64(bitPattern: sequence))]
+            )
+        }
+    }
+
+    func finalizeANGLEEvidence(pid: Int32) throws {
+        try queue.sync {
+            let files = ["driver-startup-logcat.raw.txt", "logcat.raw.txt"].map {
+                captureDirectory.appendingPathComponent($0)
+            }.filter { FileManager.default.fileExists(atPath: $0.path) }
+            let seals = try files.map { try DiagnosticArtifactFile.seal($0) }
+            guard !seals.isEmpty else { throw TFTMACRuntimeError("ANGLE recorder has no raw producer artifact.") }
+            let observed = Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+            let encoder = JSONEncoder()
+            var rows = 0
+            let summary = try ANGLEViewEvidence.normalize(files: files, pid: pid) { event in
+                let payload = String(decoding: try encoder.encode(event), as: UTF8.self)
+                try self.execute("INSERT INTO pipeline_events(session_id, epoch_id, schema_version, observed_monotonic_ns, component, boundary, event_kind, transport_work_id, present_lineage_id, lineage_generation, source_site_id, queue_depth, duration_ns, payload_json) VALUES(?, NULL, 1, ?, 'TFT_ANGLE', 'GUEST_GLES_VULKAN', ?, NULL, NULL, NULL, NULL, NULL, ?, ?)",
+                    [.text(self.sessionIdentifier), .integer(observed), .text(event.kind),
+                     event.durationNS.map { .integer(Int64($0)) } ?? .null, .text(payload)])
+                rows += 1
+            }
+            for seal in seals { try DiagnosticArtifactFile.verify(seal) }
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM pipeline_events WHERE component='TFT_ANGLE'", -1, &statement, nil) == SQLITE_OK,
+                  let statement else { throw TFTMACRuntimeError("ANGLE SQL readback failed.") }
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_step(statement) == SQLITE_ROW, sqlite3_column_int64(statement, 0) == Int64(rows), rows > 0 else {
+                throw TFTMACRuntimeError("ANGLE recorder is missing its verified TFT producer or SQL rows.")
+            }
+            let result: [String: Any] = ["schema": 1, "pid": pid, "sql_rows_read_back": rows,
+                "summary": try JSONSerialization.jsonObject(with: encoder.encode(summary)),
+                "producer_coverage": summary.healthy ? "COMPLETE" : "INCOMPLETE",
+                "clock_domain": "GUEST_CLOCK_MONOTONIC", "cross_boundary_attribution": "UNPROVEN",
+                "presentation_lineage": "UNPROVEN", "collector_overhead": "UNPROVEN",
+                "sources": seals.map { ["file": $0.url.lastPathComponent, "sha256": $0.sha256] }]
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+            let url = captureDirectory.appendingPathComponent("angle-driver-evidence.json")
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            let file = try FileHandle(forWritingTo: url)
+            try file.synchronize(); try file.close()
+            guard try Data(contentsOf: url) == data else { throw TFTMACRuntimeError("ANGLE evidence artifact readback failed.") }
         }
     }
 
@@ -1139,6 +1271,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         queue.sync {
             let now = Self.utcNow()
             let monotonic = Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+            try? self.execute(
+                "UPDATE input_dispatch_samples SET status = 'NOT_ACKNOWLEDGED_SESSION_ENDED' WHERE session_id = ? AND status IN ('QUEUED', 'DISPATCHED')",
+                [.text(self.sessionIdentifier)]
+            )
             if let activeGraphicsRunID {
                 try? self.closeGraphicsRun(
                     activeGraphicsRunID,
@@ -1306,6 +1442,22 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           sequence_drops INTEGER NOT NULL,
           sampled_pixels_per_frame INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS native_drawable_presentations(
+          session_id TEXT NOT NULL,
+          presentation_id INTEGER NOT NULL,
+          source_sequence INTEGER,
+          callback_monotonic_ns INTEGER NOT NULL,
+          presented_host_time_ns INTEGER NOT NULL,
+          PRIMARY KEY(session_id, presentation_id)
+        );
+        CREATE TABLE IF NOT EXISTS native_drawable_windows(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          ended_monotonic_ns INTEGER NOT NULL,
+          last_submitted_id INTEGER NOT NULL,
+          callback_count INTEGER NOT NULL,
+          lost_records INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS host_presentation_windows(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id TEXT NOT NULL,
@@ -1369,6 +1521,16 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           host_midpoint_ns INTEGER NOT NULL,
           round_trip_ns INTEGER NOT NULL,
           host_minus_guest_ns INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS native_clock_samples(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL, clock_epoch TEXT NOT NULL, guest_boot_id TEXT NOT NULL,
+          batch_sequence INTEGER NOT NULL, sample_sequence INTEGER NOT NULL,
+          host_t0_ns INTEGER NOT NULL, guest_t1_ns INTEGER NOT NULL,
+          guest_t2_ns INTEGER NOT NULL, host_t3_ns INTEGER NOT NULL,
+          offset_lower_ns INTEGER NOT NULL, offset_upper_ns INTEGER NOT NULL,
+          uncertainty_ns INTEGER NOT NULL, state TEXT NOT NULL, raw_path TEXT NOT NULL,
+          UNIQUE(session_id, clock_epoch, batch_sequence, sample_sequence)
         );
         CREATE TABLE IF NOT EXISTS surfaceflinger_samples(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1533,6 +1695,16 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           pressure INTEGER,
           character_count INTEGER,
           special_key TEXT
+        );
+        CREATE TABLE IF NOT EXISTS input_dispatch_samples(
+          session_id TEXT NOT NULL,
+          sequence INTEGER NOT NULL,
+          native_event_monotonic_ns INTEGER,
+          enqueued_monotonic_ns INTEGER NOT NULL,
+          dispatched_monotonic_ns INTEGER,
+          rpc_completed_monotonic_ns INTEGER,
+          status TEXT NOT NULL,
+          PRIMARY KEY(session_id, sequence)
         );
         CREATE TABLE IF NOT EXISTS pipeline_diagnostic_epochs(
           epoch_id TEXT PRIMARY KEY,
@@ -2244,7 +2416,7 @@ actor TFTMACRuntimeService {
     typealias GameFrameHandler = @MainActor @Sendable (GameFrameTelemetryWindow?) -> Void
 
     private let runtimeConfiguration: TFTMACSelectedRuntimeConfiguration
-    private let guestUnlockSecret: TFTMACGuestUnlockSecret
+    private let guestUnlockSecret: TFTMACGuestUnlockSecret?
     private let profile: TFTMACRuntimeProfile
     private let mailbox: LatestFrameMailbox
     private let status: StatusHandler
@@ -2262,12 +2434,15 @@ actor TFTMACRuntimeService {
     private var runtimeLease: TFTMACRuntimeLease?
     private var expectedSessionMarker: String?
     private var discovery: EmulatorControllerDiscovery?
-    private var inputContinuation: AsyncStream<EmulatorInput>.Continuation?
+    nonisolated private let inputChannel = RuntimeInputChannel<EmulatorInput>()
+    nonisolated private let riotInteraction = RiotLoginInteractionGuard()
     private var avdTransaction: AVDConfigurationTransaction?
+    private var firstFailureMessage: String?
     private var traceCaptureInProgress = false
     private var traceCaptureTask: Task<Void, Never>?
     private var traceCaptureMeasurementStartNS: UInt64?
     private var traceCaptureMeasurementEndNS: UInt64?
+    private var pendingTraceAnalysis: [DiagnosticArtifact] = []
     private var traceCaptureCount = 0
     private var automaticTraceCount = 0
     private var incidentTraceCount = 0
@@ -2282,7 +2457,66 @@ actor TFTMACRuntimeService {
     private var benchmarkDeadlineTask: Task<Void, Never>?
     private var latestGameFrameWindow: GameFrameTelemetryWindow?
     private var tftPackageVersion = "unknown"
+    private var riotLoginIMEConfigured = false
+    private var riotLoginFormAttempted = false
+    private var riotLoginManuallyRequested = false
+    private var riotLoginSplashTapAttempted = false
+    private var riotProcessStartedNS: UInt64 = 0
+    private var nativeClockSession: NativeClockSession?
+    private var nativeClockGuestReady = false
+    private var nativeClockUnavailable = false
+    private var angleDriverOverride: ANGLEDriverOverride?
+    private var angleDriverVerifiedPID: Int32?
+    private var angleDriverTransactionPending = false
+    private var lastRiotANRProbeNS: UInt64 = 0
+    private var riotANRRecoveryAttempts = 0
     private var stopping = false
+    private var highPerfOperationInProgress = false
+    private var highPerfTransactionPending = false
+    private var highPerfRestoreConfirmed = true
+    private var highPerfRestorationInProgress = false
+    private var graphicsSnapshotInFlight = false
+
+    private var usesPrivateHighPerf: Bool {
+        runtimeConfiguration.selection.mode == .advancedDiagnostics && runtimeConfiguration.workload == .officialTFT
+    }
+
+    private static let highPerfHashes = [
+        "debug-ramdisk.img": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
+        "DeviceProfiles.ini": "aa9672cd730e5e3c32e6c9a793a4ef98bef90d80124c7e22b196d2e174af07e1",
+        "profile-transaction.sh": "5718319c56995d00613b930acb5bc0a8e7b107d165fb819e748b0fcb050bff7f"
+    ]
+
+    private func highPerfReceipt(_ base: RuntimeExperimentConfigurationReceipt) -> RuntimeExperimentConfigurationReceipt {
+        guard usesPrivateHighPerf else { return base }
+        let value: [String: Any] = ["base_configuration": base.canonicalJSON,
+                                   "dev_private_highperf": Self.highPerfHashes, "android_hwui_renderer": "skiagl", "schema": 1]
+        let data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        return RuntimeExperimentConfigurationReceipt(canonicalJSON: String(decoding: data, as: UTF8.self),
+            sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+    }
+
+    private var effectiveConfigurationReceipt: RuntimeExperimentConfigurationReceipt {
+        highPerfReceipt(profile.experimentConfigurationReceipt)
+    }
+
+    private var effectiveComparisonSHA256: String {
+        highPerfReceipt(profile.with(experimentPreset: .control).experimentConfigurationReceipt).sha256
+    }
+
+    private func highPerfAssets() throws -> URL {
+        guard usesPrivateHighPerf, let resources = Bundle.main.resourceURL else {
+            throw TFTMACRuntimeError("Private HighPerf assets are available only to the DEV game runtime.")
+        }
+        let directory = resources.appendingPathComponent("DEVHighPerf", isDirectory: true)
+        for (name, expected) in Self.highPerfHashes {
+            let data = try Data(contentsOf: directory.appendingPathComponent(name))
+            guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == expected else {
+                throw TFTMACRuntimeError("DEV HighPerf asset failed its integrity check: \(name)")
+            }
+        }
+        return directory
+    }
 
     private var activeWorkloadPackage: String {
         runtimeConfiguration.workload == .ownedVulkanProbe
@@ -2292,7 +2526,7 @@ actor TFTMACRuntimeService {
 
     init(
         runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
-        guestUnlockSecret: TFTMACGuestUnlockSecret,
+        guestUnlockSecret: TFTMACGuestUnlockSecret?,
         mailbox: LatestFrameMailbox,
         status: @escaping StatusHandler,
         gameFrame: @escaping GameFrameHandler
@@ -2312,9 +2546,14 @@ actor TFTMACRuntimeService {
             self.paths = paths
             let telemetry = try TFTMACNativeTelemetry(
                 profile: profile,
-                applicationSupport: paths.applicationSupport
+                applicationSupport: paths.applicationSupport,
+                configurationReceipt: effectiveConfigurationReceipt
             )
             self.telemetry = telemetry
+            telemetry.recordEvent("AUTONOMOUS_LAUNCH_POLICY", payload: [
+                "silent_requested": TFTMACLaunchPolicy.isAutonomousSilent(),
+                "expected_activation_policy": TFTMACLaunchPolicy.isAutonomousSilent() ? "prohibited" : "regular"
+            ])
             labStore = try CombatBenchmarkLabStore(applicationSupport: paths.applicationSupport)
             await status("Starting Android through the native Mac app host…", false)
 
@@ -2340,6 +2579,7 @@ actor TFTMACRuntimeService {
             ])
             try assertRuntimeUnoccupied(paths: paths, telemetry: telemetry)
             try recoverInterruptedAVDTransaction(paths: paths)
+            try runtimeConfiguration.selection.validateForLaunch()
             recordFrozenReceipts(telemetry: telemetry, paths: paths)
             if let experiment = runtimeConfiguration.devExperimentProfile {
                 telemetry.beginDevExperiment(experiment, workload: runtimeConfiguration.workload)
@@ -2405,19 +2645,20 @@ actor TFTMACRuntimeService {
             ])
             try recordHostSchedulingReceipt(telemetry: telemetry)
 
-            let (inputStream, continuation) = AsyncStream.makeStream(
-                of: EmulatorInput.self,
-                bufferingPolicy: .bufferingNewest(256)
+            inputChannel.open(
+                onEnqueue: { telemetry.recordInput($0) },
+                onFailure: { error in
+                    telemetry.recordEvent("INPUT_CHANNEL_FAILED", payload: ["failure": String(describing: error)])
+                }
             )
-            inputContinuation = continuation
             try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { [profile, mailbox] in
+                group.addTask { [profile, mailbox, inputChannel] in
                     try await Self.runController(
                         discovery: discovery,
                         profile: profile,
                         mailbox: mailbox,
                         telemetry: telemetry,
-                        inputStream: inputStream,
+                        inputChannel: inputChannel,
                         expectedEmulatorVersionContains: paths.expectedEmulatorVersionContains,
                         status: self.status
                     )
@@ -2445,6 +2686,20 @@ actor TFTMACRuntimeService {
                 await cleanup(status: "STOPPED")
                 return
             }
+            if firstFailureMessage == nil {
+                firstFailureMessage = error.localizedDescription
+                if runtimeConfiguration.selection.mode == .advancedDiagnostics {
+                    do {
+                        let receipt = try DiagnosticArtifactFile.persistStartupFailure(
+                            error.localizedDescription, applicationSupport: runtimeConfiguration.applicationSupport
+                        )
+                        telemetry?.recordEvent("STARTUP_FAILURE_PRESERVED", payload: ["receipt": receipt.path])
+                    } catch {
+                        firstFailureMessage! += " (The private failure receipt could not be written: \(error.localizedDescription))"
+                    }
+                }
+            }
+            await status(firstFailureMessage ?? error.localizedDescription, true)
             telemetry?.recordEvent("RUNTIME_FAILED", payload: [
                 "error": error.localizedDescription,
                 "diagnostic": String(describing: error),
@@ -2470,25 +2725,24 @@ actor TFTMACRuntimeService {
                 ])
             }
             await cleanup(status: stopping ? "STOPPED" : "FAILED")
-            if !stopping { await status(error.localizedDescription, true) }
             throw error
         }
         await cleanup(status: "STOPPED")
     }
 
-    func sendMouse(_ input: MouseInput) {
-        telemetry?.recordInput(.mouse(input))
-        inputContinuation?.yield(.mouse(input))
+    nonisolated func sendMouse(_ input: MouseInput, nativeEventMonotonicNS: UInt64? = nil) {
+        riotInteraction.observeManualInput()
+        inputChannel.send(.mouse(input), nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
 
-    func sendTouch(_ input: TouchInput) {
-        telemetry?.recordInput(.touch(input))
-        inputContinuation?.yield(.touch(input))
+    nonisolated func sendTouch(_ input: TouchInput, nativeEventMonotonicNS: UInt64? = nil) {
+        riotInteraction.observeManualInput()
+        inputChannel.send(.touch(input), nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
 
-    func sendKeyboard(_ input: KeyboardInput) {
-        telemetry?.recordInput(.keyboard(input))
-        inputContinuation?.yield(.keyboard(input))
+    nonisolated func sendKeyboard(_ input: KeyboardInput, nativeEventMonotonicNS: UInt64? = nil) {
+        riotInteraction.observeManualInput()
+        inputChannel.send(.keyboard(input), nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
 
     func recordPresentation(_ sample: PresentationSample) {
@@ -2515,13 +2769,13 @@ actor TFTMACRuntimeService {
         }
 
         let nowNS = DispatchTime.now().uptimeNanoseconds
-        let receipt = profile.experimentConfigurationReceipt
+        let receipt = effectiveConfigurationReceipt
         activeCombatBenchmark = ActiveCombatBenchmark(
             benchmarkID: UUID().uuidString.lowercased(),
             sessionID: telemetry.sessionIdentifier,
             presetID: profile.experimentPreset,
             configurationSHA256: receipt.sha256,
-            comparisonIdentitySHA256: profile.comparisonConfigurationSHA256,
+            comparisonIdentitySHA256: effectiveComparisonSHA256,
             configurationJSON: receipt.canonicalJSON,
             tftPackageVersion: tftPackageVersion,
             performanceModeConfirmed: performanceModeConfirmed,
@@ -2702,11 +2956,31 @@ actor TFTMACRuntimeService {
         stopping = true
         if activeCombatBenchmark != nil { endCombatBenchmark(reason: "APPLICATION_STOP") }
         await status("Sealing SQL telemetry and stopping Android…", false)
-        inputContinuation?.finish()
+        inputChannel.finish()
+        // Normal application quit reaches stop() before cleanup(). Keep the
+        // guest alive until an active trace has been pulled and sealed here too.
+        if let traceCaptureTask {
+            await traceCaptureTask.value
+        }
+        closeNativeClockSession()
+        while highPerfOperationInProgress { try? await Task.sleep(for: .milliseconds(100)) }
         if let paths,
            let ownedPID = discovery?.processIdentifier,
            Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker) {
             if runtimeConfiguration.workload == .officialTFT {
+                if runtimeConfiguration.selection.mode == .advancedDiagnostics {
+                    let sync = try? Self.runCommand(
+                        paths.adb,
+                        ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "sync"],
+                        environment: Self.adbEnvironment(paths: paths),
+                        timeout: 10
+                    )
+                    telemetry?.recordEvent("RIOT_SESSION_STATE_SYNC_REQUESTED", payload: [
+                        "phase": "normal_dev_shutdown",
+                        "command_status": sync?.status ?? -1,
+                        "credential_data_observed": false
+                    ])
+                }
                 _ = try? Self.runCommand(
                     paths.adb,
                     ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell", "am", "force-stop", "com.riotgames.league.teamfighttactics"],
@@ -2715,6 +2989,7 @@ actor TFTMACRuntimeService {
                 )
                 try? await Task.sleep(for: .milliseconds(300))
             }
+            await restorePrivateHighPerf(paths: paths)
             telemetry?.recordEvent("EMULATOR_STOP_SIGNAL_SENT", payload: [
                 "pid": ownedPID,
                 "serial": paths.serial,
@@ -2731,8 +3006,14 @@ actor TFTMACRuntimeService {
     }
 
     private func cleanup(status finalStatus: String) async {
-        inputContinuation?.finish()
-        inputContinuation = nil
+        inputChannel.finish()
+        var logcatExitConfirmed = logcatProcess == nil
+        // Drain a capture before stopping the guest that still owns its raw file.
+        if let traceCaptureTask {
+            await traceCaptureTask.value
+            self.traceCaptureTask = nil
+        }
+        closeNativeClockSession()
         var emulatorExitConfirmed = true
         if let paths {
             let ownedPID = discovery?.processIdentifier ?? expectedSessionMarker.flatMap { marker in
@@ -2747,6 +3028,7 @@ actor TFTMACRuntimeService {
                 )
             } ?? false
             if ownsRunningEmulator {
+                await restorePrivateHighPerf(paths: paths)
                 recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
                 if let telemetry, runtimeConfiguration.workload == .officialTFT {
                     recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "session_end")
@@ -2766,7 +3048,7 @@ actor TFTMACRuntimeService {
             telemetry?.endGraphicsRun(reason: "APPLICATION_STOP")
             currentGamePID = nil
             currentExactLayerName = nil
-            stopLogcatCapture()
+            logcatExitConfirmed = stopLogcatCapture()
             if let ownedPID, ownsRunningEmulator {
                 _ = try? Self.runCommand(
                     paths.adb,
@@ -2813,22 +3095,52 @@ actor TFTMACRuntimeService {
             }
         }
         avdTransaction = nil
-        if let traceCaptureTask {
-            await traceCaptureTask.value
-            self.traceCaptureTask = nil
+        if emulatorExitConfirmed, let telemetry {
+            let pending = pendingTraceAnalysis
+            pendingTraceAnalysis.removeAll()
+            await Task.detached(priority: .utility) {
+                Self.analyzeCapturedTraces(pending, telemetry: telemetry)
+            }.value
         }
-        let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed ? "STOPPED" : "FAILED"
+        if angleDriverOverride?.viewDiagnosticsEnabled == true, let telemetry {
+            if let pid = angleDriverVerifiedPID {
+                let finalizationError = await Task.detached(priority: .utility) {
+                    do {
+                        try telemetry.finalizeANGLEEvidence(pid: pid)
+                        return nil as String?
+                    } catch {
+                        return error.localizedDescription
+                    }
+                }.value
+                if let finalizationError {
+                    telemetry.recordEvent("ANGLE_EVIDENCE_FAILED", payload: [
+                        "error": finalizationError,
+                        "readiness": false,
+                        "raw_preserved": true
+                    ])
+                } else {
+                    telemetry.recordEvent("ANGLE_EVIDENCE_FINALIZED", payload: ["pid": pid, "summary": "angle-driver-evidence.json", "acceptance": "DIAGNOSTIC_ONLY"])
+                }
+            } else {
+                telemetry.recordEvent("ANGLE_EVIDENCE_FAILED", payload: [
+                    "error": "Actual TFT driver identity was never verified.",
+                    "readiness": false,
+                    "raw_preserved": true
+                ])
+            }
+        }
+        let sealedStatus = finalStatus == "STOPPED" && emulatorExitConfirmed && avdRestoreConfirmed && highPerfRestoreConfirmed && logcatExitConfirmed ? "STOPPED" : "FAILED"
         telemetry?.finish(status: sealedStatus)
         runtimeLease?.release()
         runtimeLease = nil
-        await status(sealedStatus == "STOPPED" ? "TFTMAC stopped cleanly." : "TFTMAC needs attention.", sealedStatus == "FAILED")
+        await status(sealedStatus == "STOPPED" ? "TFTMAC stopped cleanly." : (firstFailureMessage ?? "TFTMAC cleanup failed; see the private capture for the failed restoration step."), sealedStatus == "FAILED")
     }
 
-    private func startLogcatCapture(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) throws {
+    private func startLogcatCapture(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, fromSelector: String? = nil) throws {
         guard logcatProcess == nil else { return }
         let outputURL = telemetry.captureDirectory.appendingPathComponent("logcat.raw.txt")
         let errorURL = telemetry.captureDirectory.appendingPathComponent("logcat.stderr.log")
-        let sessionStartSelector = try Self.adb(
+        let sessionStartSelector = try fromSelector ?? Self.adb(
             paths: paths,
             ["shell", "date '+%m-%d %H:%M:%S.%3N'"],
             timeout: 10
@@ -2868,31 +3180,47 @@ actor TFTMACRuntimeService {
             "raw_content_sensitive": true,
             "raw_content_excluded_from_sql": true,
             "session_start_selector": sessionStartSelector,
+            "continuation_from_pre_pause_selector": fromSelector != nil,
             "initial_backlog_lines_requested": 0,
             "process_pid": process.processIdentifier
         ])
     }
 
-    private func stopLogcatCapture() {
-        guard let process = logcatProcess else { return }
-        if process.isRunning {
+    @discardableResult private func stopLogcatCapture() -> Bool {
+        guard let process = logcatProcess else { return true }
+        let pid = process.processIdentifier
+        if process.isRunning, Self.processExists(pid) {
             process.terminate()
-            let deadline = Date().addingTimeInterval(2)
-            while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
+            let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
+            while Self.processExists(pid), DispatchTime.now().uptimeNanoseconds < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if Self.processExists(pid) { Darwin.kill(pid, SIGKILL) }
         }
+        let exitDeadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
+        while Self.processExists(pid), DispatchTime.now().uptimeNanoseconds < exitDeadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        guard !Self.processExists(pid) else {
+            telemetry?.recordEvent("LOGCAT_CAPTURE_STOP_FAILED", payload: ["process_pid": pid, "kernel_exit_confirmed": false])
+            return false
+        }
+        // Foundation's waitUntilExit can wait on a different cooperative thread's
+        // run loop after this actor resumes there. The kernel exit is the oracle.
+        let terminationStatus: Any = process.isRunning ? NSNull() : NSNumber(value: process.terminationStatus)
         try? logcatOutputHandle?.synchronize()
         try? logcatErrorHandle?.synchronize()
         try? logcatOutputHandle?.close()
         try? logcatErrorHandle?.close()
         telemetry?.recordEvent("LOGCAT_CAPTURE_STOPPED", payload: [
-            "termination_status": process.terminationStatus,
+            "termination_status": terminationStatus,
+            "kernel_exit_confirmed": true,
             "final_read_offset": String(logcatReadOffset)
         ])
         logcatProcess = nil
         logcatOutputHandle = nil
         logcatErrorHandle = nil
+        return true
     }
 
     private func waitForOwnedEmulatorExit(_ processIdentifier: Int32) async -> Bool {
@@ -2965,7 +3293,7 @@ actor TFTMACRuntimeService {
         telemetry: TFTMACNativeTelemetry,
         paths: TFTMACRuntimePaths
     ) {
-        let experimentReceipt = profile.experimentConfigurationReceipt
+        let experimentReceipt = effectiveConfigurationReceipt
         let receipts: [(String, String, String, String)] = [
             ("engine", "Unreal Engine", "user_locked_fact", "LOCKED"),
             ("runtime_mode", paths.mode.rawValue, "sealed runtime-mode registry", "DIRECT"),
@@ -3087,6 +3415,37 @@ actor TFTMACRuntimeService {
             "-grpc", "\(paths.controllerPort)", "-grpc-use-token",
             "-idle-grpc-timeout", "300"
         ]
+        if ProcessInfo.processInfo.environment["TFTMAC_PIPELINE_EVENT_V1"] == "1" {
+            let pipelineEventsDirectory = telemetry.captureDirectory.appendingPathComponent("pipeline-events", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: pipelineEventsDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            arguments.insert(contentsOf: [
+                "--env", "TFTMAC_PIPELINE_EVENT_V1=1",
+                "--env", "TFTMAC_PIPELINE_EVENTS_DIR=\(pipelineEventsDirectory.path)"
+            ], at: arguments.firstIndex(of: paths.hostApplication.path) ?? arguments.endIndex)
+            telemetry.recordEvent("CAUSAL_PIPELINE_RECORDER_ENABLED", payload: [
+                "schema": 1,
+                "events_directory": pipelineEventsDirectory.path,
+                "runtime_process": "emulator_host_child",
+                "mechanism_exercise_required": "sealed_pipeline_segment_from_current_runtime"
+            ])
+        }
+        if usesPrivateHighPerf {
+            let assets = try highPerfAssets()
+            let stock = paths.sdkRoot.appendingPathComponent("system-images/android-36/google_apis_playstore/arm64-v8a/ramdisk.img")
+            let stockData = try Data(contentsOf: stock)
+            guard SHA256.hash(data: stockData).map({ String(format: "%02x", $0) }).joined()
+                    == "93164613a195fff34efac0517eaa4640b43b7578925f2f96726c260d43503aaa" else {
+                throw TFTMACRuntimeError("DEV Android image changed; the HighPerf debug boot needs revalidation.")
+            }
+            arguments += ["-ramdisk", assets.appendingPathComponent("debug-ramdisk.img").path,
+                          "-append-userspace-opt", "androidboot.verifiedbootstate=orange", "-no-snapshot"]
+            telemetry.recordEvent("DEV_HIGHPERF_BOOT_ASSETS_VERIFIED", payload: ["sha256": Self.highPerfHashes,
+                "cold_boot": true, "adb_authentication": "required", "configuration_sha256": effectiveConfigurationReceipt.sha256])
+        }
         if paths.expectedEmulatorVersionContains == "37.1.11" {
             arguments += ["-crash-report-mode", "disabled"]
         }
@@ -3272,6 +3631,9 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
             if user.contains("RUNNING_UNLOCKED") { break }
+            guard let guestUnlockSecret else {
+                throw TFTMACRuntimeError("DEV Android still has a screen lock. Remove the Android lock before starting DEV.")
+            }
             if Date() >= nextUnlockAttempt, automaticUnlockAttempts < 2 {
                 automaticUnlockAttempted = true
                 automaticUnlockAttempts += 1
@@ -3282,7 +3644,7 @@ actor TFTMACRuntimeService {
                     "credential_logged": false,
                     "credential_in_process_arguments": false
                 ])
-                inputContinuation?.yield(.secureUnlock(guestUnlockSecret))
+                inputChannel.send(.secureUnlock(guestUnlockSecret))
                 nextUnlockAttempt = Date().addingTimeInterval(5)
             } else if automaticUnlockAttempts >= 2, Date() >= nextUnlockAttempt {
                 throw TFTMACRuntimeError("Android rejected automatic secure unlock after two bounded attempts.")
@@ -3330,19 +3692,28 @@ actor TFTMACRuntimeService {
             "version_code_line": versionCodeLine,
             "signing_line": signingLine
         ])
+        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
+        // Profile provisioning restarts adbd as root and then returns it to shell.
+        // The concurrent resource sampler must not create a boot-scoped endpoint earlier.
+        if angleDriverOverride == nil {
+            nativeClockGuestReady = true
+            recordClockSync(paths: paths, telemetry: telemetry)
+        }
         try await Task.sleep(for: .milliseconds(750))
         guard logcatProcess?.isRunning == true,
               Self.fileSize(telemetry.captureDirectory.appendingPathComponent("logcat.raw.txt")) > 0 else {
             throw TFTMACRuntimeError("The required local logcat recorder did not become healthy before TFT launch.")
         }
-        telemetry.recordEvent("LOGGER_HEALTH_GATE_PASSED", payload: [
+        telemetry.recordEvent("BASIC_RECORDER_READY", payload: [
             "logcat_growing": true,
             "resource_sampler_active": true,
-            "sql_database": "TFTMAC_NATIVE_RUNTIME.sqlite"
+            "sql_database": "TFTMAC_NATIVE_RUNTIME.sqlite",
+            "pipeline_attribution_ready": false,
+            "coverage_state": "PIPELINE_PRODUCERS_NOT_YET_VERIFIED"
         ])
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "before_tft_launch")
-        try await provisionTFTDeviceProfiles(paths: paths, telemetry: telemetry)
 
+        let highPerfLaunchEpoch = usesPrivateHighPerf ? try Self.adb(paths: paths, ["shell", "date +%s"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines) : "0"
         let resolved = try? Self.adb(
             paths: paths,
             ["shell", "cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", package],
@@ -3367,6 +3738,13 @@ actor TFTMACRuntimeService {
                 break
             }
             try await Task.sleep(for: .milliseconds(200))
+        }
+
+        if usesPrivateHighPerf { try await verifyHighPerfConsumption(paths: paths, telemetry: telemetry, launchEpoch: highPerfLaunchEpoch) }
+        try await verifyANGLEDriverLoaded(paths: paths, telemetry: telemetry)
+        if !nativeClockGuestReady {
+            nativeClockGuestReady = true
+            recordClockSync(paths: paths, telemetry: telemetry)
         }
 
         telemetry.recordEvent("TFT_READY_FOR_USER", payload: [
@@ -3605,99 +3983,350 @@ actor TFTMACRuntimeService {
         ])
     }
 
+    private func changeHighPerfADBD(paths: TFTMACRuntimePaths, root: Bool) async throws {
+        let operation = root ? "root" : "unroot"
+        var closedTransitionError: Error?
+        do { _ = try Self.adb(paths: paths, [operation], timeout: 15) }
+        catch {
+            guard error.localizedDescription.contains("adb: unable to connect for \(operation): closed") else { throw error }
+            closedTransitionError = error
+        }
+        var retried = false
+        for _ in 0..<30 {
+            try? await Task.sleep(for: .milliseconds(300))
+            if let result = try? Self.adb(paths: paths, ["shell", "id -u"], timeout: 5),
+               ["0", "2000"].contains(result.output.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                let actual = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                if actual == (root ? "0" : "2000") {
+                    if closedTransitionError != nil {
+                        telemetry?.recordEvent("ADB_TRANSITION_CLOSED_RECOVERED", payload: ["operation": operation, "verified_uid": actual, "resent_once": retried])
+                    }
+                    return
+                }
+                if closedTransitionError != nil && !retried {
+                    retried = true
+                    _ = try Self.adb(paths: paths, [operation], timeout: 15)
+                }
+            }
+        }
+        if let closedTransitionError { throw closedTransitionError }
+        throw TFTMACRuntimeError("DEV could not verify \(root ? "root" : "normal") ADB privileges.")
+    }
+
+    private func prepareANGLEDriverOverride(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) throws {
+        guard let path = ProcessInfo.processInfo.environment["TFTMAC_ANGLE_DRIVER_MANIFEST"] else { return }
+        guard paths.mode == .advancedDiagnostics, paths.serial == "emulator-5586",
+              paths.adbServerPort == 5041, path.hasPrefix("/") else {
+            throw TFTMACRuntimeError("ANGLE driver experiments require the isolated DEV runtime.")
+        }
+        let manifest = try ANGLEDriverOverride.load(URL(fileURLWithPath: path))
+        for key in ["angle_debug_package", "angle_gl_driver_selection_pkgs", "angle_gl_driver_selection_values"] {
+            let value = try Self.adb(paths: paths, ["shell", "settings", "get", "global", key], timeout: 5).output
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value == "null" else { throw TFTMACRuntimeError("ANGLE experiment requires the validated system driver selection: \(key).") }
+        }
+        let wrapper = try Self.adb(paths: paths, ["shell", "getprop", "wrap.com.riotgames.league.teamfighttactics"], timeout: 5).output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard wrapper.isEmpty else { throw TFTMACRuntimeError("ANGLE experiment requires TFT's normal launch path.") }
+        let saved = telemetry.captureDirectory.appendingPathComponent("angle-driver-manifest.json")
+        try Data(contentsOf: URL(fileURLWithPath: path)).write(to: saved)
+        let seal = try DiagnosticArtifactFile.seal(saved)
+        angleDriverOverride = manifest
+        telemetry.recordEvent("ANGLE_DRIVER_EXPERIMENT_SELECTED", payload: [
+            "manifest_sha256": seal.sha256, "manifest_path": saved.path,
+            "variant": manifest.variant, "angle_revision": manifest.angleRevision,
+            "reuse_enabled": manifest.reuseEnabled, "capture_frames": manifest.captureFrames,
+            "view_diagnostics_enabled": manifest.viewDiagnosticsEnabled == true,
+            "performance_acceptance": "UNPROVEN"
+        ])
+    }
+
+    private func applyANGLEDriverOverride(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, session: String) throws {
+        guard let manifest = angleDriverOverride else { return }
+        guard ANGLEDriverOverride.validSessionIdentifier(session), session == telemetry.sessionIdentifier,
+              let resources = Bundle.main.resourceURL else {
+            throw TFTMACRuntimeError("ANGLE driver transaction is missing its native session identity.")
+        }
+        let stage = "/data/local/tmp/tftmac-angle-\(session)"
+        _ = try Self.adb(paths: paths, ["shell", "mkdir", "-m", "700", stage], timeout: 5)
+        let script = resources.appendingPathComponent("ANGLEDriver/guest-driver-transaction.sh")
+        _ = try Self.adb(paths: paths, ["push", script.path, stage + "/transaction.sh"], timeout: 10)
+        try manifest.validate()
+        for library in manifest.libraries {
+            _ = try Self.adb(paths: paths, ["push", library.path, stage + "/" + library.name], timeout: 30)
+        }
+        for (name, data) in [("expected.sha256", manifest.expectedHashes()),
+                             ("reuse", Data((manifest.reuseEnabled ? "1\n" : "0\n").utf8)),
+                             ("capture-frames", Data("\(manifest.captureFrames)\n".utf8)),
+                             ("view-diagnostics", Data((manifest.viewDiagnosticsEnabled == true ? "1\n" : "0\n").utf8))] {
+            let file = telemetry.captureDirectory.appendingPathComponent("angle-driver-" + name)
+            try data.write(to: file)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            _ = try Self.adb(paths: paths, ["push", file.path, stage + "/" + name], timeout: 10)
+        }
+        // From this point a failed apply must still run the guarded rollback.
+        angleDriverTransactionPending = true
+        let result = try Self.adb(paths: paths, ["shell", "sh", stage + "/transaction.sh", "apply", session], timeout: 30).output
+        guard result.contains("ANGLE_MOUNTED") else { throw TFTMACRuntimeError("ANGLE driver mount was not verified.") }
+        telemetry.recordEvent("ANGLE_DRIVER_MOUNTED", payload: ["receipt": result, "loaded_identity_verified": false])
+    }
+
+    private func verifyANGLEDriverLoaded(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        guard let manifest = angleDriverOverride,
+              let session = expectedSessionMarker?.split(separator: "=").last else { return }
+        highPerfOperationInProgress = true
+        defer { highPerfOperationInProgress = false }
+        let selector = try Self.adb(paths: paths, ["shell", "date '+%m-%d %H:%M:%S.%3N'"], timeout: 5).output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard stopLogcatCapture() else { throw TFTMACRuntimeError("The logcat producer did not stop before ANGLE inspection.") }
+        for name in ["logcat.raw.txt", "logcat.stderr.log"] {
+            let source = telemetry.captureDirectory.appendingPathComponent(name)
+            try FileManager.default.moveItem(at: source,
+                to: telemetry.captureDirectory.appendingPathComponent("driver-startup-" + name))
+        }
+        do {
+            try await changeHighPerfADBD(paths: paths, root: true)
+            let stage = "/data/local/tmp/tftmac-angle-\(session)"
+            let text = try Self.adb(paths: paths, ["shell", "sh", stage + "/transaction.sh", "verify", String(session)], timeout: 15).output
+            let pid = try manifest.verifyLoadedReceipt(Data(text.utf8), session: String(session))
+            let file = telemetry.captureDirectory.appendingPathComponent("angle-driver-loaded-maps.txt")
+            let report = "/data/local/tmp/tftmac-angle-report-\(session)"
+            _ = try Self.adb(paths: paths, ["pull", report + "/loaded-maps.txt", file.path], timeout: 10)
+            let seal = try DiagnosticArtifactFile.seal(file)
+            try await changeHighPerfADBD(paths: paths, root: false)
+            try startLogcatCapture(paths: paths, telemetry: telemetry, fromSelector: selector)
+            guard try Self.readProcessID(paths: paths, packageName: "com.riotgames.league.teamfighttactics") == pid else {
+                throw TFTMACRuntimeError("TFT process changed during ANGLE identity verification.")
+            }
+            angleDriverVerifiedPID = pid
+            telemetry.recordEvent("ANGLE_DRIVER_LOADED_VERIFIED", payload: [
+                "pid": pid, "variant": manifest.variant, "reuse_enabled": manifest.reuseEnabled,
+                "loaded_library_count": 3, "inode_and_namespace_hashes_verified": true,
+                "maps_path": seal.url.path, "maps_sha256": seal.sha256, "receipt": text,
+                "logcat_continuation_from_pre_pause_selector": selector
+            ])
+        } catch {
+            try? await changeHighPerfADBD(paths: paths, root: false)
+            throw error
+        }
+    }
+
+    private func restoreANGLEDriverOverride(paths: TFTMACRuntimePaths, session: String) throws {
+        guard angleDriverTransactionPending else { return }
+        let stage = "/data/local/tmp/tftmac-angle-\(session)"
+        if let manifest = angleDriverOverride, manifest.captureFrames > 0, let telemetry {
+            do {
+                let capture = try Self.adb(paths: paths, ["shell", "cat", stage + "/capture-root"], timeout: 5).output
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let expected = "/data/user/0/com.riotgames.league.teamfighttactics/files/ta_\(session.suffix(12))"
+                guard capture == expected else { throw TFTMACRuntimeError("ANGLE capture ownership changed.") }
+                let archive = "/data/local/tmp/tftmac-angle-report-\(session)/captured-sequences.tar"
+                _ = try Self.adb(paths: paths, ["shell", "tar", "-cf", archive, "-C", capture, "."], timeout: 60)
+                let rawURL = telemetry.captureDirectory.appendingPathComponent("angle-captured-sequences.tar")
+                _ = try Self.adb(paths: paths, ["pull", archive, rawURL.path], timeout: 120)
+                let raw = try DiagnosticArtifactFile.seal(rawURL)
+                telemetry.recordEvent("ANGLE_CAPTURE_RAW_SEALED", payload: [
+                    "raw_path": raw.url.path, "sha256": raw.sha256, "byte_count": raw.byteCount,
+                    "normalization": "DEFERRED", "replay_validation": "UNPROVEN"
+                ])
+            } catch {
+                telemetry.recordEvent("ANGLE_CAPTURE_COLLECTION_FAILED", payload: [
+                    "reason": String(describing: error), "guest_capture_preserved": true,
+                    "replay_validation": "UNPROVEN"
+                ])
+            }
+        }
+        let receipt = try Self.adb(paths: paths, ["shell", "sh", stage + "/transaction.sh", "rollback", session], timeout: 30).output
+        guard receipt.contains("ANGLE_ROLLED_BACK") else { throw TFTMACRuntimeError("ANGLE rollback was not verified.") }
+        angleDriverTransactionPending = false
+        telemetry?.recordEvent("ANGLE_DRIVER_RESTORED", payload: ["receipt": receipt])
+    }
+
+    private func provisionPrivateHighPerf(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        guard tftPackageVersion == "versionName=18.1-5423749", let session = expectedSessionMarker?.split(separator: "=").last else {
+            throw TFTMACRuntimeError("DEV HighPerf requires the validated official TFT version and native session identity.")
+        }
+        let assets = try highPerfAssets()
+        try prepareANGLEDriverOverride(paths: paths, telemetry: telemetry)
+        highPerfOperationInProgress = true
+        defer { highPerfOperationInProgress = false }
+        _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
+        _ = try Self.adb(paths: paths, ["shell", "setprop debug.hwui.renderer skiagl"], timeout: 10)
+        let hwui = try Self.adb(paths: paths, ["shell", "getprop debug.hwui.renderer"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hwui == "skiagl" else { throw TFTMACRuntimeError("DEV could not establish the validated Android login renderer.") }
+        telemetry.recordEvent("DEV_LOGIN_HWUI_RENDERER_VERIFIED", payload: ["renderer": hwui, "game_angle_vulkan_unchanged": true])
+        guard stopLogcatCapture() else { throw TFTMACRuntimeError("The logcat producer did not stop before profile provisioning.") }
+        // Preserve the boot recorder; root/unroot restarts adbd, so gameplay gets a new recorder.
+        for name in ["logcat.raw.txt", "logcat.stderr.log"] {
+            let source = telemetry.captureDirectory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.moveItem(at: source, to: telemetry.captureDirectory.appendingPathComponent("boot-" + name))
+            }
+        }
+        do {
+            try await changeHighPerfADBD(paths: paths, root: true)
+            let identity = try Self.adb(paths: paths, ["shell", "getprop ro.boot.tftmac.session"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard identity == String(session) else { throw TFTMACRuntimeError("DEV HighPerf guest session mismatch.") }
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("DeviceProfiles.ini").path, "/data/local/tmp/tftmac-native-profile.ini"], timeout: 15)
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("profile-transaction.sh").path, "/data/local/tmp/tftmac-native-profile.sh"], timeout: 15)
+            highPerfTransactionPending = true
+            highPerfRestoreConfirmed = false
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh apply \(session)"], timeout: 30).output
+            guard receipt.contains("MOUNT_VERIFIED") else { throw TFTMACRuntimeError("DEV profile mount was not verified.") }
+            telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_MOUNT_VERIFIED", payload: ["receipt": receipt, "sha256": Self.highPerfHashes])
+            try receipt.write(to: telemetry.captureDirectory.appendingPathComponent("highperf-mount.txt"), atomically: true, encoding: .utf8)
+            try applyANGLEDriverOverride(paths: paths, telemetry: telemetry, session: String(session))
+            try await changeHighPerfADBD(paths: paths, root: false)
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            try startLogcatCapture(paths: paths, telemetry: telemetry)
+        } catch {
+            try? await changeHighPerfADBD(paths: paths, root: false)
+            throw error
+        }
+    }
+
+    private func restorePrivateHighPerf(paths: TFTMACRuntimePaths) async {
+        // stop() and run() cleanup can reenter this actor while ADB reconnects.
+        // Only one may own the root/mount transaction; the other observes its result.
+        while highPerfRestorationInProgress { await Task.yield() }
+        guard usesPrivateHighPerf, highPerfTransactionPending,
+              let session = expectedSessionMarker?.split(separator: "=").last else { return }
+        highPerfRestorationInProgress = true
+        defer { highPerfRestorationInProgress = false }
+        do {
+            // Framework commands run as shell; the diagnostic root domain is for file/mount work.
+            try await changeHighPerfADBD(paths: paths, root: false)
+            _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
+            guard stopLogcatCapture() else { throw TFTMACRuntimeError("The logcat producer did not stop before profile restoration.") }
+            try await changeHighPerfADBD(paths: paths, root: true)
+            try restoreANGLEDriverOverride(paths: paths, session: String(session))
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh rollback \(session)"], timeout: 30).output
+            try await changeHighPerfADBD(paths: paths, root: false)
+            highPerfTransactionPending = false
+            highPerfRestoreConfirmed = true
+            telemetry?.recordEvent("DEV_PRIVATE_HIGHPERF_RESTORED", payload: ["receipt": receipt])
+        } catch {
+            telemetry?.recordEvent("DEV_PRIVATE_HIGHPERF_RESTORE_FAILED", payload: ["error": error.localizedDescription, "journal_retained": true])
+            try? await changeHighPerfADBD(paths: paths, root: false)
+        }
+    }
+
+    private func verifyHighPerfConsumption(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, launchEpoch: String) async throws {
+        let ini = try String(contentsOf: highPerfAssets().appendingPathComponent("DeviceProfiles.ini"), encoding: .utf8)
+        var expected: [String: String] = [:]
+        for line in ini.split(whereSeparator: \.isNewline) where line.hasPrefix("CVars=") {
+            let pair = line.dropFirst(6).split(separator: "=", maxSplits: 1).map(String.init)
+            if pair.count == 2 { expected[pair[0]] = pair[1] }
+        }
+        let remote = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Logs/TFT.log"
+        let regex = try NSRegularExpression(pattern: #"Pushing Device Profile CVar: \[\[([^:]+):.*? -> ([^\]]+)\]\]"#)
+        for _ in 0..<60 {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            let modified = try? Self.adb(paths: paths, ["shell", "stat -c %Y \(remote)"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let modified, let time = Int64(modified), time >= (Int64(launchEpoch) ?? Int64.max),
+               let log = try? Self.adb(paths: paths, ["shell", "cat \(remote)"], timeout: 10).output {
+                var actual: [String: String] = [:]
+                for match in regex.matches(in: log, range: NSRange(log.startIndex..., in: log)) {
+                    if let key = Range(match.range(at: 1), in: log), let value = Range(match.range(at: 2), in: log) {
+                        actual[String(log[key])] = String(log[value])
+                    }
+                }
+                let rendererPreserved = log.contains("LogRHI: Initializing OpenGL RHI") && !log.contains("Creating Vulkan Device")
+                if rendererPreserved && !expected.isEmpty && expected.allSatisfy({ actual[$0.key] == $0.value }) {
+                    let output = telemetry.captureDirectory.appendingPathComponent("highperf-engine-boot.log")
+                    try log.write(to: output, atomically: true, encoding: .utf8)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
+                    telemetry.recordEvent("DEV_HIGHPERF_ENGINE_TARGETS_ACCEPTED", payload: ["targets": expected, "target_count": expected.count,
+                        "source": output.lastPathComponent, "source_is_fresh": true, "game_rhi": "OpenGL through ANGLE", "baseline_non_target_values_preserved": true, "sustained_gameplay_60fps": "UNPROVEN"])
+                    return
+                }
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+        throw TFTMACRuntimeError("TFT did not confirm the DEV HighPerf settings in its fresh engine log.")
+    }
+
     private func provisionTFTDeviceProfiles(
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) async throws {
+        if usesPrivateHighPerf {
+            try await provisionPrivateHighPerf(paths: paths, telemetry: telemetry)
+            return
+        }
         let iniContent = """
         [Android_MatchedFragments DeviceProfile]
         DeviceType=Android
         BaseProfileName=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.MobileContentScaleFactor=1.0
-        +CVars=r.ScreenPercentage=100
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         [Android_LowPerf_Fragment DeviceProfile]
         DeviceType=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         [Android_LowPerf_Frontend_Fragment DeviceProfile]
         DeviceType=Android
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
-        +CVars=r.VSync=1
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
-        +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
-        +CVars=tft.Audio.DeviceTier=High
-        +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
-        +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
+        +CVars=sg.ResolutionQuality=100
 
         [Android DeviceProfile]
         DeviceType=Android
         BaseProfileName=Mobile
         +CVars=tft.DefaultFrameRateLimit=60
         +CVars=t.MaxFPS=60
+        +CVars=sg.ResolutionQuality=100
         +CVars=r.VSync=1
-        +CVars=r.DynamicRes.OperationMode=1
-        +CVars=r.DynamicRes.FrameTimeBudget=16.666666
-        +CVars=r.DynamicRes.MinScreenPercentage=85
-        +CVars=a.StripFramesOnCompression=0
-        +CVars=a.StripOddFramesWhenFrameStripping=0
-        +CVars=r.SkeletalMeshForceLOD=0
+        +CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0
+        +CVars=Android.OpenGL.NumRemoteProgramCompileServices=4
+        +CVars=r.pso.PrecompileThreadPoolPercentOfHardwareThreads=0
+        +CVars=r.pso.PrecompileThreadPoolSize=4
+        +CVars=r.ShaderPipelineCache.BatchTime=4
         +CVars=r.Streaming.PoolSize=1000
-        +CVars=r.Streaming.PoolSizeForMeshes=250
-        +CVars=r.RenderTargetPoolMin=100
-        +CVars=r.pso.PrecompileThreadPoolSize=2
+        +CVars=r.Streaming.PoolSizeForMeshes=-1
+        +CVars=r.RenderTargetPoolMin=350
+        +CVars=r.OpenGL.DeferTextureCreation=0
+        +CVars=a.Budget.BudgetMs=6.0
         +CVars=tft.Audio.DeviceTier=High
         +CVars=tft.Audio.PlayOnlyOneArenaAtATime=false
         +CVars=tft.Audio.RestrictNumberOfAmbientSounds=false
-        +CVars=p.ClothPhysics=0
-        +CVars=grass.Enable=1
-        +CVars=r.MaterialQualityLevel=1
 
         """
-        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android"
+        let remoteDir = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Config/Android"
         let remoteFile = "\(remoteDir)/DeviceProfiles.ini"
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("DeviceProfiles-\(UUID().uuidString).ini")
         do {
@@ -3706,23 +4335,31 @@ actor TFTMACRuntimeService {
 
             _ = try Self.adb(paths: paths, ["shell", "mkdir", "-p", remoteDir], timeout: 15)
             _ = try Self.adb(paths: paths, ["push", tempFile.path, remoteFile], timeout: 15)
+            let remoteSHA = try? Self.adb(paths: paths, ["shell", "sha256sum", remoteFile], timeout: 10).output
 
             telemetry.recordReceipt(
                 key: "tft_device_profiles_provisioned",
-                value: "60_fps_override",
+                value: "6gb_highperf_v1",
                 source: "provisionTFTDeviceProfiles",
                 confidence: "DIRECT"
             )
             telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISIONED", payload: [
                 "path": remoteFile,
+                "profile": "6gb_highperf_v1",
                 "default_framerate_limit": 60,
-                "max_fps": 60,
-                "vsync": 1
+                "resolution_quality": 100,
+                "streaming_pool_mb": 1000,
+                "mesh_pool": -1,
+                "render_target_pool_min_mb": 350,
+                "animation_budget_ms": 6.0,
+                "remote_sha256": remoteSHA?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "UNKNOWN"
             ])
         } catch {
-            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_WARNING", payload: [
+            telemetry.recordEvent("TFT_DEVICE_PROFILES_PROVISION_FAILED", payload: [
+                "path": remoteFile,
                 "error": error.localizedDescription
             ])
+            throw error
         }
     }
 
@@ -3875,6 +4512,8 @@ actor TFTMACRuntimeService {
             currentGamePID = nil
             currentExactLayerName = nil
             consecutiveBadGraphicsWindows = 0
+            riotProcessStartedNS = 0
+            riotLoginSplashTapAttempted = false
         }
 
         telemetry.recordEvent(
@@ -3891,6 +4530,8 @@ actor TFTMACRuntimeService {
 
         if let observedGamePID {
             currentGamePID = observedGamePID
+            riotProcessStartedNS = DispatchTime.now().uptimeNanoseconds
+            riotLoginSplashTapAttempted = false
             graphicsAutomaticTraceCount = 0
             graphicsIncidentTraceCount = 0
             lastGraphicsAutomaticTraceNS = 0
@@ -3919,6 +4560,392 @@ actor TFTMACRuntimeService {
         }
     }
 
+    func requestSavedRiotSignIn() async {
+        guard runtimeConfiguration.selection.mode == .advancedDiagnostics else { return }
+        guard !riotLoginFormAttempted else {
+            await status("Saved sign-in was already attempted on this form. Manual sign-in remains available.", false)
+            return
+        }
+        riotLoginManuallyRequested = true
+        await status("Saved sign-in is waiting for the recognized Riot login form.", false)
+    }
+
+    private func readRiotLoginForm(paths: TFTMACRuntimePaths) throws -> RiotLoginForm {
+        // Raw accessibility data stays transient and private; never attach it to telemetry.
+        let directory = "/data/local/tmp/tftmac-login-\(UUID().uuidString.lowercased())"
+        let command = "umask 077; mkdir '\(directory)' || exit 1; trap 'rm -f \(directory)/form.xml; rmdir \(directory)' EXIT; uiautomator dump '\(directory)/form.xml' >/dev/null && cat '\(directory)/form.xml'"
+        do {
+            let raw = try Self.adb(paths: paths, ["shell", command], timeout: 20).output
+            guard let start = raw.range(of: "<?xml"), let end = raw.range(of: "</hierarchy>") else {
+                throw RiotLoginError.unrecognizedForm
+            }
+            return try RiotLoginForm.parse(Data(raw[start.lowerBound..<end.upperBound].utf8))
+        } catch { throw RiotLoginError.unrecognizedForm }
+    }
+
+    private func signInWithSavedRiotAccount(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async {
+        riotLoginFormAttempted = true
+        riotLoginManuallyRequested = false
+        let cdpResult = await runRiotCDPLogin(paths: paths)
+        var result = cdpResult
+        var mechanism = "ANDROID_WEBVIEW_CDP"
+        var submitted = cdpResult.output.contains("official Riot login form was submitted")
+        if !submitted {
+            let fallbackResult = await runRiotCoordinateLogin(paths: paths)
+            if fallbackResult.output.contains("official Riot login form was submitted") {
+                result = fallbackResult
+                mechanism = "ANDROID_AUTHENTICATED_INPUT_FALLBACK"
+                submitted = true
+            }
+        }
+        telemetry.recordEvent("RIOT_SAVED_SIGNIN_CDP_FINISHED", payload: [
+            "helper_exit_status": result.status,
+            "form_submitted": submitted,
+            "credential_source": "DEV_LocalCredentialFile",
+            "credential_data_recorded": false,
+            "mechanism": mechanism
+        ])
+        if submitted {
+            telemetry.recordEvent("RIOT_SAVED_SIGNIN_SUBMITTED", payload: [
+                "form_verified": true,
+                "credential_source": "DEV_LocalCredentialFile",
+                "attempts_this_form": 1,
+                "authentication_success": "NOT_YET_VERIFIED",
+                "credential_data_recorded": false,
+                "mechanism": mechanism
+            ])
+            await status("Saved Riot sign-in submitted through the Riot WebView. Waiting for Riot; manual interaction remains available.", false)
+        } else {
+            telemetry.recordEvent("RIOT_SAVED_SIGNIN_STOPPED", payload: [
+                "reason": "The saved-sign-in WebView helper did not submit the recognized form.",
+                "retry_this_form": false,
+                "helper_exit_status": result.status,
+                "mechanism": mechanism
+            ])
+            await status("Saved Riot sign-in did not submit the recognized WebView form. Manual sign-in remains available.", false)
+        }
+    }
+
+    private func runRiotCoordinateLogin(paths: TFTMACRuntimePaths) async -> ProcessResult {
+        let formDetected = await Task.detached(priority: .utility) {
+            Self.riotCredentialFormDetected(paths: paths)
+        }.value
+        guard formDetected else {
+            return ProcessResult(status: -1, output: "The Riot credential form was not visually verified.")
+        }
+        let credentials: RiotCredentials
+        do {
+            credentials = try RiotCredentialStore.load()
+        } catch {
+            return ProcessResult(status: -1, output: "The local DEV credential file could not be read.")
+        }
+        let generation = riotInteraction.snapshot()
+        let usernamePoint = (
+            x: Int32((Double(profile.width) * 0.275).rounded()),
+            y: Int32((Double(profile.height) * 0.379).rounded())
+        )
+        let passwordPoint = (
+            x: Int32((Double(profile.width) * 0.725).rounded()),
+            y: usernamePoint.y
+        )
+        let submitPoint = (
+            x: Int32((Double(profile.width) * 0.893).rounded()),
+            y: Int32((Double(profile.height) * 0.810).rounded())
+        )
+        do {
+            try await sendRiotTouch(usernamePoint.x, usernamePoint.y, expectedGeneration: generation)
+            try await sendRiotSecureText(credentials.username, expectedGeneration: generation)
+            try await sendRiotTouch(passwordPoint.x, passwordPoint.y, expectedGeneration: generation)
+            try await sendRiotSecureText(credentials.transientPassword(), expectedGeneration: generation)
+            try await Task.sleep(for: .milliseconds(500))
+            try await sendRiotTouch(submitPoint.x, submitPoint.y, expectedGeneration: generation)
+            return ProcessResult(status: 0, output: "The official Riot login form was submitted through authenticated input; credentials were not printed.")
+        } catch {
+            return ProcessResult(status: -1, output: "The authenticated Riot input fallback stopped before submission.")
+        }
+    }
+
+    private func sendRiotTouch(_ x: Int32, _ y: Int32, expectedGeneration: UInt64) async throws {
+        guard riotInteraction.snapshot() == expectedGeneration else { throw RiotLoginError.focusChanged }
+        inputChannel.send(.touch(.primary(x: x, y: y, isContact: true)))
+        try await Task.sleep(for: .milliseconds(30))
+        inputChannel.send(.touch(.primary(x: x, y: y, isContact: false)))
+        try await Task.sleep(for: .milliseconds(180))
+    }
+
+    private func sendRiotSecureText(_ text: String, expectedGeneration: UInt64) async throws {
+        for scalar in text.unicodeScalars {
+            guard riotInteraction.snapshot() == expectedGeneration else { throw RiotLoginError.focusChanged }
+            inputChannel.send(.secureKeyboard(KeyboardInput(text: String(scalar), key: nil)))
+            try await Task.sleep(for: .milliseconds(35))
+        }
+    }
+
+    private func runRiotCDPLogin(paths: TFTMACRuntimePaths) async -> ProcessResult {
+        guard let resources = Bundle.main.resourceURL else {
+            return ProcessResult(status: -1, output: "Riot WebView helper resources are unavailable.")
+        }
+        let helper = resources.appendingPathComponent("RiotLogin/login-tft-webview.mjs")
+        guard FileManager.default.fileExists(atPath: helper.path) else {
+            return ProcessResult(status: -1, output: "Riot WebView helper is not bundled.")
+        }
+        let nodeCandidates = [
+            "/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"
+        ].map(URL.init(fileURLWithPath:))
+        guard let node = nodeCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            return ProcessResult(status: -1, output: "Node.js is not installed at an accepted local path.")
+        }
+        let credentials: RiotCredentials
+        do {
+            credentials = try await Task.detached(priority: .userInitiated) {
+                try RiotCredentialStore.load()
+            }.value
+        } catch {
+            return ProcessResult(status: -1, output: "The local DEV credential file could not be read.")
+        }
+        let payload: Data
+        do {
+            payload = try JSONSerialization.data(withJSONObject: [
+                "username": credentials.username,
+                "password": credentials.transientPassword()
+            ])
+        } catch {
+            return ProcessResult(status: -1, output: "The private Riot credential pipe could not be prepared.")
+        }
+
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                guard let pid = try Self.readProcessID(
+                    paths: paths,
+                    packageName: "com.riotgames.league.teamfighttactics"
+                ) else {
+                    return ProcessResult(status: -1, output: "The Riot process was not running.")
+                }
+                let socket = "localabstract:webview_devtools_remote_\(pid)"
+                let forward = try Self.adb(paths: paths, ["forward", "tcp:0", socket], timeout: 10)
+                let port = forward.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard Int(port) != nil else {
+                    return ProcessResult(status: -1, output: "The Riot WebView DevTools socket was not available.")
+                }
+                defer { _ = try? Self.adb(paths: paths, ["forward", "--remove", "tcp:\(port)"], timeout: 10) }
+                var environment = Self.adbEnvironment(paths: paths)
+                environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+                return try Self.runCommand(
+                    node,
+                    [helper.path, port, "--stdin"],
+                    environment: environment,
+                    input: payload,
+                    timeout: 35
+                )
+            } catch {
+                return ProcessResult(status: -1, output: "The Riot WebView helper could not run.")
+            }
+        }.value
+    }
+
+    nonisolated private static func riotSignInSplashDetected(paths: TFTMACRuntimePaths) -> Bool {
+        let process = Process()
+        process.executableURL = paths.adb
+        process.arguments = [
+            "-P", "\(paths.adbServerPort)", "-s", paths.serial,
+            "exec-out", "screencap", "-p"
+        ]
+        process.environment = adbEnvironment(paths: paths)
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  image.width > 0, image.height > 0,
+                  let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return false }
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            guard let context = CGContext(
+                data: &pixels,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+
+            func sample(_ xRatio: Double, _ yRatio: Double) -> (UInt8, UInt8, UInt8) {
+                let x = min(image.width - 1, max(0, Int((xRatio * Double(image.width)).rounded())))
+                let topY = min(image.height - 1, max(0, Int((yRatio * Double(image.height)).rounded())))
+                let y = topY
+                let offset = (y * image.width + x) * 4
+                return (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+            }
+
+            let buttonBody = sample(0.45, 0.676)
+            let buttonUpper = sample(0.45, 0.63)
+            let createBody = sample(0.45, 0.75)
+            let background = sample(0.15, 0.50)
+            let brownButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red < 120 && green < 90 && blue < 70 && red > blue
+            }
+            let darkCreateButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red < 70 && green < 70 && blue < 70
+            }
+            return brownButton(buttonBody.0, buttonBody.1, buttonBody.2)
+                && brownButton(buttonUpper.0, buttonUpper.1, buttonUpper.2)
+                && darkCreateButton(createBody.0, createBody.1, createBody.2)
+                && background.2 > background.0 + 60
+        } catch {
+            return false
+        }
+    }
+
+    nonisolated private static func riotCredentialFormDetected(paths: TFTMACRuntimePaths) -> Bool {
+        let process = Process()
+        process.executableURL = paths.adb
+        process.arguments = [
+            "-P", "\(paths.adbServerPort)", "-s", paths.serial,
+            "exec-out", "screencap", "-p"
+        ]
+        process.environment = adbEnvironment(paths: paths)
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  image.width > 0, image.height > 0,
+                  let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return false }
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            guard let context = CGContext(
+                data: &pixels,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+
+            func sample(_ xRatio: Double, _ yRatio: Double) -> (UInt8, UInt8, UInt8) {
+                let x = min(image.width - 1, max(0, Int((xRatio * Double(image.width)).rounded())))
+                let topY = min(image.height - 1, max(0, Int((yRatio * Double(image.height)).rounded())))
+                let y = topY
+                let offset = (y * image.width + x) * 4
+                return (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+            }
+
+            let background = sample(0.50, 0.50)
+            let username = sample(0.275, 0.379)
+            let password = sample(0.725, 0.379)
+            let submit = sample(0.893, 0.810)
+            let nearWhite: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 242 && green >= 242 && blue >= 242
+            }
+            let field: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 215 && red <= 245 && abs(Int(red) - Int(green)) <= 2 && abs(Int(green) - Int(blue)) <= 2
+            }
+            let submitButton: (UInt8, UInt8, UInt8) -> Bool = { red, green, blue in
+                red >= 210 && red <= 245 && abs(Int(red) - Int(green)) <= 2 && abs(Int(green) - Int(blue)) <= 2
+            }
+            return nearWhite(background.0, background.1, background.2)
+                && field(username.0, username.1, username.2)
+                && field(password.0, password.1, password.2)
+                && submitButton(submit.0, submit.1, submit.2)
+        } catch {
+            return false
+        }
+    }
+
+    private func maintainRiotLoginReliability(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async {
+        guard runtimeConfiguration.selection.mode == .advancedDiagnostics,
+              runtimeConfiguration.workload == .officialTFT else { return }
+
+        let nowNS = DispatchTime.now().uptimeNanoseconds
+        if lastRiotANRProbeNS != 0, nowNS - lastRiotANRProbeNS < 750_000_000 { return }
+        lastRiotANRProbeNS = nowNS
+
+        guard let windows = try? Self.adb(
+            paths: paths,
+            ["shell", "dumpsys", "window"],
+            timeout: 10
+        ).output else { return }
+
+        let loginFocused = windows.split(whereSeparator: \.isNewline).contains { rawLine in
+            let line = String(rawLine)
+            return line.contains(GameFrameTelemetry.tftMobileFREActivity)
+                && (line.contains("mCurrentFocus=") || line.contains("mFocusedApp="))
+        }
+
+        if loginFocused, !riotLoginIMEConfigured {
+            let result = try? Self.adb(
+                paths: paths,
+                ["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
+                timeout: 10
+            )
+            if result?.status == 0 {
+                riotLoginIMEConfigured = true
+            }
+            telemetry.recordEvent("RIOT_LOGIN_IME_RECOVERY_STATE_APPLIED", payload: [
+                "show_ime_with_hard_keyboard": 0,
+                "command_status": result?.status ?? -1,
+                "credential_data_observed": false
+            ])
+        }
+
+        let splashDetected = await Task.detached(priority: .utility) {
+            Self.riotSignInSplashDetected(paths: paths)
+        }.value
+        if !loginFocused,
+           !riotLoginSplashTapAttempted,
+           currentGamePID != nil,
+           riotProcessStartedNS != 0,
+           nowNS - riotProcessStartedNS < 120_000_000_000,
+           splashDetected {
+            let x = profile.width / 2
+            let y = Int((Double(profile.height) * 0.6574).rounded())
+            let result = try? Self.adb(
+                paths: paths,
+                ["shell", "input", "tap", "\(x)", "\(y)"],
+                timeout: 10
+            )
+            riotLoginSplashTapAttempted = true
+            telemetry.recordEvent("RIOT_LOGIN_SPLASH_SIGN_IN_TAPPED", payload: [
+                "x": x,
+                "y": y,
+                "command_status": result?.status ?? -1,
+                "credential_data_observed": false,
+                "mechanism": "UNREAL_SIGN_IN_SPLASH_TO_WEBVIEW"
+            ])
+        }
+
+        if !loginFocused {
+            riotLoginFormAttempted = false
+        } else if !riotLoginFormAttempted, RiotCredentialStore.remember || riotLoginManuallyRequested {
+            await signInWithSavedRiotAccount(paths: paths, telemetry: telemetry)
+        }
+
+        let package = "com.riotgames.league.teamfighttactics"
+        guard windows.contains("Application Not Responding: \(package)"),
+              riotANRRecoveryAttempts == 0 else { return }
+        riotANRRecoveryAttempts = 1
+        telemetry.recordEvent("RIOT_ANR_DIALOG_REQUIRES_ATTENTION", payload: [
+            "automatic_dialog_action": "none",
+            "input_remains_enabled": true,
+            "credential_data_observed": false
+        ])
+    }
+
     private func sampleGameFrames(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         var sampler = GameFrameTelemetrySampler(
             requiredLayerIdentity: runtimeConfiguration.workload == .ownedVulkanProbe
@@ -3942,6 +4969,7 @@ actor TFTMACRuntimeService {
                         observer: "ONE_SECOND_GRAPHICS_SAMPLER"
                     )
                 }
+                await maintainRiotLoginReliability(paths: paths, telemetry: telemetry)
                 let layerStatus: GameFrameTelemetryStatus
                 if sampler.selectedLayer == nil {
                     let layers = try Self.adb(
@@ -4173,7 +5201,10 @@ actor TFTMACRuntimeService {
                 await gameFrame(unavailable)
                 lastBoundaryNS = failedAt
             }
-            try await Task.sleep(for: sampler.selectedLayer == nil ? .seconds(1) : .seconds(2))
+            // DEV must poll within SurfaceFlinger's 127-frame retention at 60Hz.
+            let pollSeconds = runtimeConfiguration.selection.mode == .advancedDiagnostics
+                || sampler.selectedLayer == nil ? 1 : 2
+            try await Task.sleep(for: .seconds(pollSeconds))
         }
     }
 
@@ -4209,8 +5240,8 @@ actor TFTMACRuntimeService {
     ) {
         guard var active = activeCombatBenchmark else { return }
         let traceActive: Bool
-        if let traceStart = traceCaptureMeasurementStartNS,
-           let traceEnd = traceCaptureMeasurementEndNS {
+        if let traceStart = traceCaptureMeasurementStartNS {
+            let traceEnd = traceCaptureMeasurementEndNS ?? UInt64.max
             traceActive = window.endedMonotonicNS > traceStart
                 && window.startedMonotonicNS < traceEnd
         } else {
@@ -4276,7 +5307,7 @@ actor TFTMACRuntimeService {
     private func recordCorrectnessRejection(reason: String) {
         guard let telemetry else { return }
         let nowNS = DispatchTime.now().uptimeNanoseconds
-        let receipt = profile.experimentConfigurationReceipt
+        let receipt = effectiveConfigurationReceipt
         let metrics = CombatBenchmarkMetrics(
             combatDurationSeconds: 0,
             surfaceAvailability: 0,
@@ -4298,7 +5329,7 @@ actor TFTMACRuntimeService {
             sessionID: telemetry.sessionIdentifier,
             presetID: profile.experimentPreset,
             configurationSHA256: receipt.sha256,
-            comparisonIdentitySHA256: profile.comparisonConfigurationSHA256,
+            comparisonIdentitySHA256: effectiveComparisonSHA256,
             configurationJSON: receipt.canonicalJSON,
             tftPackageVersion: tftPackageVersion,
             performanceModeConfirmed: false,
@@ -4389,7 +5420,7 @@ actor TFTMACRuntimeService {
         }
         traceCaptureInProgress = true
         traceCaptureMeasurementStartNS = now
-        traceCaptureMeasurementEndNS = now &+ UInt64(durationSeconds) * 1_000_000_000
+        traceCaptureMeasurementEndNS = nil
         traceCaptureCount += 1
         let sequence = traceCaptureCount
         let graphicsContext = telemetry.currentGraphicsContext()
@@ -4398,7 +5429,8 @@ actor TFTMACRuntimeService {
             "trigger": trigger,
             "duration_seconds": durationSeconds,
             "capture_started_monotonic_ns": now,
-            "capture_ends_monotonic_ns": traceCaptureMeasurementEndNS ?? now,
+            "capture_ends_monotonic_ns": NSNull(),
+            "observer_interval": "SETUP_THROUGH_CAPTURE_DRAIN_AND_SEAL",
             "sequence": sequence,
             "buffer_mib": bufferMiB,
             "analysis_state": "RAW_CAPTURE_PENDING"
@@ -4443,15 +5475,20 @@ actor TFTMACRuntimeService {
     ) {
         traceCaptureInProgress = false
         traceCaptureTask = nil
+        traceCaptureMeasurementEndNS = DispatchTime.now().uptimeNanoseconds
         if let artifact {
             telemetry?.recordDiagnosticArtifact(artifact)
-            telemetry?.recordEvent("DIAGNOSTIC_TRACE_COMPLETED", payload: [
+            pendingTraceAnalysis.append(artifact)
+            let captureSealed = artifact.analysisState == "RAW_SEALED_ANALYSIS_PENDING"
+            telemetry?.recordEvent(captureSealed ? "DIAGNOSTIC_TRACE_COMPLETED" : "DIAGNOSTIC_TRACE_FAILED", payload: [
                 "scope": artifact.captureScope,
                 "trigger": artifact.trigger,
                 "relative_path": artifact.relativePath,
                 "byte_count": artifact.byteCount,
                 "sha256": artifact.sha256,
                 "analysis_state": artifact.analysisState,
+                "raw_capture_available": true,
+                "observer_ended_monotonic_ns": traceCaptureMeasurementEndNS ?? 0,
                 "normalized_relative_path": artifact.normalizedRelativePath,
                 "normalized_sha256": artifact.normalizedSHA256,
                 "trace_processor_sha256": artifact.traceProcessorSHA256
@@ -4462,7 +5499,8 @@ actor TFTMACRuntimeService {
                 "scope": scope,
                 "trigger": trigger,
                 "error": errorDescription ?? "unknown",
-                "raw_capture_available": false
+                "raw_capture_available": NSNull(),
+                "raw_capture_state": "NO_SEALED_ARTIFACT_RETURNED_CHECK_RETENTION_EVENTS"
             ])
         }
     }
@@ -4480,7 +5518,9 @@ actor TFTMACRuntimeService {
     ) throws -> DiagnosticArtifact {
         let manager = FileManager.default
         let traceDirectory = telemetry.captureDirectory.appendingPathComponent("perfetto", isDirectory: true)
-        try manager.createDirectory(at: traceDirectory, withIntermediateDirectories: true)
+        try manager.createDirectory(at: traceDirectory, withIntermediateDirectories: true,
+                                    attributes: [.posixPermissions: 0o700])
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: traceDirectory.path)
         let safeTrigger = trigger.lowercased().map { character -> Character in
             character.isLetter || character.isNumber || character == "-" || character == "_" ? character : "-"
         }
@@ -4491,6 +5531,20 @@ actor TFTMACRuntimeService {
         let hostURL = traceDirectory.appendingPathComponent(fileName)
         let metadataURL = hostURL.appendingPathExtension("json")
         let remotePath = "/data/misc/perfetto-traces/tftmac-native-\(UUID().uuidString).pftrace"
+        var hostRawSealed = false
+        defer {
+            if hostRawSealed {
+                _ = try? adb(paths: paths, ["shell", "rm", "-f", remotePath], timeout: 10)
+            } else {
+                // A failed pull, full host disk, or interrupted command must not
+                // delete the only possible raw copy. Its validity is still unknown.
+                telemetry.recordEvent("DIAGNOSTIC_RAW_RETENTION_REQUIRED", payload: [
+                    "guest_path": remotePath, "host_relative_path": "perfetto/\(fileName)",
+                    "host_partial_file_exists": manager.fileExists(atPath: hostURL.path),
+                    "raw_identity_verified": false, "guest_copy_removal_withheld": true
+                ])
+            }
+        }
         let durationMS = max(1_000, durationSeconds * 1_000)
         let config = """
         buffers { size_kb: \(max(1, bufferMiB) * 1024) fill_policy: RING_BUFFER }
@@ -4523,21 +5577,17 @@ actor TFTMACRuntimeService {
             timeout: TimeInterval(durationSeconds + 30)
         )
         guard trace.status == 0 else {
-            _ = try? adb(paths: paths, ["shell", "rm", "-f", remotePath], timeout: 10)
             throw TFTMACRuntimeError("Perfetto capture failed: \(trace.output.suffix(1200))")
         }
-        defer { _ = try? adb(paths: paths, ["shell", "rm", "-f", remotePath], timeout: 10) }
-        _ = try adb(paths: paths, ["pull", remotePath, hostURL.path], timeout: 120)
-        let data = try Data(contentsOf: hostURL)
-        guard !data.isEmpty else { throw TFTMACRuntimeError("Perfetto returned an empty trace.") }
-        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let normalized: (url: URL, data: Data, sha256: String, processorSHA256: String)
-        do {
-            normalized = try normalizePerfettoTrace(hostURL: hostURL)
-        } catch {
-            try? manager.removeItem(at: hostURL)
-            throw TFTMACRuntimeError("Perfetto trace normalization failed and the unprocessed raw trace was removed: \(error.localizedDescription)")
+        let pull = try adb(paths: paths, ["pull", remotePath, hostURL.path], timeout: 120)
+        guard pull.status == 0 else {
+            throw TFTMACRuntimeError("Perfetto raw pull failed; guest copy retained: \(pull.output.suffix(1200))")
         }
+        let raw = try DiagnosticArtifactFile.seal(hostURL)
+        hostRawSealed = true
+        let digest = raw.sha256
+        // Raw capture is sealed independently. Analysis runs only after the emulator exits.
+        var analysisState = "RAW_SEALED_ANALYSIS_PENDING"
         let createdUTC = ISO8601DateFormatter().string(from: Date())
         let metadata: [String: Any] = [
             "schema": 1,
@@ -4549,12 +5599,12 @@ actor TFTMACRuntimeService {
             "duration_seconds": durationSeconds,
             "buffer_mib": bufferMiB,
             "trace_file_name": fileName,
-            "byte_count": data.count,
+            "byte_count": raw.byteCount,
             "sha256": digest,
-            "normalized_file_name": normalized.url.lastPathComponent,
-            "normalized_sha256": normalized.sha256,
+            "normalized_file_name": NSNull(),
+            "normalized_sha256": NSNull(),
             "trace_processor_version": "58.2",
-            "trace_processor_sha256": normalized.processorSHA256,
+            "trace_processor_sha256": NSNull(),
             "data_sources": [
                 "android.surfaceflinger.frame",
                 "android.surfaceflinger.frametimeline",
@@ -4564,13 +5614,21 @@ actor TFTMACRuntimeService {
                 "linux.sys_stats",
                 "linux.ftrace:sched_switch,sched_wakeup,sched_waking,power/cpu_frequency"
             ],
-            "analysis_state": "NORMALIZED_TRACE_PROCESSOR_V58_2"
+            "analysis_state": analysisState
         ]
         let metadataData = try JSONSerialization.data(
             withJSONObject: metadata,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
-        try metadataData.write(to: metadataURL, options: .atomic)
+        do {
+            try metadataData.write(to: metadataURL, options: .atomic)
+        } catch {
+            analysisState = "RAW_RETAINED_METADATA_WRITE_FAILED"
+            telemetry.recordEvent("DIAGNOSTIC_ARTIFACT_WRITE_FAILED", payload: [
+                "relative_path": "perfetto/\(fileName)", "raw_capture_available": true,
+                "error": error.localizedDescription
+            ])
+        }
         return DiagnosticArtifact(
             graphicsRunID: graphicsRunID,
             graphicsStackSHA256: graphicsStackSHA256,
@@ -4580,18 +5638,69 @@ actor TFTMACRuntimeService {
             kind: "PERFETTO_FRAME_PIPELINE_TRACE",
             trigger: trigger,
             relativePath: "perfetto/\(fileName)",
-            byteCount: Int64(data.count),
+            byteCount: raw.byteCount,
             sha256: digest,
-            analysisState: "NORMALIZED_TRACE_PROCESSOR_V58_2",
-            normalizedRelativePath: "perfetto/\(normalized.url.lastPathComponent)",
-            normalizedSHA256: normalized.sha256,
-            normalizedSummaryCSV: String(decoding: normalized.data, as: UTF8.self),
-            traceProcessorSHA256: normalized.processorSHA256
+            analysisState: analysisState,
+            normalizedRelativePath: "",
+            normalizedSHA256: "",
+            normalizedSummaryCSV: "",
+            traceProcessorSHA256: ""
         )
     }
 
+    nonisolated private static func analyzeCapturedTraces(
+        _ artifacts: [DiagnosticArtifact], telemetry: TFTMACNativeTelemetry
+    ) {
+        for var artifact in artifacts {
+            let startedNS = DispatchTime.now().uptimeNanoseconds
+            let hostURL = telemetry.captureDirectory.appendingPathComponent(artifact.relativePath)
+            do {
+                let raw = DiagnosticArtifactFile.Seal(url: hostURL, byteCount: artifact.byteCount, sha256: artifact.sha256)
+                let normalized = try normalizePerfettoTrace(raw: raw)
+                artifact.analysisState = "NORMALIZED_TRACE_PROCESSOR_V58_2"
+                artifact.normalizedRelativePath = "perfetto/\(normalized.url.lastPathComponent)"
+                artifact.normalizedSHA256 = normalized.sha256
+                artifact.normalizedSummaryCSV = String(decoding: normalized.data, as: UTF8.self)
+                artifact.traceProcessorSHA256 = normalized.processorSHA256
+            } catch {
+                artifact.analysisState = "ANALYSIS_FAILED_RAW_RETAINED"
+                telemetry.recordEvent("DIAGNOSTIC_TRACE_ANALYSIS_FAILED", payload: [
+                    "relative_path": artifact.relativePath,
+                    "raw_capture_available": FileManager.default.fileExists(atPath: hostURL.path),
+                    "error": error.localizedDescription
+                ])
+            }
+            do {
+                let metadataURL = hostURL.appendingPathExtension("json")
+                let metadataData = try Data(contentsOf: metadataURL)
+                guard var metadata = try JSONSerialization.jsonObject(with: metadataData) as? [String: Any] else {
+                    throw TFTMACRuntimeError("Trace metadata is malformed.")
+                }
+                metadata["analysis_state"] = artifact.analysisState
+                metadata["normalized_relative_path"] = artifact.normalizedRelativePath
+                metadata["normalized_sha256"] = artifact.normalizedSHA256
+                metadata["trace_processor_sha256"] = artifact.traceProcessorSHA256
+                let updated = try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+                try updated.write(to: metadataURL, options: .atomic)
+            } catch {
+                artifact.analysisState = "ANALYSIS_METADATA_WRITE_FAILED_RAW_RETAINED"
+                telemetry.recordEvent("DIAGNOSTIC_ARTIFACT_WRITE_FAILED", payload: [
+                    "relative_path": artifact.relativePath, "error": error.localizedDescription,
+                    "raw_capture_available": FileManager.default.fileExists(atPath: hostURL.path)
+                ])
+            }
+            telemetry.recordDiagnosticArtifactAnalysis(artifact)
+            telemetry.recordEvent("DIAGNOSTIC_TRACE_ANALYSIS_FINISHED", payload: [
+                "relative_path": artifact.relativePath, "analysis_state": artifact.analysisState,
+                "started_monotonic_ns": startedNS,
+                "ended_monotonic_ns": DispatchTime.now().uptimeNanoseconds,
+                "phase": "AFTER_EMULATOR_EXIT"
+            ])
+        }
+    }
+
     nonisolated private static func normalizePerfettoTrace(
-        hostURL: URL
+        raw: DiagnosticArtifactFile.Seal
     ) throws -> (url: URL, data: Data, sha256: String, processorSHA256: String) {
         let expectedProcessorSHA = "d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
         guard let resourceURL = Bundle.main.resourceURL else {
@@ -4617,38 +5726,64 @@ actor TFTMACRuntimeService {
           (SELECT COUNT(*) FROM slice WHERE name GLOB '*SurfaceFlinger*' OR name GLOB '*FrameTimeline*') AS surfaceflinger_slices,
           (SELECT COUNT(*) FROM process WHERE name = 'com.riotgames.league.teamfighttactics') AS tft_process_rows;
         """
-        let result = try runCommand(
-            processorURL,
-            ["query", hostURL.path, query],
-            timeout: 180
-        )
-        guard result.status == 0 else {
-            throw TFTMACRuntimeError("trace_processor query failed: \(result.output.suffix(1200))")
+        let normalized = try DiagnosticArtifactFile.normalize(raw) { hostURL in
+            let result = try runCommand(processorURL, ["query", hostURL.path, query], timeout: 180)
+            guard result.status == 0 else {
+                throw TFTMACRuntimeError("trace_processor query failed: \(result.output.suffix(1200))")
+            }
+            return Data(result.output.utf8)
         }
-        let normalizedData = Data(result.output.utf8)
-        guard !normalizedData.isEmpty else {
-            throw TFTMACRuntimeError("trace_processor returned an empty normalized summary.")
-        }
-        let normalizedURL = hostURL.appendingPathExtension("normalized.csv")
-        try normalizedData.write(to: normalizedURL, options: .atomic)
-        let normalizedSHA = SHA256.hash(data: normalizedData).map { String(format: "%02x", $0) }.joined()
-        return (normalizedURL, normalizedData, normalizedSHA, processorSHA)
+        return (normalized.url, normalized.data, normalized.sha256, processorSHA)
     }
 
     private func recordClockSync(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) {
-        let hostT0 = DispatchTime.now().uptimeNanoseconds
-        guard let output = try? Self.adb(paths: paths, ["shell", "cat", "/proc/uptime"], timeout: 10).output,
-              let seconds = output.split(whereSeparator: \.isWhitespace).first.flatMap({ Double($0) }) else { return }
-        let hostT1 = DispatchTime.now().uptimeNanoseconds
-        let guestNS = UInt64(max(0, seconds) * 1_000_000_000)
-        telemetry.recordClockSync(hostT0NS: hostT0, guestUptimeNS: guestNS, hostT1NS: hostT1)
-        if var active = activeCombatBenchmark {
-            active.recordClock(
-                hostMidpointNS: hostT0 &+ ((hostT1 &- hostT0) / 2),
-                roundTripNS: hostT1 &- hostT0
-            )
-            activeCombatBenchmark = active
+        guard !stopping, nativeClockGuestReady, !nativeClockUnavailable else { return }
+        do {
+            if nativeClockSession == nil {
+                guard paths.mode == .advancedDiagnostics, let resources = Bundle.main.resourceURL else {
+                    throw NativeClockSampleError.transport("native clock requires isolated DEV resources")
+                }
+                let directory = resources.appendingPathComponent("NativeClock", isDirectory: true)
+                nativeClockSession = try NativeClockSession(
+                    resources: directory, captureDirectory: telemetry.captureDirectory,
+                    adb: { arguments, timeout in
+                        try Self.adb(paths: paths, arguments, timeout: timeout).output
+                    },
+                    client: { arguments, timeout in
+                        // Keep even nonzero-exit output so the batch parser can preserve/reject it.
+                        try Self.runCommand(directory.appendingPathComponent("tftmac-clock-host"),
+                                            arguments, timeout: timeout).output
+                    }
+                )
+            }
+            guard let nativeClockSession else { return }
+            let batch = try nativeClockSession.sample()
+            telemetry.recordNativeClockBatch(batch)
+            telemetry.recordEvent("NATIVE_CLOCK_BATCH_RECORDED", payload: [
+                "clock_epoch": batch.epoch, "guest_boot_id": batch.bootID,
+                "batch_sequence": batch.index, "sample_count": batch.samples.count,
+                "precise_samples": batch.samples.filter(\.preciseAtSample).count,
+                "maximum_uncertainty_ns": batch.samples.map(\.uncertaintyNS).max() ?? 0,
+                "raw_path": batch.rawURL.path, "host_clock": "MACH_ABSOLUTE",
+                "guest_clock": "CLOCK_MONOTONIC", "long_interval_drift_bound_proven": false
+            ])
+            // Do not promote sparse sample brackets into continuous clock coverage.
+            // Existing captures and their old clock_sync_samples table remain readable.
+        } catch {
+            nativeClockUnavailable = true
+            telemetry.recordEvent("NATIVE_CLOCK_UNAVAILABLE", payload: [
+                "reason": String(describing: error), "precise_attribution_allowed": false
+            ])
+            closeNativeClockSession()
         }
+    }
+
+    private func closeNativeClockSession() {
+        guard let nativeClockSession else { return }
+        let errors = nativeClockSession.close()
+        telemetry?.recordEvent(errors.isEmpty ? "NATIVE_CLOCK_CLOSED" : "NATIVE_CLOCK_CLEANUP_FAILED",
+                               payload: ["clock_epoch": nativeClockSession.epoch, "errors": errors])
+        self.nativeClockSession = nil
     }
 
     private func recordDiagnosticSnapshot(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry?, label: String) {
@@ -4676,7 +5811,7 @@ actor TFTMACRuntimeService {
         ).output
         telemetry.recordEvent("RUNTIME_THIRTY_SECOND_RECEIPT", payload: [
             "preset_id": profile.experimentPreset.rawValue,
-            "configuration_sha256": profile.experimentConfigurationReceipt.sha256,
+            "configuration_sha256": effectiveConfigurationReceipt.sha256,
             "emulator_features_requested": profile.effectiveEmulatorFeatures,
             "display_geometry": geometry ?? "unavailable",
             "guest_egl": Self.firstRegexText("\\[ro.hardware.egl\\]: \\[(.*?)\\]", in: properties ?? "") ?? "unknown",
@@ -4689,6 +5824,41 @@ actor TFTMACRuntimeService {
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry,
         label: String
+    ) {
+        guard !graphicsSnapshotInFlight else {
+            telemetry.recordEvent("GRAPHICS_PIPELINE_SNAPSHOT_SKIPPED", payload: [
+                "label": label,
+                "reason": "SNAPSHOT_IN_FLIGHT"
+            ])
+            return
+        }
+        graphicsSnapshotInFlight = true
+        let context = GraphicsPipelineSnapshotContext(
+            gamePID: currentGamePID,
+            currentLayerName: currentExactLayerName,
+            packageVersion: tftPackageVersion,
+            configurationSHA256: effectiveConfigurationReceipt.sha256
+        )
+        Task.detached(priority: .utility) { [weak self, paths, telemetry, label, context] in
+            Self.recordGraphicsPipelineSnapshotSynchronously(
+                paths: paths,
+                telemetry: telemetry,
+                label: label,
+                context: context
+            )
+            await self?.finishGraphicsPipelineSnapshot()
+        }
+    }
+
+    private func finishGraphicsPipelineSnapshot() {
+        graphicsSnapshotInFlight = false
+    }
+
+    nonisolated private static func recordGraphicsPipelineSnapshotSynchronously(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        label: String,
+        context: GraphicsPipelineSnapshotContext
     ) {
         let stdout = Self.readTailText(
             telemetry.captureDirectory.appendingPathComponent("emulator.stdout.log"),
@@ -4811,9 +5981,9 @@ actor TFTMACRuntimeService {
             : "UNKNOWN_INCOMPLETE_RUNTIME_RECEIPT"
         let receipt = GraphicsStackReceipt(fields: [
             "tft_package_version": GraphicsStackReceiptField(
-                value: tftPackageVersion,
+                value: context.packageVersion,
                 source: "adb dumpsys package com.riotgames.league.teamfighttactics",
-                confidence: tftPackageVersion == "unknown" ? "UNKNOWN" : "DIRECT"
+                confidence: context.packageVersion == "unknown" ? "UNKNOWN" : "DIRECT"
             ),
             "tft_surface": GraphicsStackReceiptField(
                 value: exactLayerName ?? surfaceState,
@@ -4881,7 +6051,7 @@ actor TFTMACRuntimeService {
                 confidence: "DIRECT_SOURCE"
             ),
             "configuration_sha256": GraphicsStackReceiptField(
-                value: profile.experimentConfigurationReceipt.sha256,
+                value: context.configurationSHA256,
                 source: "canonical effective runtime configuration",
                 confidence: "DIRECT"
             ),
@@ -4898,8 +6068,8 @@ actor TFTMACRuntimeService {
         ])
         telemetry.recordGraphicsPipelineSnapshot(GraphicsPipelineSnapshot(
             label: label,
-            gamePID: currentGamePID,
-            exactLayerName: exactLayerName ?? currentExactLayerName,
+            gamePID: context.gamePID,
+            exactLayerName: exactLayerName ?? context.currentLayerName,
             tftSurfaceState: surfaceState,
             gameGraphicsAPI: gameGraphicsAPI,
             gameGraphicsAPIConfidence: gameGraphicsAPIConfidence,
@@ -5195,7 +6365,7 @@ actor TFTMACRuntimeService {
         profile: TFTMACRuntimeProfile,
         mailbox: LatestFrameMailbox,
         telemetry: TFTMACNativeTelemetry,
-        inputStream: AsyncStream<EmulatorInput>,
+        inputChannel: RuntimeInputChannel<EmulatorInput>,
         expectedEmulatorVersionContains: String,
         status: @escaping StatusHandler
     ) async throws {
@@ -5290,9 +6460,19 @@ actor TFTMACRuntimeService {
                 }
                 group.addTask {
                     var recordedTouchPipeline = false
-                    for await input in inputStream {
+                    for try await envelope in inputChannel.stream {
+                        inputChannel.didDequeue()
                         try Task.checkCancellation()
-                        switch input {
+                        telemetry.recordInputDispatch(sequence: envelope.sequence, startedNS: DispatchTime.now().uptimeNanoseconds)
+                        var acknowledged = false
+                        defer {
+                            telemetry.recordInputCompletion(
+                                sequence: envelope.sequence,
+                                completedNS: DispatchTime.now().uptimeNanoseconds,
+                                succeeded: acknowledged
+                            )
+                        }
+                        switch envelope.payload {
                         case .touch(let touch):
                             var contact = Android_Emulation_Control_Touch()
                             contact.x = touch.x
@@ -5329,7 +6509,7 @@ actor TFTMACRuntimeService {
                                 serializer: GRPCProtobuf.ProtobufSerializer<Android_Emulation_Control_MouseEvent>(),
                                 deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
                             )
-                        case .keyboard(let keyboard):
+                        case .keyboard(let keyboard), .secureKeyboard(let keyboard):
                             var event = Android_Emulation_Control_KeyboardEvent()
                             event.eventType = .keypress
                             if let key = keyboard.key { event.key = key }
@@ -5369,6 +6549,7 @@ actor TFTMACRuntimeService {
                                 deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>()
                             )
                         }
+                        acknowledged = true
                     }
                 }
                 _ = try await group.next()
@@ -5393,11 +6574,17 @@ actor TFTMACRuntimeService {
     }
 
     private func recoverInterruptedAVDTransaction(paths: TFTMACRuntimePaths) throws {
-        try AVDConfigurationTransaction.recoverIfNeeded(
+        let recovered = try AVDTransactionGuard.recover(
             configURL: paths.avdConfig,
             stateRoot: paths.applicationSupport.appendingPathComponent("State", isDirectory: true),
-            captureRoot: paths.applicationSupport.appendingPathComponent("Captures", isDirectory: true)
+            captureRoot: paths.applicationSupport.appendingPathComponent("Captures", isDirectory: true),
+            expectedOriginalSHA256: runtimeConfiguration.selection.definition.avdConfigSha256
         )
+        if recovered {
+            telemetry?.recordEvent("AVD_INTERRUPTED_CONFIG_RECOVERED", payload: [
+                "exclusive_lease": runtimeLease != nil, "readback_verified": true
+            ])
+        }
     }
 
     nonisolated private static func adbEnvironment(
@@ -5651,42 +6838,10 @@ private final class AVDConfigurationTransaction: @unchecked Sendable {
             return
         }
         try original.write(to: configURL, options: .atomic)
+        guard Self.sha256(try Data(contentsOf: configURL)) == originalSHA256 else {
+            throw AVDTransactionGuardError.recoveryReadbackFailed
+        }
         try? FileManager.default.removeItem(at: markerURL)
-    }
-
-    static func recoverIfNeeded(configURL expectedConfigURL: URL, stateRoot: URL, captureRoot: URL) throws {
-        let markerURL = stateRoot.appendingPathComponent("avd-config-transaction.json")
-        guard let data = try? Data(contentsOf: markerURL),
-              let marker = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let config = marker["config"] as? String,
-              let backup = marker["backup"] as? String,
-              let expected = marker["original_sha256"] as? String,
-              let applied = marker["applied_sha256"] as? String else { return }
-        let markerConfigURL = URL(fileURLWithPath: config)
-        let backupURL = URL(fileURLWithPath: backup)
-        try AVDTransactionGuard.validateRecoveryPaths(
-            markerConfigURL: markerConfigURL,
-            expectedConfigURL: expectedConfigURL,
-            backupURL: backupURL,
-            captureRoot: captureRoot
-        )
-        let backupData = try Data(contentsOf: backupURL)
-        guard sha256(backupData) == expected else {
-            throw TFTMACRuntimeError("A prior AVD transaction backup failed its hash check.")
-        }
-        let currentData = try Data(contentsOf: expectedConfigURL)
-        let currentSHA256 = sha256(currentData)
-        let decision = try AVDTransactionGuard.restoreDecision(
-            currentSHA256: currentSHA256,
-            originalSHA256: expected,
-            appliedSHA256: applied
-        )
-        if decision == .alreadyOriginal {
-            try FileManager.default.removeItem(at: markerURL)
-            return
-        }
-        try backupData.write(to: expectedConfigURL, options: .atomic)
-        try FileManager.default.removeItem(at: markerURL)
     }
 
     private static func setting(key: String, value: String, in text: String) -> String {
@@ -5713,7 +6868,7 @@ final class TFTMACRuntimeController {
 
     init(
         runtimeConfiguration: TFTMACSelectedRuntimeConfiguration,
-        guestUnlockSecret: TFTMACGuestUnlockSecret,
+        guestUnlockSecret: TFTMACGuestUnlockSecret?,
         mailbox: LatestFrameMailbox,
         status: @escaping TFTMACRuntimeService.StatusHandler,
         gameFrame: @escaping TFTMACRuntimeService.GameFrameHandler,
@@ -5743,18 +6898,20 @@ final class TFTMACRuntimeController {
         }
     }
 
-    func sendMouse(x: Int32, y: Int32, buttons: Int32) {
-        Task { await service.sendMouse(MouseInput(x: x, y: y, buttons: buttons)) }
+    func sendMouse(x: Int32, y: Int32, buttons: Int32, nativeEventMonotonicNS: UInt64? = nil) {
+        service.sendMouse(MouseInput(x: x, y: y, buttons: buttons), nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
 
-    func sendTouch(_ input: TouchInput) {
-        Task { await service.sendTouch(input) }
+    func sendTouch(_ input: TouchInput, nativeEventMonotonicNS: UInt64? = nil) {
+        service.sendTouch(input, nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
 
-    func sendKeyboard(text: String? = nil, key: String? = nil) {
+    func sendKeyboard(text: String? = nil, key: String? = nil, nativeEventMonotonicNS: UInt64? = nil) {
         guard text?.isEmpty == false || key?.isEmpty == false else { return }
-        Task { await service.sendKeyboard(KeyboardInput(text: text, key: key)) }
+        service.sendKeyboard(KeyboardInput(text: text, key: key), nativeEventMonotonicNS: nativeEventMonotonicNS)
     }
+
+    func signInWithSavedAccount() { Task { await service.requestSavedRiotSignIn() } }
 
     func recordPresentation(_ sample: PresentationSample) {
         Task { await service.recordPresentation(sample) }

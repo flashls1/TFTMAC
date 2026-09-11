@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "date_local": "2026-09-04",
+  "change_id": "bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541",
+  "zenmc_qualification": "ZENMC_REQUIRED",
+  "zenmc_result": "PASS",
+  "score": 97,
+  "result": "PASS",
+  "execution_contract": [
+    "DEV-only implementation; Control remains exact protected rollback.",
+    "Use a distinct DEV Android-PIN Keychain service; do not migrate/read Control's item.",
+    "Never store Riot credentials; preserve only Riot's own official Android session.",
+    "On first MobileFRE login observation in a DEV app session, gate input and recycle TFT exactly once.",
+    "Require replacement process identity and stable replacement login activity before restoring input.",
+    "Recovery failure fails closed; no loop, no data clear, no credential automation.",
+    "Use guest sync for persistence durability only; do not inspect private auth state.",
+    "Install/test only TFTMAC DEV and prove protected Control hash unchanged."
+  ],
+  "proceed": true
+}

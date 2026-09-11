@@ -250,7 +250,12 @@ final class CombatBenchmarkLabStore: @unchecked Sendable {
               candidate.isValid,
               candidate.exactLayerIdentity != nil,
               let control = try latestValidControl(matching: candidate) else { return nil }
-        let analysis = CombatBenchmarkAnalysis(baseline: control.metrics, candidate: candidate.metrics)
+        let analysis = CombatBenchmarkAnalysis(
+            baseline: control.metrics,
+            candidate: candidate.metrics,
+            baselineObserverOverheadInvalid: control.observerOverheadInvalid,
+            candidateObserverOverheadInvalid: candidate.observerOverheadInvalid
+        )
         let comparison = CombatComparisonRecord(
             comparisonID: UUID().uuidString.lowercased(),
             controlBenchmarkID: control.benchmarkID,

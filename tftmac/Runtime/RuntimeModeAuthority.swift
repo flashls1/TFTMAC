@@ -284,7 +284,11 @@ struct TFTMACRuntimeModeAuthority: Sendable {
         bundle: Bundle = .main,
         fileManager: FileManager = .default
     ) throws -> TFTMACResolvedRuntimeModeAuthority {
-        try selection.validateForLaunch(bundle: bundle, fileManager: fileManager)
+        if selection.mode == .advancedDiagnostics {
+            try selection.validateLaunchPrerequisites(bundle: bundle, fileManager: fileManager)
+        } else {
+            try selection.validateForLaunch(bundle: bundle, fileManager: fileManager)
+        }
         let supplemental = try definition(for: selection.mode)
         try validateModeEvidence(
             base: selection.definition,

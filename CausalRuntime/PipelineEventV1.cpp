@@ -294,6 +294,49 @@ bool ParseOwnedProbeTimelineWorkId(
     return false;
 }
 
+bool ParseANGLETimelineWorkId(
+    uint32_t signal_semaphore_count,
+    const void* p_next,
+    uint64_t* transport_work_id) {
+    if (signal_semaphore_count == 0 || !p_next || !transport_work_id) return false;
+    constexpr uint32_t kVkStructureTypeTimelineSemaphoreSubmitInfo = 1000207003;
+
+    struct GenericVkBaseInStructure {
+        uint32_t sType;
+        const GenericVkBaseInStructure* pNext;
+    };
+    static_assert(sizeof(GenericVkBaseInStructure) == 16, "GenericVkBaseInStructure ABI drift");
+    static_assert(offsetof(GenericVkBaseInStructure, pNext) == 8, "GenericVkBaseInStructure pNext offset drift");
+
+    struct GenericVkTimelineSemaphoreSubmitInfo {
+        uint32_t sType;
+        const void* pNext;
+        uint32_t waitSemaphoreValueCount;
+        const uint64_t* pWaitSemaphoreValues;
+        uint32_t signalSemaphoreValueCount;
+        const uint64_t* pSignalSemaphoreValues;
+    };
+    static_assert(sizeof(GenericVkTimelineSemaphoreSubmitInfo) == 48, "GenericVkTimelineSemaphoreSubmitInfo ABI drift");
+    static_assert(offsetof(GenericVkTimelineSemaphoreSubmitInfo, signalSemaphoreValueCount) == 32, "signalSemaphoreValueCount offset drift");
+    static_assert(offsetof(GenericVkTimelineSemaphoreSubmitInfo, pSignalSemaphoreValues) == 40, "pSignalSemaphoreValues offset drift");
+
+    for (const auto* next = static_cast<const GenericVkBaseInStructure*>(p_next);
+         next != nullptr;
+         next = next->pNext) {
+        if (next->sType == kVkStructureTypeTimelineSemaphoreSubmitInfo) {
+            const auto* info = reinterpret_cast<const GenericVkTimelineSemaphoreSubmitInfo*>(next);
+            if (info->signalSemaphoreValueCount >= signal_semaphore_count &&
+                info->pSignalSemaphoreValues != nullptr &&
+                info->pSignalSemaphoreValues[signal_semaphore_count - 1] > 0) {
+                *transport_work_id = info->pSignalSemaphoreValues[signal_semaphore_count - 1];
+                return true;
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
 void SetThreadTransportWorkId(uint64_t transport_work_id) {
     g_transport_work_id = transport_work_id;
 }

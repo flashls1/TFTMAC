@@ -157,6 +157,15 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
         bundle: Bundle = .main,
         fileManager: FileManager = .default
     ) throws {
+        try validateLaunchPrerequisites(bundle: bundle, fileManager: fileManager)
+        try validateOptionalSHA256(path: definition.avdConfigPath, expected: definition.avdConfigSha256, label: "AVD config")
+    }
+
+    // Mutable AVD contents are checked after owned interrupted-transaction recovery.
+    func validateLaunchPrerequisites(
+        bundle: Bundle = .main,
+        fileManager: FileManager = .default
+    ) throws {
         guard definition.launchState == .enabled else {
             throw TFTMACRuntimeModeError(
                 message: "Runtime mode \(mode.rawValue) is \(definition.launchState.rawValue) and remains fail-closed."
@@ -214,7 +223,6 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
             expected: definition.gfxstreamBackendSha256,
             label: "gfxstream backend"
         )
-        try validateOptionalSHA256(path: definition.avdConfigPath, expected: definition.avdConfigSha256, label: "AVD config")
         try validateOptionalSHA256(path: definition.avdIniPath, expected: definition.avdIniSha256, label: "AVD ini")
     }
 
@@ -280,7 +288,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "f92cfc78923814d8eb3d8f6f550a4763ba918fe5e1c20088e2863d89ce58eafe"
+    static let expectedRegistrySha256 = "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String

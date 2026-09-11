@@ -1,0 +1,23 @@
+TFTMAC DEV LOGIN-FRICTION SCOPE LOCK
+
+AUTHORIZED:
+- DEV-specific Android-unlock Keychain namespace and call-site wiring.
+- Bounded one-time-per-session Riot MobileFRE process stabilization in advanced_diagnostics only.
+- Input gating/native progress state during that bounded stabilization.
+- Non-secret login/recovery telemetry.
+- Guest `sync` for persistence durability after login and before normal DEV shutdown.
+- Focused tests, verifier/test-count updates, and authority/doc updates directly required by these changes.
+- Build/install/live acceptance of `/Applications/TFTMAC DEV.app` only.
+
+FORBIDDEN:
+- Any mutation, rebuild, overwrite, install, AVD change, or configuration change to protected Control `/Applications/TFTMAC.app`.
+- Storing, reading, logging, intercepting, autofilling, or transmitting Riot username/password/MFA/cookies/tokens.
+- `pm clear`, `-wipe-data`, package re-signing/modification, third-party login UI, CAPTCHA/MFA automation.
+- Unbounded restart loops.
+- Unrelated graphics/performance/refactor/dependency work.
+
+ACCEPTANCE REQUIRES:
+- Control hash unchanged.
+- Repeated DEV launch with no macOS Keychain authorization sheet after one DEV PIN setup.
+- No manual Android Wait/Close recovery needed on Riot login.
+- Official Riot session persists across a clean DEV relaunch when Riot still considers it valid.

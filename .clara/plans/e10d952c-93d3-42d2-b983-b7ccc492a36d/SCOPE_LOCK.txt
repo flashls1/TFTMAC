@@ -1,0 +1,44 @@
+TFTMAC STARTUP CURTAIN — EXECUTION SCOPE LOCK
+change_id: e10d952c-93d3-42d2-b983-b7ccc492a36d
+
+USER_SCOPE_CHANGE:
+The original change only saved the approved splash asset. Flash explicitly expanded the same feature on 2026-09-04 to implement a production startup curtain that hides Android/emulator/PIN startup noise until official TFT content is safely ready.
+
+AUTHORIZED PRODUCT SCOPE:
+- Use the already-approved TFTMAC splash artwork.
+- Bundle the splash in TFTMAC.app.
+- Add one native AppKit startup curtain above EmbeddedEmulatorView.
+- Keep Android/emulator/controller/runtime work running normally behind the curtain.
+- Suppress emulator mouse/touch/keyboard input while the curtain is active.
+- Reuse existing GameFrameTelemetry state; do not add a second Android polling system.
+- Reveal only after an eligible official Riot/TFT state and a newer source frame has successfully reached the native presenter.
+- Normal reveal target: exact TFT Unreal GameActivity SurfaceView.
+- Manual-auth exception: active Riot MobileFREWebViewActivity may reveal after the same fresh-frame proof so the user can authenticate.
+- Never reveal Android/SystemUI/PIN merely because time elapsed.
+- Keep the curtain visible on startup failure and surface a native user-facing error.
+- Once revealed, never re-cover the session because activities later change.
+- Preserve ownedVulkanProbe/diagnostic behavior; the consumer curtain applies only to officialTFT workload.
+- Add focused unit/resource/startup acceptance tests and minimal telemetry needed to prove the feature.
+
+AUTHORIZED FILE FAMILIES:
+- tftmac/App/AppCoordinator.swift
+- tftmac/App/MainWindowController.swift
+- tftmac/Presentation/EmbeddedEmulatorView.swift
+- new startup-curtain/state files under tftmac/Presentation/
+- Tests/TFTMACTests/ startup-curtain tests
+- TFTMAC.xcodeproj/project.pbxproj
+- tftmac/Assets/TFTMAC-Splash-1920x1080.png only if deterministic size normalization is required
+- scripts/verify-tftmac.command only if a bundle-resource assertion is necessary
+- this plan directory
+
+NOT AUTHORIZED:
+- Android/AVD configuration changes
+- guest PIN/unlock-policy changes
+- emulator launch-argument changes
+- graphics/runtime tuning
+- Riot APK/package changes
+- new dependencies
+- unrelated refactors, cleanup, renames, or diagnostics work
+- timeout-based forced reveal of Android UI
+- a second polling loop for startup readiness
+- source-built emulator/gfxstream/MoltenVK changes

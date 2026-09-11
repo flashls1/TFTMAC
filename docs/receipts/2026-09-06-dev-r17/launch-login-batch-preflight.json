@@ -1,0 +1,11 @@
+{
+  "status": "PLAN_MODEL_PASS",
+  "scope": "launch/login/first-batch decision controls",
+  "boot_cases": 288,
+  "login_cases": 64,
+  "recorder_cases": 256,
+  "adversarial_samples": 256,
+  "interruption_holdout": 9,
+  "detected_mutations": 3,
+  "runtime_proof": false
+}

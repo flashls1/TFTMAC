@@ -51,23 +51,38 @@ enum TFTMACGuestUnlockSecretError: LocalizedError {
 
 @MainActor
 enum TFTMACGuestUnlockSecretStore {
-    // v2 intentionally leaves the pre-release item and its stale code ACL in
-    // place. A fresh item is created by the stable signed launchers once.
-    private static let service = "com.flashls1.tftmac.android-unlock.v2"
+    // Control's v2 item is frozen as part of the protected stable launcher.
+    // DEV deliberately owns a different item so its code ACL can never collide
+    // with or mutate Control's Keychain authorization history.
+    nonisolated private static let controlService = "com.flashls1.tftmac.android-unlock.v2"
+    nonisolated private static let devService = "com.flashls1.tftmac.dev.android-unlock.v1"
     private static let account = "android-user-0"
 
-    static func loadOrPrompt(applicationName: String) throws -> TFTMACGuestUnlockSecret {
-        switch try load() {
+    nonisolated static func service(for runtimeMode: TFTMACRuntimeMode) -> String {
+        switch runtimeMode {
+        case .advancedDiagnostics:
+            return devService
+        case .control, .candidate:
+            return controlService
+        }
+    }
+
+    static func loadOrPrompt(
+        applicationName: String,
+        runtimeMode: TFTMACRuntimeMode
+    ) throws -> TFTMACGuestUnlockSecret {
+        let service = service(for: runtimeMode)
+        switch try load(service: service) {
         case .some(let secret):
             return secret
         case .none:
             let secret = try prompt(applicationName: applicationName)
-            try save(secret)
+            try save(secret, service: service)
             return secret
         }
     }
 
-    private static func baseQuery() -> [CFString: Any] {
+    private static func baseQuery(service: String) -> [CFString: Any] {
         [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -75,8 +90,8 @@ enum TFTMACGuestUnlockSecretStore {
         ]
     }
 
-    private static func load() throws -> TFTMACGuestUnlockSecret? {
-        var query = baseQuery()
+    private static func load(service: String) throws -> TFTMACGuestUnlockSecret? {
+        var query = baseQuery(service: service)
         query[kSecMatchLimit] = kSecMatchLimitOne
         query[kSecReturnData] = true
         // Never let a background experiment disappear behind an invisible
@@ -97,15 +112,15 @@ enum TFTMACGuestUnlockSecretStore {
         return secret
     }
 
-    private static func save(_ secret: TFTMACGuestUnlockSecret) throws {
-        var add = baseQuery()
+    private static func save(_ secret: TFTMACGuestUnlockSecret, service: String) throws {
+        var add = baseQuery(service: service)
         add[kSecValueData] = secret.keychainData
         add[kSecAttrLabel] = "TFTMAC Android Unlock"
         add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(add as CFDictionary, nil)
         if status == errSecDuplicateItem {
             let update: [CFString: Any] = [kSecValueData: secret.keychainData]
-            let updateStatus = SecItemUpdate(baseQuery() as CFDictionary, update as CFDictionary)
+            let updateStatus = SecItemUpdate(baseQuery(service: service) as CFDictionary, update as CFDictionary)
             guard updateStatus == errSecSuccess else {
                 throw TFTMACGuestUnlockSecretError.keychain(updateStatus)
             }

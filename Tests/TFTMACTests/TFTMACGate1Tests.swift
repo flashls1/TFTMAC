@@ -3,6 +3,71 @@ import CryptoKit
 import XCTest
 
 final class TFTMACGate1Tests: XCTestCase {
+    func testInterruptedAVDRecoveryRestoresAndAllowsIdempotentNextLaunch() throws {
+        try withInterruptedAVD { config, state, captures, original, _ in
+            let hash = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
+            XCTAssertTrue(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                        captureRoot: captures, expectedOriginalSHA256: hash))
+            XCTAssertEqual(try Data(contentsOf: config), original)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: state.appendingPathComponent("avd-config-transaction.json").path))
+            XCTAssertFalse(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                         captureRoot: captures, expectedOriginalSHA256: hash))
+        }
+    }
+
+    func testInterruptedAVDAlreadyRestoredCanFinishJournalRemoval() throws {
+        try withInterruptedAVD { config, state, captures, original, _ in
+            try original.write(to: config)
+            XCTAssertTrue(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                        captureRoot: captures, expectedOriginalSHA256: nil))
+            XCTAssertEqual(try Data(contentsOf: config), original)
+        }
+    }
+
+    func testInterruptedAVDRejectsWrongRegistryIdentityAndPreservesJournal() throws {
+        try withInterruptedAVD { config, state, captures, _, applied in
+            XCTAssertThrowsError(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                               captureRoot: captures, expectedOriginalSHA256: String(repeating: "0", count: 64)))
+            XCTAssertEqual(try Data(contentsOf: config), applied)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: state.appendingPathComponent("avd-config-transaction.json").path))
+        }
+    }
+
+    func testInterruptedAVDRejectsTamperedBackupAndConflictingConfig() throws {
+        for target in ["backup", "config", "journal"] {
+            try withInterruptedAVD { config, state, captures, _, _ in
+                let journal = state.appendingPathComponent("avd-config-transaction.json")
+                let destination = target == "backup" ? captures.appendingPathComponent("session/avd-config.before.ini") : (target == "config" ? config : journal)
+                try Data("unexpected".utf8).write(to: destination)
+                let before = try Data(contentsOf: config)
+                XCTAssertThrowsError(try AVDTransactionGuard.recover(configURL: config, stateRoot: state,
+                                                                   captureRoot: captures, expectedOriginalSHA256: nil))
+                XCTAssertEqual(try Data(contentsOf: config), before)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+            }
+        }
+    }
+
+    private func withInterruptedAVD(_ body: (URL, URL, URL, Data, Data) throws -> Void) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let state = root.appendingPathComponent("State")
+        let captures = root.appendingPathComponent("Captures")
+        let session = captures.appendingPathComponent("session")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let config = root.appendingPathComponent("config.ini")
+        let backup = session.appendingPathComponent("avd-config.before.ini")
+        let original = Data("hw.cpu.ncore=4\n".utf8), applied = Data("hw.cpu.ncore=8\n".utf8)
+        try applied.write(to: config)
+        try original.write(to: backup)
+        let hash: (Data) -> String = { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+        let data = try JSONSerialization.data(withJSONObject: ["schema": 1, "config": config.path,
+            "backup": backup.path, "original_sha256": hash(original), "applied_sha256": hash(applied)])
+        try data.write(to: state.appendingPathComponent("avd-config-transaction.json"))
+        try body(config, state, captures, original, applied)
+    }
+
     func testAspectFitCentersSixteenByNineInsideMatchingViewport() {
         let mapper = ViewportMapper(
             sourceSize: CGSize(width: 1920, height: 1080),
@@ -76,9 +141,75 @@ final class TFTMACGate1Tests: XCTestCase {
         )
         mailbox.publish(first)
         mailbox.publish(second)
-        XCTAssertEqual(mailbox.takeLatest()?.sequence, 2)
-        XCTAssertNil(mailbox.takeLatest())
+        XCTAssertEqual(mailbox.takeForPresentation()?.sequence, 2)
+        XCTAssertNil(mailbox.takeForPresentation())
         XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 1)
+    }
+
+    private func displayFrame(_ sequence: UInt32, at time: UInt64) -> EmulatorFrame {
+        EmulatorFrame(
+            pixels: Data(count: 4), width: 1, height: 1, sequence: sequence,
+            emulatorTimestampMicroseconds: time / 1_000, receivedMonotonicNanoseconds: time
+        )
+    }
+
+    func testDisplayJitterBufferPreservesBurstAcrossTwoTicks() {
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        mailbox.publish(displayFrame(1, at: 0))
+        mailbox.publish(displayFrame(2, at: 8_000_000))
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 16_666_667)?.sequence, 1)
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 33_333_334)?.sequence, 2)
+        XCTAssertNil(mailbox.takeForPresentation(nowMonotonicNS: 50_000_001))
+        XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 0)
+    }
+
+    func testDisplayJitterBufferBoundsOverflowAndCountsEveryDiscard() {
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        for sequence in UInt32(1)...100 { mailbox.publish(displayFrame(sequence, at: UInt64(sequence))) }
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 101)?.sequence, 99)
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 102)?.sequence, 100)
+        XCTAssertNil(mailbox.takeForPresentation(nowMonotonicNS: 103))
+        XCTAssertEqual(mailbox.snapshot().receivedFrames, 100)
+        XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, 98)
+        XCTAssertEqual(mailbox.snapshot().sequenceDrops, 0)
+    }
+
+    func testDisplayJitterBufferAgeBoundaryAndPauseRecovery() {
+        for (age, expected) in [(UInt64(33_333_333), UInt32(1)), (33_333_334, 1), (33_333_335, 2), (1_000_000_000, 2)] {
+            let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+            mailbox.publish(displayFrame(1, at: 0))
+            mailbox.publish(displayFrame(2, at: 8_000_000))
+            XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: age)?.sequence, expected)
+            XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, expected == 2 ? 1 : 0)
+        }
+        let mailbox = LatestFrameMailbox(buffersDisplayJitter: true)
+        mailbox.publish(displayFrame(1, at: 0))
+        // A paused source still exposes its most recent image immediately.
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 1_000_000_000)?.sequence, 1)
+        mailbox.publish(displayFrame(2, at: 1_100_000_000))
+        XCTAssertEqual(mailbox.takeForPresentation(nowMonotonicNS: 1_100_000_001)?.sequence, 2)
+    }
+
+    func testDisplayJitterBufferReplaysSixtyHzBurstArrivalsWithoutFrameLoss() {
+        for buffered in [false, true] {
+            let mailbox = LatestFrameMailbox(buffersDisplayJitter: buffered)
+            var delivered = [UInt32]()
+            for pair in UInt32(0)..<300 {
+                let start = UInt64(pair) * 33_333_334
+                mailbox.publish(displayFrame(pair * 2 + 1, at: start + 100_000))
+                mailbox.publish(displayFrame(pair * 2 + 2, at: start + 8_100_000))
+                for tick in [start + 16_666_667, start + 33_333_334] {
+                    if let frame = mailbox.takeForPresentation(nowMonotonicNS: tick) {
+                        delivered.append(frame.sequence)
+                        XCTAssertLessThanOrEqual(tick - frame.receivedMonotonicNanoseconds, 33_333_334)
+                    }
+                }
+            }
+            XCTAssertEqual(delivered.count, buffered ? 600 : 300)
+            XCTAssertEqual(mailbox.snapshot().replacedBeforePresentation, buffered ? 0 : 300)
+            XCTAssertEqual(delivered, delivered.sorted())
+            XCTAssertEqual(Set(delivered).count, delivered.count)
+        }
     }
 
     func testAVDRestoreAllowsOnlyTheAppliedConfiguration() throws {
@@ -355,6 +486,39 @@ final class TFTMACGate1Tests: XCTestCase {
             try TFTMACGuestUnlockSecret(pin: "9876")?.transientPIN(),
             "9876"
         )
+    }
+
+    func testGuestUnlockKeychainNamespacesKeepControlFrozenAndDEVSeparate() {
+        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .control), "com.flashls1.tftmac.android-unlock.v2")
+        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics), "com.flashls1.tftmac.dev.android-unlock.v1")
+        XCTAssertNotEqual(TFTMACGuestUnlockSecretStore.service(for: .control), TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics))
+    }
+
+    func testRiotANRRecoveryPrefersCloseAppWhenAndroidOffersBothActions() {
+        let xml = """
+        <hierarchy>
+          <node text="Wait" bounds="[700,600][900,700]" />
+          <node text="Close app" bounds="[1000,600][1300,700]" />
+        </hierarchy>
+        """
+        XCTAssertEqual(
+            RiotANRRecovery.preferredTarget(in: xml),
+            RiotANRRecoveryTarget(action: .closeApp, x: 1150, y: 650)
+        )
+    }
+
+    func testRiotANRRecoveryFallsBackToControlWaitActionAndRejectsMalformedBounds() {
+        let xml = """
+        <hierarchy>
+          <node text="Close app" bounds="malformed" />
+          <node text="Wait" bounds="[600,500][800,620]" />
+        </hierarchy>
+        """
+        XCTAssertEqual(
+            RiotANRRecovery.preferredTarget(in: xml),
+            RiotANRRecoveryTarget(action: .wait, x: 700, y: 560)
+        )
+        XCTAssertNil(RiotANRRecovery.preferredTarget(in: "<node text=\"Continue\" bounds=\"[1,2][3,4]\" />"))
     }
 
     private func runtimeModeRegistryData() throws -> Data {

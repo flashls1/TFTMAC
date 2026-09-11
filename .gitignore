@@ -33,6 +33,22 @@ hardware-qemu.ini.lock
 
 # Measurements, logs, traces, crash data, and local control requests
 /measurements/
+
+# OvernightLab runtime/generated state. Keep only source, schemas, manifests and
+# authority files in Git; campaigns and caches are local evidence/output and
+# must never dirty the repository merely because a test ran.
+/OvernightLab/__pycache__/
+/OvernightLab/active-campaign.txt
+/OvernightLab/bin/
+/OvernightLab/database/
+/OvernightLab/campaigns/
+/OvernightLab/builds/
+/OvernightLab/reports/
+/OvernightLab/quarantine/
+/OvernightLab/campaign.lock
+# Dormant local experimental builder retained outside source control for possible later reuse.
+/OvernightLab/angle/
+
 /.tftmac-direct-control-request.json
 /.tftmac-latest-run-analysis.json
 /.tftmac-latest-closed-session.json

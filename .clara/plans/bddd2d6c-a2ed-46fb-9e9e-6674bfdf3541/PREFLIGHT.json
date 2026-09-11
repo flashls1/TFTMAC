@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "date_local": "2026-09-04",
+  "project": "TFTMAC",
+  "change_id": "bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541",
+  "base_sha": "c050c98ec9bd93501c2ce5e0f8583129946b61ab",
+  "request_class": "IMPLEMENT_SHIP",
+  "target": "TFTMAC DEV / advanced_diagnostics only",
+  "control_policy": {
+    "installed_path": "/Applications/TFTMAC.app",
+    "protected_executable_sha256": "d3bf7c249a3e5f11b81f778b063e1a8cfe2e7fdeec0537ee6bd8447b1c2268d2",
+    "mutation_authorized": false
+  },
+  "findings": [
+    {
+      "id": "KEYCHAIN_SHARED_NAMESPACE",
+      "classification": "SOURCE_AND_HOST_VERIFIED",
+      "evidence": "GuestUnlockSecret.swift uses service com.flashls1.tftmac.android-unlock.v2 for all runtime modes. Existing login-keychain item has that service/account. Current DEV core is separately signed/identified as TFTMACDEVCore under the stable TFTMAC Local Code Signing root.",
+      "conclusion": "Control and DEV share one creator ACL namespace. DEV must use its own stable Keychain item; Control service remains unchanged."
+    },
+    {
+      "id": "RIOT_FIRST_WEBVIEW_ANR",
+      "classification": "RUNTIME_VERIFIED",
+      "capture": "2026-09-04T22-09-46.542Z-61021ef8-8292-4392-a80a-d4090808e3ef",
+      "evidence": "First MobileFREWebViewActivity displayed at 17:10:23.620; first MotionEvent timed out after 5001 ms; ANR recorded at 17:10:31.420; user Close killed TFT PID 2554 at 17:10:35; replacement PID 4474 started immediately; replacement MobileFREWebViewActivity displayed in 124 ms at 17:10:42.076 and remained responsive.",
+      "conclusion": "The reliable current path is one bounded TFT-process recycle on the first Riot login activity before user interaction."
+    },
+    {
+      "id": "IME_SETTING_ALREADY_CORRECT",
+      "classification": "RUNTIME_VERIFIED",
+      "evidence": "Live DEV secure setting show_ime_with_hard_keyboard is already 0.",
+      "conclusion": "Reapplying that setting is harmless defense-in-depth but is not the root fix."
+    },
+    {
+      "id": "PERSISTENT_DEV_USERDATA",
+      "classification": "RUNTIME_VERIFIED",
+      "evidence": "DEV AVD is TFTMAC_Diagnostic_StockShadow_R1 with fastboot.forceFastBoot=yes, forceColdBoot=no. userdata-qemu.img.qcow2 is persistent and actively changing; no current source clears package/user data or uses -wipe-data.",
+      "conclusion": "Riot's own session can persist in Android userdata. TFTMAC does not need to store Riot username/password."
+    },
+    {
+      "id": "CURRENT_SOURCE_RECOVERY_GAP",
+      "classification": "SOURCE_VERIFIED",
+      "evidence": "Current runtime logs ANR/input-timeout counts but contains no automatic MobileFRE recovery implementation. Historical docs describe a recovery but no committed current source contains it.",
+      "conclusion": "Implement the recovery explicitly and test it."
+    }
+  ],
+  "unknowns": [
+    "Whether Riot's current server session is presently valid after the user's latest successful login; only a relaunch can prove it.",
+    "Whether a DEV-specific default Keychain ACL survives future rebuilds without SecurityAgent prompts; repeated installed-DEV launch acceptance will prove it."
+  ],
+  "win_conditions": [
+    "After one DEV Android-PIN setup, repeated DEV launches do not display a macOS Keychain password/Always Allow sheet.",
+    "The first Riot login activity is automatically stabilized; the Android Wait/Close ANR dialog is never required.",
+    "TFTMAC never records or stores Riot username/password, MFA, cookies, or tokens.",
+    "After one successful Riot login, a clean DEV close/relaunch reuses Riot's own persistent Android session when Riot still considers it valid.",
+    "Protected Control executable hash remains unchanged before and after build/install/acceptance."
+  ]
+}

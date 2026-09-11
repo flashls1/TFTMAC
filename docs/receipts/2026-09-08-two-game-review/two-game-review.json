@@ -1,0 +1,420 @@
+{
+  "schema_version": "tftmac.two_game_review.v1",
+  "generated_utc": "2026-09-08T16:24:07Z",
+  "selection_basis": "The two newest STOPPED captures with long TFT process intervals; raw captures were not modified.",
+  "captures": [
+    {
+      "label": "Game 1 (newest completed long TFT session)",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-08T13-11-58.729Z-7be114c0-a92d-4197-b983-b98e498127fb",
+      "session_id": "2026-09-08T13-11-58.729Z-7be114c0-a92d-4197-b983-b98e498127fb",
+      "db_sha256": "34480bf2d1dbf72d51569cb84a427fad9fe3053063aaabe95c08f8f02486d282",
+      "session": {
+        "started_utc": "2026-09-08T13:11:58Z",
+        "ended_utc": "2026-09-08T13:52:08Z",
+        "status": "STOPPED",
+        "profile_id": "tftmac_diagnostic_stock_shadow_r1"
+      },
+      "game_process": {
+        "game_pid": 3919,
+        "started_utc": "2026-09-08T13:12:24Z",
+        "ended_utc": "2026-09-08T13:52:08Z"
+      },
+      "game_process_duration_seconds": 2384.0,
+      "window_coverage": {
+        "total": 2174,
+        "available": 2148,
+        "unavailable": 26,
+        "available_percent": 98.8,
+        "history_truncated_sum": 6
+      },
+      "fps_windows": {
+        "effective_fps_median": 59.212,
+        "effective_fps_p05": 30.764,
+        "effective_fps_min": 0.0,
+        "one_percent_low_fps_median": 44.168,
+        "p95_interval_median_ms": 18.383,
+        "p95_interval_p95_ms": 46.621,
+        "p99_interval_p95_ms": 92.347,
+        "max_interval_max_ms": 7529.658,
+        "below_target": {
+          "60": {
+            "count": 1597,
+            "percent_of_available": 74.35
+          },
+          "50": {
+            "count": 486,
+            "percent_of_available": 22.63
+          },
+          "30": {
+            "count": 90,
+            "percent_of_available": 4.19
+          }
+        },
+        "jank_sum": 11062,
+        "severe_sum": 422,
+        "missed_vsync_sum": 14588
+      },
+      "raw_intervals": {
+        "count": 126118,
+        "p95_ms": 32.691,
+        "p99_ms": 36.612,
+        "mean_derived_fps": 53.792,
+        "over_16_67ms": 70807,
+        "over_33_33ms": 4137,
+        "over_50ms": 422
+      },
+      "native_presenter": {
+        "callbacks": 143799,
+        "unique_source_sequence_transitions": 127464,
+        "repeated_source_callbacks": 16335,
+        "repeat_percent": 11.36,
+        "presentation_sample_aggregate": {
+          "mailbox_replacements_sum": 13461,
+          "sequence_drops_sum": 0,
+          "received_frames_latest": 127480
+        },
+        "last_sample": {
+          "presented_frames": 143799,
+          "presentation_fps": 59.9988450239159,
+          "source_fps": 0.0,
+          "received_frames": 127480,
+          "mailbox_replacements": 16,
+          "sequence_drops": 0,
+          "last_sequence": 127479
+        }
+      },
+      "host_presentation": {
+        "windows": 2385,
+        "p95_completion_latency_ms": 1.002,
+        "p95_gpu_time_ms": 0.343,
+        "max_p95_completion_latency_ms": 2.721,
+        "max_p95_gpu_time_ms": 1.725,
+        "submitted_sum": 143800,
+        "completed_sum": 143799,
+        "drawable_misses_sum": 0,
+        "command_errors_sum": 0
+      },
+      "resources": {
+        "emulator_cpu_p50_percent": 278.95,
+        "emulator_cpu_p95_percent": 357.425,
+        "emulator_cpu_max_percent": 623.6,
+        "emulator_rss_p50_kib": 2438896,
+        "emulator_rss_p95_kib": 3158606,
+        "emulator_rss_max_kib": 3999232
+      },
+      "surfaceflinger": {
+        "sample_count": 76,
+        "render_rate_hz_unique": [
+          60.0
+        ],
+        "last_total_missed_frames": 102,
+        "last_hwc_missed_frames": 102,
+        "last_gpu_missed_frames": 0
+      },
+      "audio_samples": {
+        "sample_count": 76,
+        "max_active_tracks": 2,
+        "max_partial_underruns": 0,
+        "max_empty_underruns": 0
+      },
+      "runtime_incidents": {
+        "anr_count": 0,
+        "input_timeout_count": 0,
+        "fatal_count": 0,
+        "memory_kill_count": 0,
+        "angle_warning_count": 2,
+        "vulkan_warning_count": 1,
+        "audio_error_count": 1480
+      },
+      "event_coverage": {
+        "selected_event_counts": {
+          "TFT_GRAPHICS_RUN_STARTED": 1,
+          "TFT_READY_FOR_USER": 1,
+          "FIRST_NATIVE_FRAME": 1,
+          "GAME_FRAME_COLLECTOR_UNAVAILABLE": 1,
+          "GAME_FRAME_DEGRADATION": 318,
+          "TFT_SURFACE_LAYER_LOST": 2,
+          "TFT_SURFACE_LAYER_REPLACED": 1,
+          "ANDROID_RUNTIME_INCIDENTS": 29,
+          "FRAME_VISUAL_CHECKPOINT": 2124,
+          "RIOT_SAVED_SIGNIN_STOPPED": 1
+        },
+        "collector_and_login_receipts": [
+          {
+            "kind": "GAME_FRAME_COLLECTOR_UNAVAILABLE",
+            "reason": "ADB_ERROR",
+            "error_class": "ADB_DEVICE_OFFLINE"
+          },
+          {
+            "kind": "RIOT_SAVED_SIGNIN_STOPPED",
+            "reason_class": "KEYCHAIN_ITEM_UNREADABLE",
+            "retry_this_form": false
+          }
+        ],
+        "pipeline_events": 0,
+        "pipeline_diagnostic_epochs": 0,
+        "pipeline_event_segments": 0,
+        "pipeline_log_aggregates": 448
+      },
+      "capture_artifacts": {
+        "TFTMAC_NATIVE_RUNTIME.sqlite": true,
+        "TFTMAC_NATIVE_RUNTIME.sqlite-wal": true,
+        "native-events.jsonl": true,
+        "logcat.raw.txt": true,
+        "emulator.stdout.log": true,
+        "native-clock-feb8a26b86194af1b5224e2165228edd": true,
+        "native-clock-b818f1eaa6ba4787b93f5202884b4d56": false
+      },
+      "stack_receipt": {
+        "configuration_sha256": {
+          "confidence": "DIRECT",
+          "source": "canonical effective runtime configuration",
+          "value": "7895c5e5e179bf238d7d40a3f38bc0bff571df5b1d9210e803118a8790ac1c51"
+        },
+        "game_graphics_api": "UNREAL_ENGINE_VULKAN",
+        "game_graphics_api_confidence": "DIRECT_VKINSTANCE_RUNTIME_LOG",
+        "angle_state": "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED",
+        "gfxstream_state": "PROVEN_ACTIVE",
+        "moltenvk_state": "PROVEN_ACTIVE",
+        "host_vulkan_device": "Apple M4, Version: 1.1.323",
+        "metal_device_name": "Apple M4",
+        "receipt_completeness": "COMPLETE",
+        "explicit_unknowns_json": "[\"cross_stack_frame_id\",\"gfxstream_internal_tracing\"]",
+        "pipeline_log_coverage": null,
+        "first_observed_divergent_boundary": null,
+        "causal_owner": null
+      },
+      "worst_available_window": {
+        "id": 172,
+        "started_monotonic_ns": 989513423865666,
+        "ended_monotonic_ns": 989514560165041,
+        "effective_fps": 4.400248834071567,
+        "one_percent_low_fps": 0.3030796106847961,
+        "p50_interval_ms": 115.079125,
+        "p95_interval_ms": 3299.463127,
+        "p99_interval_ms": 3299.463127,
+        "maximum_interval_ms": 3299.463127,
+        "jank_count": 5,
+        "severe_count": 4,
+        "missed_vsync_equivalents": 215
+      },
+      "limitations": [
+        "The capture has no semantic stage/combat/round classifier; a long TFT process and visual checkpoints are confirmed, but whether the user reached a particular combat stage is not encoded.",
+        "GAME_FRAME_COLLECTOR_UNAVAILABLE occurred at startup because ADB reported device offline; unavailable windows remain in the capture.",
+        "pipeline_events is empty, so no guest-to-host transport request IDs or presentation-lineage IDs exist for causal attribution.",
+        "Presentation samples report source_fps=0.0 in the final sample; that is a recorder coverage limitation, not proof of zero source frames.",
+        "SurfaceFlinger 60 Hz and host completion/GPU timings describe the output/host stages; they do not prove 60 unique game frames on the display."
+      ],
+      "decision": "Diagnostic evidence only. Continuous 60 FPS acceptance is rejected for this capture; retain the raw capture and next collect a controlled heavy-combat run after fixing the startup collector gap and adding causal pipeline events."
+    },
+    {
+      "label": "Game 2 (previous completed long TFT session)",
+      "capture_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-07T00-51-11.665Z-81c30ae4-e52f-4e02-b1c8-165c4e2cdb81",
+      "session_id": "2026-09-07T00-51-11.665Z-81c30ae4-e52f-4e02-b1c8-165c4e2cdb81",
+      "db_sha256": "6affb9bf477c79372351d645217775b2247320f691797fa3d41a1ce9048a7863",
+      "session": {
+        "started_utc": "2026-09-07T00:51:11Z",
+        "ended_utc": "2026-09-07T01:37:20Z",
+        "status": "STOPPED",
+        "profile_id": "tftmac_diagnostic_stock_shadow_r1"
+      },
+      "game_process": {
+        "game_pid": 4145,
+        "started_utc": "2026-09-07T00:51:35Z",
+        "ended_utc": "2026-09-07T01:37:20Z"
+      },
+      "game_process_duration_seconds": 2745.0,
+      "window_coverage": {
+        "total": 2494,
+        "available": 2458,
+        "unavailable": 36,
+        "available_percent": 98.56,
+        "history_truncated_sum": 1
+      },
+      "fps_windows": {
+        "effective_fps_median": 59.368,
+        "effective_fps_p05": 32.966,
+        "effective_fps_min": 0.0,
+        "one_percent_low_fps_median": 46.867,
+        "p95_interval_median_ms": 18.329,
+        "p95_interval_p95_ms": 46.665,
+        "p99_interval_p95_ms": 80.869,
+        "max_interval_max_ms": 2677.586,
+        "below_target": {
+          "60": {
+            "count": 1737,
+            "percent_of_available": 70.67
+          },
+          "50": {
+            "count": 498,
+            "percent_of_available": 20.26
+          },
+          "30": {
+            "count": 85,
+            "percent_of_available": 3.46
+          }
+        },
+        "jank_sum": 11403,
+        "severe_sum": 497,
+        "missed_vsync_sum": 14273
+      },
+      "raw_intervals": {
+        "count": 147657,
+        "p95_ms": 32.106,
+        "p99_ms": 36.059,
+        "mean_derived_fps": 54.717,
+        "over_16_67ms": 81734,
+        "over_33_33ms": 4011,
+        "over_50ms": 497
+      },
+      "native_presenter": {
+        "callbacks": 165231,
+        "unique_source_sequence_transitions": 148931,
+        "repeated_source_callbacks": 16300,
+        "repeat_percent": 9.86,
+        "presentation_sample_aggregate": {
+          "mailbox_replacements_sum": 157982,
+          "sequence_drops_sum": 101793,
+          "received_frames_latest": 149005
+        },
+        "last_sample": {
+          "presented_frames": 165231,
+          "presentation_fps": 59.99930901989115,
+          "source_fps": 0.0,
+          "received_frames": 149005,
+          "mailbox_replacements": 74,
+          "sequence_drops": 45,
+          "last_sequence": 149049
+        }
+      },
+      "host_presentation": {
+        "windows": 2741,
+        "p95_completion_latency_ms": 1.128,
+        "p95_gpu_time_ms": 0.364,
+        "max_p95_completion_latency_ms": 9.658,
+        "max_p95_gpu_time_ms": 1.816,
+        "submitted_sum": 165232,
+        "completed_sum": 165231,
+        "drawable_misses_sum": 0,
+        "command_errors_sum": 0
+      },
+      "resources": {
+        "emulator_cpu_p50_percent": 271.45,
+        "emulator_cpu_p95_percent": 350.57,
+        "emulator_cpu_max_percent": 636.1,
+        "emulator_rss_p50_kib": 2058328,
+        "emulator_rss_p95_kib": 2964158,
+        "emulator_rss_max_kib": 4354320
+      },
+      "surfaceflinger": {
+        "sample_count": 87,
+        "render_rate_hz_unique": [
+          60.0
+        ],
+        "last_total_missed_frames": 99,
+        "last_hwc_missed_frames": 99,
+        "last_gpu_missed_frames": 0
+      },
+      "audio_samples": {
+        "sample_count": 87,
+        "max_active_tracks": 1,
+        "max_partial_underruns": 0,
+        "max_empty_underruns": 0
+      },
+      "runtime_incidents": {
+        "anr_count": 0,
+        "input_timeout_count": 0,
+        "fatal_count": 0,
+        "memory_kill_count": 0,
+        "angle_warning_count": 0,
+        "vulkan_warning_count": 0,
+        "audio_error_count": 972
+      },
+      "event_coverage": {
+        "selected_event_counts": {
+          "TFT_GRAPHICS_RUN_STARTED": 1,
+          "TFT_READY_FOR_USER": 1,
+          "FIRST_NATIVE_FRAME": 1,
+          "GAME_FRAME_COLLECTOR_UNAVAILABLE": 1,
+          "GAME_FRAME_DEGRADATION": 328,
+          "TFT_SURFACE_LAYER_LOST": 2,
+          "TFT_SURFACE_LAYER_REPLACED": 1,
+          "ANDROID_RUNTIME_INCIDENTS": 19,
+          "FRAME_VISUAL_CHECKPOINT": 2482,
+          "RIOT_SAVED_SIGNIN_STOPPED": 2
+        },
+        "collector_and_login_receipts": [
+          {
+            "kind": "GAME_FRAME_COLLECTOR_UNAVAILABLE",
+            "reason": "ADB_ERROR",
+            "error_class": "ADB_DEVICE_OFFLINE"
+          },
+          {
+            "kind": "RIOT_SAVED_SIGNIN_STOPPED",
+            "reason_class": "KEYCHAIN_ITEM_UNREADABLE",
+            "retry_this_form": false
+          },
+          {
+            "kind": "RIOT_SAVED_SIGNIN_STOPPED",
+            "reason_class": "KEYCHAIN_ITEM_UNREADABLE",
+            "retry_this_form": false
+          }
+        ],
+        "pipeline_events": 0,
+        "pipeline_diagnostic_epochs": 0,
+        "pipeline_event_segments": 0,
+        "pipeline_log_aggregates": 516
+      },
+      "capture_artifacts": {
+        "TFTMAC_NATIVE_RUNTIME.sqlite": true,
+        "TFTMAC_NATIVE_RUNTIME.sqlite-wal": true,
+        "native-events.jsonl": true,
+        "logcat.raw.txt": true,
+        "emulator.stdout.log": true,
+        "native-clock-feb8a26b86194af1b5224e2165228edd": false,
+        "native-clock-b818f1eaa6ba4787b93f5202884b4d56": true
+      },
+      "stack_receipt": {
+        "configuration_sha256": {
+          "confidence": "DIRECT",
+          "source": "canonical effective runtime configuration",
+          "value": "7895c5e5e179bf238d7d40a3f38bc0bff571df5b1d9210e803118a8790ac1c51"
+        },
+        "game_graphics_api": "UNREAL_ENGINE_VULKAN",
+        "game_graphics_api_confidence": "DIRECT_VKINSTANCE_RUNTIME_LOG",
+        "angle_state": "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED",
+        "gfxstream_state": "PROVEN_ACTIVE",
+        "moltenvk_state": "PROVEN_ACTIVE",
+        "host_vulkan_device": "Apple M4, Version: 1.1.323",
+        "metal_device_name": "Apple M4",
+        "receipt_completeness": "COMPLETE",
+        "explicit_unknowns_json": "[\"cross_stack_frame_id\",\"gfxstream_internal_tracing\"]",
+        "pipeline_log_coverage": null,
+        "first_observed_divergent_boundary": null,
+        "causal_owner": null
+      },
+      "worst_available_window": {
+        "id": 2486,
+        "started_monotonic_ns": 861194300716958,
+        "ended_monotonic_ns": 861195393600166,
+        "effective_fps": 14.640173700976106,
+        "one_percent_low_fps": 0.7514378758117874,
+        "p50_interval_ms": 33.352916,
+        "p95_interval_ms": 1330.782001,
+        "p99_interval_ms": 1330.782001,
+        "maximum_interval_ms": 1330.782001,
+        "jank_count": 10,
+        "severe_count": 7,
+        "missed_vsync_equivalents": 120
+      },
+      "limitations": [
+        "The capture has no semantic stage/combat/round classifier; a long TFT process and visual checkpoints are confirmed, but whether the user reached a particular combat stage is not encoded.",
+        "GAME_FRAME_COLLECTOR_UNAVAILABLE occurred at startup because ADB reported device offline; unavailable windows remain in the capture.",
+        "pipeline_events is empty, so no guest-to-host transport request IDs or presentation-lineage IDs exist for causal attribution.",
+        "Presentation samples report source_fps=0.0 in the final sample; that is a recorder coverage limitation, not proof of zero source frames.",
+        "SurfaceFlinger 60 Hz and host completion/GPU timings describe the output/host stages; they do not prove 60 unique game frames on the display."
+      ],
+      "decision": "Diagnostic evidence only. Continuous 60 FPS acceptance is rejected for this capture; retain the raw capture and next collect a controlled heavy-combat run after fixing the startup collector gap and adding causal pipeline events."
+    }
+  ]
+}

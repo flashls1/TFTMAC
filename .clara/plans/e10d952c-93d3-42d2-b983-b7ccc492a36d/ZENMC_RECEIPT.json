@@ -1,0 +1,72 @@
+{
+  "change_id": "e10d952c-93d3-42d2-b983-b7ccc492a36d",
+  "invariant_violations": {
+    "recovered_after_failure": 0,
+    "recovered_after_reveal": 0,
+    "reveal_without_eligible": 0,
+    "reveal_without_fresh_present": 0,
+    "timeout_forced_reveal": 0
+  },
+  "model": {
+    "eligibility": [
+      "NONE",
+      "GAME_ACTIVITY",
+      "RIOT_LOGIN"
+    ],
+    "events": [
+      "android_frame",
+      "game_surface",
+      "game_surface_lost",
+      "login_active",
+      "login_lost",
+      "presented_frame",
+      "runtime_error",
+      "timeout",
+      "restart_status"
+    ],
+    "failure_rule": "runtime_error before reveal -> FAILED; FAILED remains covered.",
+    "latch_rule": "REVEALED never re-covers.",
+    "reveal_rule": "Only ELIGIBLE + presented_frame(sequence > baselineSequence) may reveal.",
+    "states": [
+      "COVERED",
+      "ELIGIBLE_WAITING_FRESH_PRESENT",
+      "REVEALED",
+      "FAILED"
+    ],
+    "timeout_rule": "timeout never reveals."
+  },
+  "name": "TFTMAC Startup Curtain State Safety ZenMC",
+  "note": "Scenario weights are adversarial branch-coverage weights, not empirical probabilities or forecasts.",
+  "observed_at": "2026-09-04T20:34:00Z",
+  "production_constraints_derived": [
+    "Never reveal on FIRST_NATIVE_FRAME or Android frame arrival alone.",
+    "Capture the currently presented source sequence when GameActivity/Riot-login eligibility is observed.",
+    "Require a later successfully completed source presentation with a strictly newer sequence.",
+    "If the eligible activity disappears before that proof, return to covered.",
+    "Do not let timeouts reveal Android.",
+    "Keep pre-reveal runtime failure visually covered.",
+    "Do not re-cover after successful reveal.",
+    "Block emulator input while covered/eligible/failed."
+  ],
+  "project_id": "tftmac",
+  "qualification": "ZENMC_REQUIRED",
+  "random_outcomes": {
+    "COVERED": 1477,
+    "ELIGIBLE_WAITING_FRESH_PRESENT": 643,
+    "FAILED": 2498,
+    "REVEALED": 5382
+  },
+  "random_trajectories": 10000,
+  "result": "PASS",
+  "schema": 1,
+  "seed": 202609041526,
+  "targeted_cases": {
+    "cold_boot_android_noise": "COVERED",
+    "failure_before_ready": "FAILED_COVERED",
+    "game_ready_requires_newer_presented_sequence": "REVEALED_ONLY_AFTER_NEWER_SEQUENCE",
+    "game_surface_disappears_before_fresh_frame": "COVERED",
+    "manual_login_exception_requires_fresh_frame": "REVEALED_ONLY_AFTER_NEWER_SEQUENCE",
+    "post_reveal_activity_or_error": "REVEALED_LATCHED"
+  },
+  "version": "1.0"
+}

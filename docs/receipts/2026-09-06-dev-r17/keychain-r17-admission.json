@@ -1,0 +1,36 @@
+{
+  "capture": "2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c",
+  "scope": "DIAGNOSTIC_ADMISSION_ONLY",
+  "performance_acceptance": "UNPROVEN",
+  "reasons": [
+    "LATEST_ARTIFACT_ATTEMPT_NOT_SEALED",
+    "SEALED_TRACE_MISSING",
+    "AUTOMATIC_TRACE_TRIGGER_UNPROVEN"
+  ],
+  "driver_summary": {
+    "creations": 0,
+    "duplicates": 1,
+    "explicitLoss": 0,
+    "frames": 4329,
+    "malformed": 0,
+    "missingFrames": 0,
+    "missingSpans": 0,
+    "retainedBindings": 0,
+    "retainedSyncs": 0,
+    "spans": 0
+  },
+  "native_callbacks": 9268,
+  "actual_onscreen": 7730,
+  "unique_onscreen_sources": 3793,
+  "native_tail_outstanding": 1,
+  "tft_present_intervals": 2486,
+  "tft_history_gap_windows": 2,
+  "automatic_trigger_exercised": false,
+  "prior_artifact_failures": 0,
+  "limits": [
+    "COLLECTOR_OVERHEAD_UNPROVEN",
+    "FULL_PIPELINE_LINEAGE_UNPROVEN",
+    "NO_GAMEPLAY_FPS_CLAIM"
+  ],
+  "status": "DIAGNOSTIC_ADMISSION_FAIL"
+}

@@ -1,6 +1,23 @@
 import XCTest
 
 final class CombatBenchmarkAnalysisTests: XCTestCase {
+    func testObserverInvalidityBlocksFavorableComparisonForEitherRun() {
+        let baseline = metrics()
+        let candidate = metrics(weightedFPS: 60, onePercentLowFPS: 30,
+                                p95IntervalMilliseconds: 17, p99IntervalMilliseconds: 20,
+                                jankRate: 0, severeRate: 0, missedVsyncRate: 0)
+        for baselineInvalid in [false, true] {
+            let analysis = CombatBenchmarkAnalysis(
+                baseline: baseline, candidate: candidate,
+                baselineObserverOverheadInvalid: baselineInvalid,
+                candidateObserverOverheadInvalid: !baselineInvalid
+            )
+            XCTAssertEqual(analysis.decision, .inconclusive)
+            let failures = baselineInvalid ? analysis.baselineValidity.failures : analysis.candidateValidity.failures
+            XCTAssertEqual(failures, [.observerOverheadInvalid])
+        }
+    }
+
     func testHomeRunRequiresBroadPacingImprovement() {
         let analysis = CombatBenchmarkAnalysis(
             baseline: metrics(),

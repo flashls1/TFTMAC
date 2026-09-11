@@ -207,13 +207,13 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
     static let supportedASGDrawFlushIntervals = [400, 800]
 
     static let playable = TFTMACRuntimeProfile(
-        identifier: "tftmac_5gb_native_v1",
+        identifier: "tftmac_6gb_highperf_v1",
         width: 1920,
         height: 1080,
         densityDPI: 320,
         refreshHz: 60,
         vCPU: 6,
-        ramMiB: 5120,
+        ramMiB: 6144,
         gpuMode: "host",
         audioBackend: "coreaudio",
         graphicsTransport: "virtio-gpu-asg",

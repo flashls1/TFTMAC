@@ -1,0 +1,65 @@
+{
+  "utc": "2026-09-06T10:01:20.815415+00:00",
+  "build": {
+    "utc": "2026-09-06T09:57:06.217773+00:00",
+    "build": "r17-keychain-no-ui",
+    "core_sha256": "ba79729f2e9330749bc64475b361e96c8357d741f92f9083c8bc0d02f3fc228d",
+    "control_unchanged": true,
+    "signature_verified": true
+  },
+  "capture": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c",
+  "session_status": "STOPPED",
+  "events": [
+    {
+      "utc": "2026-09-06T09:58:21Z",
+      "kind": "ANGLE_DRIVER_LOADED_VERIFIED",
+      "payload": {
+        "inode_and_namespace_hashes_verified": true,
+        "loaded_library_count": 3,
+        "logcat_continuation_from_pre_pause_selector": "09-06 04:57:45.696",
+        "maps_path": "/Users/flash/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures/2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c/angle-driver-loaded-maps.txt",
+        "maps_sha256": "7f07119e2729090d078eec9065500a0af3ab6246dd0e8b410180c4945a9f8167",
+        "pid": 3621,
+        "receipt": "LOADED_VERIFIED pid=3621 session=2026-09-06T09-57-20.168Z-a2795625-615f-4b71-9dd6-1a2772297a9c\n3452d6aa4316ef132bb55ed9ef1f4045a1d46e8c9f228caa6eb79e01dbad2088 libEGL_angle.so\n9780d4b99266764416825f31cf84967484f590a5b44896796a519139dad12a51 libGLESv2_angle.so\n00c696df2157e52f0778b4465c9d2b952712405a3c93e7ee691bfaf2672d32c0 libGLESv1_CM_angle.so\n",
+        "reuse_enabled": true,
+        "variant": "reuse"
+      }
+    },
+    {
+      "utc": "2026-09-06T10:00:08Z",
+      "kind": "ANGLE_EVIDENCE_FINALIZED",
+      "payload": {
+        "acceptance": "DIAGNOSTIC_ONLY",
+        "pid": 3621,
+        "summary": "angle-driver-evidence.json"
+      }
+    },
+    {
+      "utc": "2026-09-06T10:00:08Z",
+      "kind": "AVD_CONFIG_RESTORED",
+      "payload": {
+        "sha256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125"
+      }
+    },
+    {
+      "utc": "2026-09-06T09:59:09Z",
+      "kind": "RIOT_SAVED_SIGNIN_STOPPED",
+      "payload": {
+        "reason": "Saved Riot sign-in could not read its DEV Keychain item (status -25293). Manual sign-in remains available.",
+        "retry_this_form": false
+      }
+    }
+  ],
+  "native_verification": "PASS 110 tests and source/unsigned Release checks",
+  "login": "BLOCKED_KEYCHAIN_ACCESS_AUTH_FAILED",
+  "password_correction": "NO_BACKSLASH; preserved earlier corrected item; no additional credential mutation",
+  "performance_acceptance": "UNPROVEN",
+  "recording_admission": "DIAGNOSTIC_ADMISSION_FAIL",
+  "recording_admission_reasons": [
+    "LATEST_ARTIFACT_ATTEMPT_NOT_SEALED",
+    "SEALED_TRACE_MISSING",
+    "AUTOMATIC_TRACE_TRIGGER_UNPROVEN"
+  ],
+  "runtime_stopped": true,
+  "next_action": "User grants TFTMAC DEV access to its saved Riot Keychain item; then repeat saved-login and closed healthy diagnostic capture. Do not add graphics/infrastructure work before this test."
+}

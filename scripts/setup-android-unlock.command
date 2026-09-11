@@ -3,7 +3,7 @@ set -euo pipefail
 unsetopt BG_NICE
 
 readonly DEV_APP="/Applications/TFTMAC DEV.app"
-readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.android-unlock.v2"
+readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"
 readonly KEYCHAIN_ACCOUNT="android-user-0"
 
 fail() { print -u2 "TFTMAC unlock setup failed: $*"; exit 1; }

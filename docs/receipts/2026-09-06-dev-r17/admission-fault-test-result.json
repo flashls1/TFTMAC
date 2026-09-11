@@ -1,0 +1,9 @@
+{
+  "failed_actual_write_rejected": true,
+  "missing_producer_rejected": true,
+  "other_sql_producers_preserved": true,
+  "new_missing_producer_reasons": [
+    "ACTUAL_TFT_DRIVER_IDENTITY_MISSING",
+    "ACTUAL_TFT_DRIVER_ROWS_MISSING"
+  ]
+}

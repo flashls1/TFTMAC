@@ -11,6 +11,7 @@
 int main() {
     using tftmac::causal::ParseOwnedProbeTransportLabel;
     using tftmac::causal::ParseOwnedProbeTimelineWorkId;
+    using tftmac::causal::ParseANGLETimelineWorkId;
     uint64_t value = 0;
     assert(sizeof(tftmac::causal::PipelineEventV1) == 96);
     assert(ParseOwnedProbeTransportLabel("TFTMAC/control/stable_descriptor_draw/184467", &value));
@@ -34,7 +35,26 @@ int main() {
     assert(ParseOwnedProbeTimelineWorkId(2, &info, &work_id));
     assert(work_id == 42);
 
+    uint64_t angle_one_signal_vals[1] = {77};
+    info.signalSemaphoreValueCount = 1;
+    info.pSignalSemaphoreValues = angle_one_signal_vals;
+    assert(ParseANGLETimelineWorkId(1, &info, &work_id));
+    assert(work_id == 77);
+
+    uint64_t angle_signal_vals[2] = {0, 77};
+    info.signalSemaphoreValueCount = 2;
+    info.pSignalSemaphoreValues = angle_signal_vals;
+    assert(ParseANGLETimelineWorkId(2, &info, &work_id));
+    assert(work_id == 77);
+    assert(!ParseANGLETimelineWorkId(0, &info, &work_id));
+    assert(!ParseANGLETimelineWorkId(2, nullptr, &work_id));
+    angle_signal_vals[1] = 0;
+    assert(!ParseANGLETimelineWorkId(2, &info, &work_id));
+    angle_signal_vals[1] = 77;
+
     // Negative test cases:
+    info.signalSemaphoreValueCount = 2;
+    info.pSignalSemaphoreValues = signal_vals;
     assert(!ParseOwnedProbeTimelineWorkId(1, &info, &work_id));
     assert(!ParseOwnedProbeTimelineWorkId(2, nullptr, &work_id));
     assert(!ParseOwnedProbeTimelineWorkId(2, &info, nullptr));

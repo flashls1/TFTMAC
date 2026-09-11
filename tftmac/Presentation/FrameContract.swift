@@ -53,32 +53,48 @@ struct FrameMailboxSnapshot: Sendable {
 
 final class LatestFrameMailbox: @unchecked Sendable {
     private let lock = NSLock()
-    private var latest: EmulatorFrame?
+    private var pending = [EmulatorFrame]()
+    private let buffersDisplayJitter: Bool
+    private let maximumPendingAgeNS: UInt64 = 33_333_334
     private var receivedFrames: UInt64 = 0
     private var replacedBeforePresentation: UInt64 = 0
     private var sequenceDrops: UInt64 = 0
     private var previousSequence: UInt32?
     private var latestReceiveMonotonicNanoseconds: UInt64?
 
+    init(buffersDisplayJitter: Bool = false) {
+        self.buffersDisplayJitter = buffersDisplayJitter
+    }
+
     func publish(_ frame: EmulatorFrame) {
         lock.lock()
         defer { lock.unlock() }
         receivedFrames &+= 1
-        if latest != nil { replacedBeforePresentation &+= 1 }
+        let capacity = buffersDisplayJitter ? 2 : 1
+        if pending.count == capacity {
+            pending.removeFirst()
+            replacedBeforePresentation &+= 1
+        }
         if let previousSequence, frame.sequence > previousSequence &+ 1 {
             sequenceDrops &+= UInt64(frame.sequence - previousSequence - 1)
         }
         previousSequence = frame.sequence
         latestReceiveMonotonicNanoseconds = frame.receivedMonotonicNanoseconds
-        latest = frame
+        pending.append(frame)
     }
 
-    func takeLatest() -> EmulatorFrame? {
+    func takeForPresentation(nowMonotonicNS: UInt64 = DispatchTime.now().uptimeNanoseconds) -> EmulatorFrame? {
         lock.lock()
         defer { lock.unlock() }
-        let frame = latest
-        latest = nil
-        return frame
+        // Preserve short arrival bursts across consecutive display ticks, but skip older
+        // queued content after a stall. Never wait to fill the buffer before displaying.
+        if pending.count > 1, let oldest = pending.first,
+           nowMonotonicNS > oldest.receivedMonotonicNanoseconds,
+           nowMonotonicNS - oldest.receivedMonotonicNanoseconds > maximumPendingAgeNS {
+            pending.removeFirst()
+            replacedBeforePresentation &+= 1
+        }
+        return pending.isEmpty ? nil : pending.removeFirst()
     }
 
     func snapshot() -> FrameMailboxSnapshot {

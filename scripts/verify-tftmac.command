@@ -18,7 +18,7 @@ require_command() {
 # /Applications/TFTMAC.app, the external emulator runtime, a signing identity,
 # user credentials, or a private capture. Those checks belong to the separate
 # local-only verify-installed-runtime.command contract.
-for tool in git jq node plutil rg shasum xcodebuild zsh; do
+for tool in git jq node plutil rg shasum sips xcodebuild zsh; do
   require_command "$tool"
 done
 
@@ -36,6 +36,7 @@ for required in \
   "$PROTO_SOURCE" \
   tftmac/Assets/TFTMAC-Official-Icon.png \
   tftmac/Assets/TFTMAC-DEV-Icon.png \
+  tftmac/Assets/TFTMAC-Splash-1920x1080.png \
   ControlLauncher/Info.plist \
   ControlLauncher/main.swift \
   CausalRuntime/PipelineEventV1.h \
@@ -114,6 +115,7 @@ jq -e '
   .emulator.adbServerPort == 5038 and
   .emulator.consolePort == 5582 and
   .emulator.adbVendorKeysInjected == false and
+  .runtimeProfile.scope == "PROTECTED_CONTROL_HISTORICAL" and
   .runtimeProfile.vcpu == 6 and
   .runtimeProfile.ramMiB == 5120 and
   .runtimeProfile.display == "1920x1080" and
@@ -123,6 +125,36 @@ jq -e '
   .runtimeProfile.tftFrameRateCap == 60 and
   .runtimeProfile.tftPerformanceModeBeta == false and
   .runtimeProfile.activeExperiment == "control" and
+  .package.scope == "PROTECTED_CONTROL_HISTORICAL_OBSERVATION" and
+  .currentDevWorking.workingVersion == "DEV-B8-WIN-01" and
+  .currentDevWorking.application.path == "/Applications/TFTMAC DEV.app" and
+  .currentDevWorking.application.bundleId == "com.flashls1.tftmac.dev" and
+  .currentDevWorking.application.version == "2.3.0" and
+  .currentDevWorking.application.build == "8" and
+  .currentDevWorking.runtime.mode == "advanced_diagnostics" and
+  .currentDevWorking.runtime.variant == "stock_shadow" and
+  .currentDevWorking.runtime.avd == "TFTMAC_Diagnostic_StockShadow_R1" and
+  .currentDevWorking.runtime.adbSerial == "emulator-5586" and
+  .currentDevWorking.runtime.adbServerPort == 5041 and
+  .currentDevWorking.runtime.consolePort == 5586 and
+  .currentDevWorking.runtime.controllerPort == 8556 and
+  .currentDevWorking.runtime.effectiveVcpu == 8 and
+  .currentDevWorking.runtime.effectiveRamMiB == 6144 and
+  .currentDevWorking.runtime.storedAvdBaselineVcpu == 6 and
+  .currentDevWorking.runtime.storedAvdBaselineRamMiB == 5120 and
+  .currentDevWorking.runtime.storedAvdBaselineSHA256 == "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125" and
+  .currentDevWorking.runtime.display == "1920x1080" and
+  .currentDevWorking.runtime.densityDpi == 320 and
+  .currentDevWorking.runtime.refreshHz == 60 and
+  .currentDevWorking.package.name == "com.riotgames.league.teamfighttactics" and
+  .currentDevWorking.package.versionName == "18.1-5423749" and
+  .currentDevWorking.package.versionCode == "8423749" and
+  .currentDevWorking.graphics.selectedGameRHI == "OPENGL_ES_ANGLE" and
+  .currentDevWorking.cache.multifile == true and
+  .currentDevWorking.cache.angleEnabled == "exposeNonConformant*:exposeES32ForTesting" and
+  .currentDevWorking.cache.angleDisabled == "preferSubmitAtFBOBoundary" and
+  .currentDevWorking.cache.syncMonolithicPipelinesToBlobCache == false and
+  .currentDevWorking.promotionState == "VERIFIED_NET_IMPROVEMENT_INTEGRATED" and
   .finalInstalledRelease.version == "2.3.0" and
   .finalInstalledRelease.build == "8" and
   .finalInstalledRelease.receiptScope == "HISTORICAL_BUILD8_RELEASE_ACCEPTANCE" and
@@ -146,11 +178,16 @@ jq -e '
 
 jq -e '
   .finalInstalledRelease.currentReleaseGameplayBenchmark == "VERIFIED_CAPTURE_ROOT_ATTRIBUTION_UNKNOWN" and
+  .currentHostAudit.scope == "HISTORICAL_HOST_AUDIT_2026_08_31" and
   .currentHostAudit.releaseIdentityHashesMatch == true and
   .currentHostAudit.zeroIdentityFindings == true and
   .currentHostAudit.trustEvaluation == "NOT_TRUSTED_BY_CURRENT_HOST_POLICY" and
   .currentHostAudit.cssmError == "CSSMERR_TP_NOT_TRUSTED" and
   .currentHostAudit.installedRuntimeVerifier == "BLOCKED_SIGNING_IDENTITY" and
+  .latestHostSigningRecheck.controlDeepStrictCodesign == "PASS" and
+  .latestHostSigningRecheck.devDeepStrictCodesign == "PASS" and
+  .latestHostSigningRecheck.installedRuntimeVerifier == "PASS" and
+  .currentGameplayCapture.scope == "HISTORICAL_BUILD8_CAPTURE_2026_08_31" and
   .currentGameplayCapture.captureId == "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200" and
   .currentGameplayCapture.storage == "PRIVATE_LOCAL_ONLY" and
   .currentGameplayCapture.database.byteCount == 63897600 and
@@ -197,7 +234,12 @@ for locked in \
   'adb_serial: "emulator-5582"' \
   'adb_server_port: 5038' \
   'ram_mb: 5120' \
-  'selected: A' \
+  'effective_vcpu: 8' \
+  'effective_ram_mib: 6144' \
+  'working_version: "DEV-B8-WIN-01"' \
+  'selected_game_rhi: "OPENGL_ES_ANGLE"' \
+  'protected_control: A' \
+  'dev_working: B' \
   'version: "2.3.0"' \
   'build: "8"' \
   'official_icon_source_sha256: "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016"' \
@@ -215,6 +257,8 @@ for locked in \
   'zero_identity_findings: true' \
   'cssm_error: "CSSMERR_TP_NOT_TRUSTED"' \
   'installed_runtime_verifier: "BLOCKED_SIGNING_IDENTITY"' \
+  'installed_runtime_verifier: PASS' \
+  'scope: "historical_build8_capture_2026_08_31"' \
   'id: "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200"' \
   'current_selected_experiment: "control"' \
   'advanced_source_causal_logger: "partial_source_schema_and_cpp_abi_not_live_accepted"'; do
@@ -236,13 +280,20 @@ while read -r expected_hash authority_path; do
 done < ssot/AUTHORITY_INPUTS.sha256
 
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "55" ]] || fail "native test inventory drifted: expected 55, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "110" ]] || fail "native test inventory drifted: expected 110, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
   || fail "official TFTMAC icon source hash drifted"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-DEV-Icon.png | awk '{print $1}')" == "660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945" ]] \
   || fail "TFTMAC DEV icon source hash drifted"
+readonly SPLASH="tftmac/Assets/TFTMAC-Splash-1920x1080.png"
+[[ "$(shasum -a 256 "$SPLASH" | awk '{print $1}')" == "533236b335d46616402fb64d4d35b0aff55308d4df9e891d837719b43bced6a2" ]] \
+  || fail "startup splash source hash drifted"
+[[ "$(sips -g pixelWidth "$SPLASH" | awk '/pixelWidth:/ {print $2}')" == "1920" ]] \
+  || fail "startup splash width is not 1920"
+[[ "$(sips -g pixelHeight "$SPLASH" | awk '/pixelHeight:/ {print $2}')" == "1080" ]] \
+  || fail "startup splash height is not 1080"
 jq -e '
   .default_mode == "control" and
   .modes.control.application_bundle_id == "com.flashls1.tftmac" and
@@ -261,6 +312,10 @@ rg -q -F 'process.arguments = ["-P", adbPort, "-s", serial, "shell"]' ControlLau
   || fail "Control unlock wrapper does not keep the PIN out of process arguments"
 rg -q -F 'setenv("TFTMAC_RUNTIME_MODE", kRuntimeMode, 1)' DevLauncher/main.c \
   || fail "DEV launcher does not enforce its runtime mode"
+rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/setup-android-unlock.command \
+  || fail "DEV unlock setup does not use the isolated DEV Keychain service"
+rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/run-vulkan-experiment-campaign.command \
+  || fail "DEV experiment campaign does not use the isolated DEV Keychain service"
 
 readonly PROTO_SHA="$(shasum -a 256 "$PROTO" | awk '{print $1}')"
 readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"
@@ -349,6 +404,11 @@ cmp -s ssot/runtime-modes.json "${RELEASE_APP}/Contents/Resources/runtime-modes.
   || fail "unsigned Release app did not package the exact runtime-mode registry"
 cmp -s ssot/runtime-authority.json "${RELEASE_APP}/Contents/Resources/runtime-authority.json" \
   || fail "unsigned Release app did not package the exact control authority"
+cmp -s "$SPLASH" "${RELEASE_APP}/Contents/Resources/TFTMAC-Splash-1920x1080.png" \
+  || fail "unsigned Release app did not package the exact startup splash"
+/usr/bin/xcrun --sdk macosx swift -e 'import AppKit; precondition(NSImage(contentsOfFile: CommandLine.arguments[1]) != nil)' \
+  "${RELEASE_APP}/Contents/Resources/TFTMAC-Splash-1920x1080.png" >/dev/null \
+  || fail "bundled startup splash is not loadable by NSImage"
 node .clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs >/dev/null
 
 /bin/zsh scripts/test-native-app.command
@@ -359,4 +419,4 @@ cmp -s "$STATE_BEFORE" "$STATE_AFTER" || {
   fail "source verification changed tracked or visible generated state"
 }
 
-print "TFTMAC source validation: OK (unsigned Release build; 55 native tests; diagnostic mode source authority PASS)"
+print "TFTMAC source validation: OK (unsigned Release build; native test suite passed; startup splash bundled; DEV startup + diagnostic source authority; diagnostic mode source authority PASS)"

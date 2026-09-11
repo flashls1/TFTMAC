@@ -119,6 +119,45 @@ final class GameFrameTelemetryTests: XCTestCase {
         XCTAssertEqual(sampler.selectedLayer, layer)
     }
 
+    func testDisjointAndroidHistoryDoesNotInventAHitch() throws {
+        for count in [126, 127] {
+            var sampler = GameFrameTelemetrySampler()
+            _ = sampler.updateLayerList(layer)
+            _ = sampler.ingestLatency(latency(timestamps: timestamps(count: 127)), observedMonotonicNS: 1)
+            let values = timestamps(count: count, start: 150 * refresh)
+            let window = try XCTUnwrap(sampler.ingestLatency(
+                latency(timestamps: values), observedMonotonicNS: 3_000_000_001
+            ).window)
+            XCTAssertTrue(window.historyTruncated)
+            XCTAssertEqual(window.frameCount, count - 1)
+            // This is an incomplete wall-time window, not proof of 60FPS.
+            XCTAssertEqual(window.effectiveFPS, Double(count - 1) / 3, accuracy: 0.001)
+            XCTAssertEqual(window.jankCount, 0)
+        }
+    }
+
+    func testDisjointHistoryStillCountsRetainedRealHitch() throws {
+        var sampler = GameFrameTelemetrySampler()
+        _ = sampler.updateLayerList(layer)
+        _ = sampler.ingestLatency(latency(timestamps: timestamps(count: 127)), observedMonotonicNS: 1)
+        var values = timestamps(count: 127, start: 150 * refresh)
+        for index in 60..<values.count { values[index] += 150_000_000 - refresh }
+        let window = try XCTUnwrap(sampler.ingestLatency(
+            latency(timestamps: values), observedMonotonicNS: 3_000_000_001
+        ).window)
+        XCTAssertTrue(window.historyTruncated)
+        XCTAssertEqual(window.maximumMS ?? 0, 150, accuracy: 0.001)
+        XCTAssertEqual(window.severeCount, 1)
+        XCTAssertLessThan(window.effectiveFPS, 60)
+    }
+
+    func testAndroidHistoryCapacityIs127CompletedRecords() throws {
+        let poll = try XCTUnwrap(GameFrameTelemetry.parseSurfaceFlingerLatency(
+            latency(timestamps: timestamps(count: 127))
+        ))
+        XCTAssertTrue(poll.historyTruncated)
+    }
+
     private func timestamps(count: Int, start: UInt64 = 16_666_667) -> [UInt64] {
         (0..<count).map { start + UInt64($0) * refresh }
     }

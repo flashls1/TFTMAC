@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "qualification": "ZENMC_REQUIRED",
+  "reason": [
+    "restart/recovery lifecycle",
+    "authentication state transition",
+    "persistent-session boundary",
+    "input gating during asynchronous process replacement",
+    "risk of recovery loops"
+  ],
+  "modeled_design": "DEV-specific keychain namespace + one bounded first-login process recycle + input gate + official-session persistence",
+  "trajectories": 10000,
+  "seed": 20260904,
+  "violations": 0,
+  "checked_invariants": [
+    "DEV and Control Keychain namespaces never collide",
+    "automatic Riot recovery occurs at most once per app session",
+    "input remains blocked while recovery is in progress",
+    "no Riot credential value is stored by TFTMAC",
+    "Control is never mutated",
+    "timeout does not trigger a destructive retry or data clear"
+  ],
+  "result": "PASS"
+}

@@ -21,6 +21,7 @@ enum CombatBenchmarkValidityFailure: String, Equatable, Sendable {
     case clockRoundTripTooHigh
     case frameHistoryTruncated
     case exactLayerChangedOrAmbiguous
+    case observerOverheadInvalid
 }
 
 struct CombatBenchmarkValidity: Equatable, Sendable {
@@ -33,7 +34,7 @@ struct CombatBenchmarkValidity: Equatable, Sendable {
 
     var isValid: Bool { failures.isEmpty }
 
-    static func evaluate(_ metrics: CombatBenchmarkMetrics) -> CombatBenchmarkValidity {
+    static func evaluate(_ metrics: CombatBenchmarkMetrics, observerOverheadInvalid: Bool = false) -> CombatBenchmarkValidity {
         var failures = [CombatBenchmarkValidityFailure]()
         if metrics.combatDurationSeconds < minimumCombatDurationSeconds {
             failures.append(.combatDurationTooShort)
@@ -52,6 +53,9 @@ struct CombatBenchmarkValidity: Equatable, Sendable {
         }
         if !metrics.exactLayerStable {
             failures.append(.exactLayerChangedOrAmbiguous)
+        }
+        if observerOverheadInvalid {
+            failures.append(.observerOverheadInvalid)
         }
         return CombatBenchmarkValidity(failures: failures)
     }
@@ -152,9 +156,14 @@ struct CombatBenchmarkAnalysis: Equatable, Sendable {
     let deltas: CombatBenchmarkDeltas
     let decision: CombatBenchmarkDecision
 
-    init(baseline: CombatBenchmarkMetrics, candidate: CombatBenchmarkMetrics) {
-        let baselineValidity = CombatBenchmarkValidity.evaluate(baseline)
-        let candidateValidity = CombatBenchmarkValidity.evaluate(candidate)
+    init(
+        baseline: CombatBenchmarkMetrics,
+        candidate: CombatBenchmarkMetrics,
+        baselineObserverOverheadInvalid: Bool = false,
+        candidateObserverOverheadInvalid: Bool = false
+    ) {
+        let baselineValidity = CombatBenchmarkValidity.evaluate(baseline, observerOverheadInvalid: baselineObserverOverheadInvalid)
+        let candidateValidity = CombatBenchmarkValidity.evaluate(candidate, observerOverheadInvalid: candidateObserverOverheadInvalid)
         self.baselineValidity = baselineValidity
         self.candidateValidity = candidateValidity
         let deltas = CombatBenchmarkDeltas(baseline: baseline, candidate: candidate)

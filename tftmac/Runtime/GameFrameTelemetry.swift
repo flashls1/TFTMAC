@@ -1,5 +1,50 @@
 import Foundation
 
+enum RiotANRRecoveryAction: String, Equatable, Sendable {
+    case closeApp = "close_app"
+    case wait = "wait"
+}
+
+struct RiotANRRecoveryTarget: Equatable, Sendable {
+    let action: RiotANRRecoveryAction
+    let x: Int
+    let y: Int
+}
+
+enum RiotANRRecovery {
+    static func preferredTarget(in uiHierarchy: String) -> RiotANRRecoveryTarget? {
+        var waitTarget: RiotANRRecoveryTarget?
+        for fragment in uiHierarchy.components(separatedBy: "<node") {
+            guard let text = attribute("text", in: fragment),
+                  let bounds = attribute("bounds", in: fragment),
+                  let center = center(ofBounds: bounds) else { continue }
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "close app" {
+                return RiotANRRecoveryTarget(action: .closeApp, x: center.x, y: center.y)
+            }
+            if normalized == "wait" {
+                waitTarget = RiotANRRecoveryTarget(action: .wait, x: center.x, y: center.y)
+            }
+        }
+        return waitTarget
+    }
+
+    private static func attribute(_ name: String, in fragment: String) -> String? {
+        let marker = name + "=\""
+        guard let startRange = fragment.range(of: marker) else { return nil }
+        let valueStart = startRange.upperBound
+        guard let end = fragment[valueStart...].firstIndex(of: "\"") else { return nil }
+        return String(fragment[valueStart..<end])
+    }
+
+    private static func center(ofBounds bounds: String) -> (x: Int, y: Int)? {
+        let numbers = bounds.split { !$0.isNumber }.compactMap { Int($0) }
+        guard numbers.count == 4,
+              numbers[2] >= numbers[0], numbers[3] >= numbers[1] else { return nil }
+        return ((numbers[0] + numbers[2]) / 2, (numbers[1] + numbers[3]) / 2)
+    }
+}
+
 enum GameFrameTelemetryUnavailable: Sendable, Equatable {
     case noTFTSurfaceView
     case multipleTFTSurfaceViews
@@ -71,7 +116,8 @@ enum GameFrameTelemetry {
     static let tftGameActivitySurface = "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)"
     static let tftMobileFREActivity = "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
     static let ownedProbeSurface = "SurfaceView[com.flashls1.tftmac.vulkanprobe/android.app.NativeActivity]"
-    static let maxLatencyHistoryFrames = 128
+    // SurfaceFlinger omits the current slot of its 128-slot history.
+    static let maxLatencyHistoryFrames = 127
 
     static func hasActiveLoginPrompt(in output: String) -> Bool {
         output.split(whereSeparator: \.isNewline).contains { rawLine in
@@ -239,9 +285,10 @@ struct GameFrameTelemetrySampler: Sendable {
         }
 
         var intervals = [GameFramePresentInterval]()
-        if poll.historyTruncated, !previousWasRetained, !newSamples.isEmpty {
-            // More frames arrived than the SurfaceFlinger ring retained. Do
-            // not collapse the missing history into one fabricated interval.
+        if !previousWasRetained, !newSamples.isEmpty {
+            // Disjoint histories cannot prove adjacent frames, even when
+            // pending/sentinel records leave fewer than 127 valid samples.
+            // Retain the coverage gap rather than inventing a long frame.
             previousActualPresentNS = newSamples.first?.actualPresentNS
             windowHistoryTruncated = true
         }

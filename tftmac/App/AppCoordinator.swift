@@ -2,21 +2,27 @@ import AppKit
 
 @MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate {
-    private let mailbox = LatestFrameMailbox()
+    private let mailbox = LatestFrameMailbox(
+        buffersDisplayJitter: Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev"
+    )
     private var mainWindowController: MainWindowController?
     private var runtimeController: TFTMACRuntimeController?
     private var settingsWindowController: RuntimeSettingsWindowController?
+    private var startupCurtain = StartupCurtainReducer()
     private var activeProfile: TFTMACRuntimeProfile = .playable
     private var activeApplicationSupport = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/TFTMAC", isDirectory: true)
     private var terminationInProgress = false
+    private let autonomousSilent = TFTMACLaunchPolicy.isAutonomousSilent()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = MainWindowController(mailbox: mailbox)
         mainWindowController = controller
-        controller.showWindow(nil)
-        controller.window?.makeFirstResponder(controller.emulatorView)
-        NSApp.activate(ignoringOtherApps: true)
+        if !autonomousSilent {
+            controller.showWindow(nil)
+            controller.focusStartupCurtain()
+            NSApp.activate(ignoringOtherApps: true)
+        }
 
         do {
             let savedProfile = TFTMACRuntimeProfile.load()
@@ -25,11 +31,19 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             )
             activeProfile = runtimeConfiguration.profile
             activeApplicationSupport = runtimeConfiguration.applicationSupport
-            let unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
-                applicationName: runtimeConfiguration.selection.mode == .advancedDiagnostics ? "TFTMAC DEV" : "TFTMAC"
+            startupCurtain.configure(workload: runtimeConfiguration.workload)
+            renderStartupCurtain(on: controller, animated: false)
+
+            let isDEV = runtimeConfiguration.selection.mode == .advancedDiagnostics
+            let unlockSecret: TFTMACGuestUnlockSecret? = isDEV ? nil : try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                applicationName: "TFTMAC",
+                runtimeMode: runtimeConfiguration.selection.mode
             )
             if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
-                controller.emulatorView.setStatus("Automatic Android unlock is stored securely.", isError: false)
+                controller.emulatorView.setStatus(
+                    isDEV ? "TFTMAC DEV does not require an Android PIN." : "Automatic Android unlock is stored securely.",
+                    isError: false
+                )
                 NSApp.terminate(nil)
                 return
             }
@@ -37,11 +51,24 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
                 runtimeConfiguration: runtimeConfiguration,
                 guestUnlockSecret: unlockSecret,
                 mailbox: mailbox,
-                status: { [weak controller] text, isError in
-                    controller?.emulatorView.setStatus(text, isError: isError)
+                status: { [weak self, weak controller] text, isError in
+                    guard let self, let controller else { return }
+                    if isError, self.startupCurtain.state.isVisuallyCovered {
+                        self.startupCurtain.fail(text)
+                        self.renderStartupCurtain(on: controller)
+                    } else {
+                        controller.emulatorView.setStatus(text, isError: isError)
+                    }
                 },
-                gameFrame: { [weak controller] window in
-                    controller?.emulatorView.setGameFrameWindow(window)
+                gameFrame: { [weak self, weak controller] window in
+                    guard let self, let controller else { return }
+                    controller.emulatorView.setGameFrameWindow(window)
+                    guard let status = window?.status else { return }
+                    self.startupCurtain.observeGameFrameStatus(
+                        status,
+                        currentPresentedSequence: controller.emulatorView.latestSuccessfullyPresentedSourceSequence
+                    )
+                    self.renderStartupCurtain(on: controller)
                 },
                 completed: {
                     if runtimeConfiguration.workload == .ownedVulkanProbe {
@@ -50,14 +77,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
                 }
             )
             runtimeController = runtime
-            controller.emulatorView.onTouchInput = { [weak runtime] input in
-                runtime?.sendTouch(input)
+            controller.emulatorView.onTouchInput = { [weak runtime] input, timestampNS in
+                runtime?.sendTouch(input, nativeEventMonotonicNS: timestampNS)
             }
-            controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons in
-                runtime?.sendMouse(x: x, y: y, buttons: buttons)
+            controller.emulatorView.onMouseInput = { [weak runtime] x, y, buttons, timestampNS in
+                runtime?.sendMouse(x: x, y: y, buttons: buttons, nativeEventMonotonicNS: timestampNS)
             }
-            controller.emulatorView.onKeyboardInput = { [weak runtime] text, key in
-                runtime?.sendKeyboard(text: text, key: key)
+            controller.emulatorView.onKeyboardInput = { [weak runtime] text, key, timestampNS in
+                runtime?.sendKeyboard(text: text, key: key, nativeEventMonotonicNS: timestampNS)
             }
             controller.emulatorView.onPresentationSample = { [weak runtime] sample in
                 runtime?.recordPresentation(sample)
@@ -65,17 +92,32 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             controller.emulatorView.onHostPresentationWindow = { [weak runtime] sample in
                 runtime?.recordHostPresentation(sample)
             }
+            controller.emulatorView.onSourceFramePresented = { [weak self, weak controller] sequence in
+                guard let self, let controller else { return }
+                self.startupCurtain.sourceFramePresented(sequence)
+                self.renderStartupCurtain(on: controller)
+            }
             runtime.start()
         } catch {
-            controller.emulatorView.setStatus(error.localizedDescription, isError: true)
+            var message = error.localizedDescription
+            if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev" {
+                let support = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Application Support/TFTMAC/Modes/advanced_diagnostics", isDirectory: true)
+                do { _ = try DiagnosticArtifactFile.persistStartupFailure(message, applicationSupport: support) }
+                catch { message += " (The private failure receipt could not be written: \(error.localizedDescription))" }
+            }
+            startupCurtain.fail(message)
+            renderStartupCurtain(on: controller)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak controller] in
+            guard !self.autonomousSilent else { return }
             controller?.enterNativeFullscreen()
         }
     }
 
     @objc func showSettings(_ sender: Any?) {
+        guard !autonomousSilent else { return }
         let settings = settingsWindowController ?? RuntimeSettingsWindowController(profile: TFTMACRuntimeProfile.load())
         settings.onSave = { [weak self] previous, next in
             self?.runtimeController?.recordSettingsChange(previous: previous, next: next)
@@ -85,6 +127,15 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         settings.showWindow(sender)
         settings.window?.makeKeyAndOrderFront(sender)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func toggleRememberRiotLogin(_ sender: NSMenuItem) {
+        RiotCredentialStore.remember.toggle()
+        sender.state = RiotCredentialStore.remember ? .on : .off
+    }
+
+    @objc func signInWithSavedAccount(_ sender: Any?) {
+        runtimeController?.signInWithSavedAccount()
     }
 
     @objc func markMatchEntry(_ sender: Any?) { recordMarker("MATCH_ENTRY") }
@@ -118,8 +169,19 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         runtimeController?.recordMarker(marker)
     }
 
+    private func renderStartupCurtain(on controller: MainWindowController, animated: Bool = true) {
+        switch startupCurtain.state {
+        case .covered, .eligible:
+            controller.showStartupCurtain()
+        case .failed(let message):
+            controller.showStartupCurtainError(message)
+        case .revealed:
+            controller.revealStartupCurtain(animated: animated)
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !autonomousSilent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

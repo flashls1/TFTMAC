@@ -12,7 +12,7 @@ readonly RUNNER_LOCK="${HOME}/Library/Application Support/TFTMAC/Modes/advanced_
 readonly CONTROL_EXECUTABLE="${CONTROL_APP}/Contents/MacOS/TFTMAC"
 readonly CONTROL_EMULATOR="/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/emulator"
 readonly CONTROL_AVD="/Volumes/MAC MINI M4/TFTMAC/Runtime/AVD/TFT_Ultra_Tablet.avd"
-readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.android-unlock.v2"
+readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"
 readonly KEYCHAIN_ACCOUNT="android-user-0"
 readonly RUN_TIMEOUT_SECONDS=900
 

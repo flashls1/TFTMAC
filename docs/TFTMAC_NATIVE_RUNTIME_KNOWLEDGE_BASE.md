@@ -1,12 +1,13 @@
 # TFTMAC Native Runtime Knowledge Base
 
-**Authority date:** 2026-08-31
+**Reference reconciled:** 2026-09-10
+**Authority rule:** supporting knowledge base only; read `facts.md` then `project.md` for current truth. Historical receipts below retain their dates and do not override the current DEV state.
 
 **Product target:** Native macOS TFT client experience backed by the official Android TFT package
+**Current DEV profile:** `DEV-B8-WIN-01` — 1920×1080 / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE.
+**Protected Control reference:** `tftmac_5gb_native_v1`, 6 vCPU / 5120 MiB, ports 5038/5582/8554.
 
-**Current profile:** `tftmac_5gb_native_v1`
-
-## 1. Current outcome ledger
+## 1. Outcome ledger
 
 | Claim | State | Decisive evidence |
 | --- | --- | --- |
@@ -14,19 +15,19 @@
 | Full display is 1920x1080 | VERIFIED | AX window receipt was origin `0,0`, size `1920x1080`, `AXFullScreen=true`; gRPC frames are exactly 1920x1080 RGBA |
 | Correctly oriented live Android video | VERIFIED | Live screenshot and input mapping on native Metal output |
 | Donor-compatible launch architecture | VERIFIED | Packaged `TFTMAC Emulator Host.app` launched with `/usr/bin/open -n -W --env ... --args ...` in the logged-in Mac session |
-| Correct ADB identity | VERIFIED | ADB server `5038`, console `5582`, serial `emulator-5582`; observed transition `offline -> unauthorized -> device` |
+| DEV ADB identity | VERIFIED CURRENT | ADB server `5041`, console `5586`, serial `emulator-5586`; protected Control remains `5038/5582/emulator-5582` |
 | No manual ADB key injection | VERIFIED | `ADB_VENDOR_KEYS` absent in launch receipt; inherited service socket/address variables cleared |
-| Authenticated hidden-emulator control | VERIFIED | Exact PID-bound `pid_*.ini`, loopback gRPC `8554`, bearer token used in memory only, Emulator `37.1.11.0` authenticated |
+| Authenticated hidden-emulator control | VERIFIED | Exact PID-bound `pid_*.ini`, loopback gRPC `8556` for current DEV (`8554` protected Control), bearer token used in memory only, Emulator `37.1.11.0` authenticated |
 | Native frame transport | VERIFIED | Raw gRPC `RGBA8888`, 8,294,400 bytes per 1920x1080 frame; 16-MiB request/response limits on pinned gRPC transport |
 | Native presentation near 60 Hz in lobby | VERIFIED | Live session observed source-window max `61.1` and Metal-output max `60.5`; these are transport/output metrics, not Unreal FPS |
-| Official current TFT launches | VERIFIED | Package `com.riotgames.league.teamfighttactics`, version `18.1-5402721`, SplashActivity then `com.epicgames.unreal.GameActivity`, PID observed |
+| Official current TFT launches | VERIFIED CURRENT | Package `com.riotgames.league.teamfighttactics`, version `18.1-5423749`, versionCode `8423749`; `com.epicgames.unreal.GameActivity` observed |
 | Riot account can reach the TFT lobby | VERIFIED | Live rendered lobby on the existing signed-in official app state |
 | Primary touch and keyboard transport | VERIFIED | Mac primary-pointer down/drag/up uses EmulatorController `TouchEvent` with stable identifier `0` and pressure `1 -> 0`; keyboard remains gRPC evdev input; SQL records coordinates, pressure, counts and special keys, never typed content |
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
 | User can hear sound | USER ACCEPTANCE REQUIRED | The software path is healthy; only the person at the Mac can confirm audible output |
 | Automatic full-session graphics evidence | LIVE VERIFIED | Latest Build 8 automatic process/layer run lasted 42m27s with 144,364 exact intervals and 99.629% coverage; markers were not required |
 | Historical Build 8 release acceptance | VERIFIED HISTORICAL | All 43 native tests passed and `/Applications/TFTMAC.app` was deep-code-sign-valid when the signed 2.3.0 build 8 release receipt was created. |
-| Current-host installed-runtime audit | BLOCKED | Main and emulator-host hashes still match Build 8, but the login keychain exposes zero valid signing identities and current deep/strict verification reports `CSSMERR_TP_NOT_TRUSTED`. Repair is a separate operational task. |
+| Installed-runtime signing status | VERIFIED CURRENT | 2026-09-02 recheck recorded local signing identity restored and deep/strict verification PASS for Control and DEV; the 2026-08-31 `CSSMERR_TP_NOT_TRUSTED` observation is historical. |
 | Build 7 live launch | VERIFIED | Capture `2026-08-31T02-54-28.329Z-14000b50-bf29-44c6-a963-9203d5313494` reached authorized ADB, 1920x1080 first frame, powered/stay-awake guest, healthy SQL logger, official TFT and `TFT_READY_FOR_USER` under Combat Latency A |
 | Build 8 automatic graphics logger | LIVE VERIFIED | Capture `2026-08-31T21-39-18.396Z-fe34e3a1-fb91-44eb-804f-4ca8519dfc31` proves automatic PID/layer admission, `COMPLETE` stack receipts, and direct run/hash/window/receipt linkage for every observed frame fact. |
 | Internal graphics root cause | UNKNOWN / PLANNED | Build 8 has no shared work ID across guest Vulkan, gfxstream, host Vulkan, MoltenVK and Metal. It cannot name an internal owner; isolated diagnostic instrumentation is planned. |
@@ -98,29 +99,33 @@ aggregate. Secure Android PIN entry remains deliberately manual.
 
 ## 2. Non-negotiable runtime invariants
 
-These values are product authority, not suggestions:
+The following block is reconciled for the current DEV working line; protected Control values are listed separately and remain historical/playable rollback evidence:
 
 ```text
 Engine fact: Unreal Engine
-Runtime root: /Volumes/MAC MINI M4/TFTMAC/Runtime
+DEV runtime root: /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
 Emulator: Google Android Emulator 37.1.11 / build 15917651
-AVD: TFT_Ultra_Tablet / API36 Google Play ARM64
-Package: com.riotgames.league.teamfighttactics
+DEV AVD: TFTMAC_Diagnostic_StockShadow_R1 / API36 Google Play ARM64
+Package: com.riotgames.league.teamfighttactics 18.1-5423749 / 8423749
 Launcher: /usr/bin/open -n -W -> packaged TFTMAC Emulator Host.app
-ADB server: 5038
-Console: 5582
-Serial: emulator-5582
+DEV ADB server: 5041
+DEV Console: 5586
+DEV Serial: emulator-5586
 ADB_VENDOR_KEYS: absent
-Controller: authenticated loopback gRPC, default port 8554
+DEV Controller: authenticated loopback gRPC, port 8556
 Display: 1920x1080 / 320 dpi / 60-Hz default
-CPU/RAM default: 6 vCPU / 5120 MiB
+Effective DEV CPU/RAM: 8 vCPU / 6144 MiB
 GPU/audio: host / CoreAudio
 Graphics transport: virtio-gpu-asg
 ASG: 1 MiB write buffer / 16 KiB write step / 32 KiB ring / flush 800
-ANGLE enabled: exposeNonConformantExtensionsAndVersions:exposeES32ForTesting
+Current DEV RHI: OpenGL ES through ANGLE
+ANGLE enabled: exposeNonConformant*:exposeES32ForTesting
+Cache: multifile enabled; syncMonolithicPipelinesToBlobCache removed
 ANGLE disabled: preferSubmitAtFBOBoundary
 MoltenVK requested: synchronous submits 0 / max active command buffers 64 / fast math 1
 ```
+
+Protected Control remains separate at `/Volumes/MAC MINI M4/TFTMAC/Runtime`, AVD `TFT_Ultra_Tablet`, ports `5038/5582/8554`, historical 6-vCPU/5120-MiB profile. The StockShadow static AVD restoration file also contains 6/5120; live DEV launch receipts prove effective 8/6144.
 
 The previous `5040 / 5592 / emulator-5592` service-context route is a historical regression. It must remain only as failure evidence. It is not a fallback and must never overwrite current authority.
 
@@ -364,27 +369,25 @@ root-cause verdict.
 
 ## 7. Experiment protocol
 
-1. Start from `tftmac_5gb_native_v1`.
+1. Start DEV optimization from the latest verified winner in `project.md` / `CHANGELOG.md`, currently `DEV-B8-WIN-01`; use `tftmac_5gb_native_v1` only when an explicit protected-Control historical comparator is required.
 2. Change exactly one restart-bound variable.
 3. Quit cleanly and relaunch; never mutate an AVD profile mid-match.
 4. Keep the same TFT build, graphics preset, FPS cap, workload phase and login state where practical.
 5. Let the automatic process/layer logger define the full run. Match, combat and
    visible-stutter markers are optional annotations only.
-6. Compare exact full-run cadence/tails, source freshness, stack receipts and
-   valid owned diagnostic spans. Resource/audio data remains correctness context.
+6. Compare the bounded evidence required by the current candidate: gameplay cadence/tails, jank/missed-vsync, source freshness, stack receipts and valid owned diagnostic spans. CPU/RHI efficiency, memory, stalls, responsiveness, thermal/power and audio may be decision dimensions when directly relevant and measured.
 7. Reject any boot, ADB, package, crash, memory, audio or usability regression.
-8. KEEP only after a comparable repeat plus cold confirmation.
+8. KEEP only after a verified net improvement with adequate matched/confirmation evidence for the scope. Full-run/cold confirmation remains stronger release-level evidence but is not mandatory for every incremental DEV winner.
 9. Record why a candidate was kept or rejected; never promote from a single lobby sample.
 
 Current product decisions:
 
-- KEEP 5120 MiB. Sustained donor runs showed lower pressure direction than 6144 MiB while retaining guest headroom.
+- **Historical Control finding:** 5120 MiB had adequate headroom in its recorded runs. **Current DEV authority is 6144 MiB**; do not downgrade it based solely on the older donor/Control result.
 - DEFER 4096 MiB. It lacks sufficient heavy-game safety margin.
-- KEEP High / 60 / Performance OFF as the user-confirmed current in-game control.
+- KEEP High / 60 / Performance OFF as the current in-game quality baseline unless a later verified DEV winner deliberately changes one of those values.
 - REJECT Ultra High for current usability; direct user observation found severe lag, without fabricating a numeric FPS.
 - RETAIN 800 µs ASG flush in Control; do not recycle the historical 400 µs screen as a new result.
-- DEFER Combat Latency A promotion; its latest active observation is not a
-  controlled gain and the causal logger is now the next development layer.
+- REJECT/retain Combat Latency A as historical; it is not part of the current DEV working winner.
 - KEEP raw gRPC as the working native presentation transport now.
 - DEFER MMAP until producer readiness, tear-free integrity, frame-age and performance are empirically proven.
 
