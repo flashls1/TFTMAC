@@ -1,8 +1,9 @@
-# TFTMAC Complete Pipeline Settings & Tuning SSOT
+# TFTMAC Pipeline Settings & Tuning Reference
 
-Current as of September 2026.
-**Hardware Target**: Apple Silicon M4 Mac mini (`Mac16,10`, 16 GB unified RAM, macOS 15.6.2).
-**Purpose**: Comprehensive catalog of all discovered, exposed, tunable, and hard-locked settings across the entire TFTMAC graphics, audio, virtualization, and runtime pipeline, along with the discovery knowledge base explaining how each telemetry signal was unlocked.
+**Reference reconciled:** 2026-09-10 America/Chicago.
+**Authority:** this file is a detailed tuning/reference catalog, **not an independent SSOT**. Read `facts.md` first and `project.md` second; when this file conflicts with them, the authority records govern until validated newer evidence is used to update those records.
+**Hardware target:** Apple M4 Mac mini (`Mac16,10`), 10 physical CPU cores (4 performance + 6 efficiency), 10 GPU cores, 16 GiB unified memory, macOS 26.6.2 / build 25G83. Fixed CPU/GPU MHz values are not project-authoritative.
+**Current DEV execution:** TFTMAC DEV 2.3.0 build 8, 1920×1080 / 320 dpi / 60 Hz, **8 vCPU / 6144 MiB**, host GPU/CoreAudio, OpenGL ES through ANGLE, current winner `DEV-B8-WIN-01`. vCPUs are virtual scheduling resources; they do not reserve or dedicate an equal number of physical M4 host cores.
 
 > **DEVELOPMENT TARGET LOCK — 2026-09-04:** The protected Control app at `/Applications/TFTMAC.app` is the stable known-good launcher and is not a development target. All new settings, UI, graphics, runtime, and experiment changes go to `/Applications/TFTMAC DEV.app` / `advanced_diagnostics` first. DEV may be promoted into a full production release only through a separate explicit Flash-authorized release process after acceptance. Until then, no DEV build/install step may overwrite or mutate Control.
 
@@ -17,7 +18,7 @@ Every bottleneck discovered in testing maps directly to one of these four operat
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Layer 1: Unreal Engine 4 (Inside TFT APK)                                    │
+│ Layer 1: Unreal Engine (Inside TFT APK)                                      │
 │   • DeviceProfiles.ini  • GameUserSettings.ini  • CVars                      │
 └──────────────────────────────────────┬───────────────────────────────────────┘
                                        │ BLASTBufferQueue
@@ -39,9 +40,9 @@ Every bottleneck discovered in testing maps directly to one of these four operat
 
 ---
 
-## 2. Layer 1: Unreal Engine 4 In-Game Settings & CVars
+## 2. Layer 1: Unreal Engine In-Game Settings & CVars
 
-Riot's official TFT mobile client runs on an optimized build of Unreal Engine 4. When running on Android, the engine categorizes devices into Device Profiles before reading user settings.
+Riot's current TFT mobile client is verified to use Unreal Engine. This project does not claim a specific Unreal major version without direct current evidence. On Android, the observed configuration path uses Unreal Device Profiles and user settings.
 
 ### A. Device Profile Hierarchy & Overrides
 * **Target Guest File**: `/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini`
@@ -58,7 +59,7 @@ Riot's official TFT mobile client runs on an optimized build of Unreal Engine 4.
 | `r.Streaming.PoolSize` | `300` | `1000` | Expands texture streaming memory pool to 1 GB (utilizes M4 unified memory). |
 | `r.Streaming.PoolSizeForMeshes` | `25` | `250` | **Eliminates combat hitching.** Stock 25 MB pool forced constant disk paging during 8-player combat; 250 MB keeps all units cached. |
 | `r.RenderTargetPoolMin` | `0` | `100` | Pre-allocates 100 MB of render targets (3x mobile forward-shading requirement) while freeing 300 MB of guest RAM for OS disk/asset page caching. |
-| `r.pso.PrecompileThreadPoolSize` | `4` | `4` | Dedicates 4 background shader compiler threads on the 6-vCPU VM, permanently leaving 2 cores unthrottled for GameThread and RHIThread. |
+| `r.pso.PrecompileThreadPoolSize` | historical `4` | current value must be read from the verified DEV profile/receipt | Controls background PSO compilation concurrency. It does **not** permanently reserve physical or virtual cores for GameThread/RHIThread; validate any change as a one-factor DEV candidate. |
 | `p.ClothPhysics` | `0` | `1` | Enables cape and cloth simulation physics on champions (~0.5 ms CPU budget under <=30 champions). |
 | `grass.Enable` | `0` | `1` | Enables 3D interactive arena foliage and grass. |
 | `r.MaterialQualityLevel` | `0` (Low) | `1` (High) | Enables full PBR material shaders and normal maps. |
@@ -81,7 +82,7 @@ Configured automatically over adb during the boot and gameplay preparation phase
 | **System Peak Refresh Rate** | `settings put system peak_refresh_rate` | `60.0` | Prevents SurfaceFlinger from phase-jittering between 60 Hz and 120 Hz. |
 | **SurfaceFlinger Timestamping** | `setprop service.sf.present_timestamp` | `1` | Enables hardware presentation timestamps required for accurate jitter/latency measurement. |
 | **SurfaceFlinger Debug Overlay** | `setprop debug.sf.showupdates` | `0` | Disables debug visual updates that waste GPU rasterization. |
-| **TFT Process Priority** | `renice -n -20 -p <pid>` | `-20` | Sets Linux CFS real-time scheduling priority; prevents background daemons from preempting the game thread. |
+| **TFT Process Priority** | `renice -n -20 -p <pid>` | requested negative nice value | Requests higher CFS scheduling preference for the TFT process. `nice -20` is **not** Linux real-time scheduling and does not guarantee that background work cannot preempt game threads. |
 | **Background Wellbeing Daemon**| `pm disable-user com.google.android.apps.wellbeing` | Disabled | Eliminates boot-time CPU storms from GMS app wellbeing and usage tracking scanners. |
 | **Virtual AC Power** | `dumpsys battery set ac 1` | `1` | Forces virtual AC power state; stops Android from entering battery saver mode. |
 | **Stay Awake While Plugged In** | `settings put global stay_on_while_plugged_in` | `7` | Prevents screen timeout or lockscreen activation during benchmarks. |
@@ -101,11 +102,11 @@ The translation layer between the guest Linux kernel and the macOS host hardware
 | :--- | :--- | :--- | :--- |
 | **ASG Write Buffer Size** | `asgWriteBufferSize` in AVD config | `1_048_576` (1 MiB) | **HARDWARE PINNED**: Exceeding 1 MiB causes fatal QEMU PCI BAR crash (`External address size too small`). Must never exceed 1 MiB. |
 | **Hardware VSYNC Rate** | Emulator argument `-vsync-rate` | `60` | Hardware interrupt clock for the virtual display controller. Aligns 1:1 with 16.666 ms frame intervals. |
-| **GPU Acceleration Mode** | Emulator argument `-gpu` | `gfxstream` | Native GLES/Vulkan command serialization forwarded directly to host Metal/ANGLE. |
-| **Guest vCPU Allocation** | AVD `config.ini` (`hw.cpu.ncore`) | `6` | Dedicates 6 performance/efficiency cores to guest execution while leaving 4 host cores free for macOS and Metal presentation. |
+| **GPU Acceleration Mode** | Emulator argument `-gpu` | current DEV `host` | Uses the stock emulator host-accelerated gfxstream path. Current TFT selects OpenGL ES through ANGLE; Vulkan/gfxstream/MoltenVK/Metal are downstream layers. |
+| **Guest vCPU Allocation** | effective launch profile / QEMU `-cores` | **`8` current DEV** | Gives the guest 8 virtual CPUs scheduled by the hypervisor/host. This does not dedicate eight physical cores or reserve two physical cores for macOS. The sealed AVD restoration file may still contain `hw.cpu.ncore=6`. |
 | **Guest RAM Allocation** | AVD `config.ini` (`hw.ramSize`) | `6144` (6 GiB) | Gives Android adequate heap without pressuring macOS unified RAM. |
 | **Crash Report Consent** | Emulator argument `-crash-report-mode` | `disabled` | Bypasses modal Google crash reporting consent dialogs on boot. |
-| **Quickboot Snapshot Mode** | `fastboot.forceFastBoot=yes`, omit `-no-snapshot` | `default_boot` | **FAST BOOT**: Reduces boot time from ~28s to ~3s by restoring active memory snapshot. Clean exit automatically saves state. |
+| **Boot snapshot policy** | effective current DEV QEMU command | **cold / `-no-snapshot`** | Current verified DEV/LKG test launches are cold/no-snapshot for reproducibility. Historical quickboot experiments do not describe the current optimization baseline. |
 
 ---
 
@@ -169,20 +170,20 @@ Standard diagnostic tools repeatedly failed to provide truthful data because of 
      * Host Submit (Site 1002): `0.019 ms`
      * MoltenVK Translation (Site 2003): `0.106 ms`
      * Metal GPU Execution (Site 2005): `0.683 ms`
-  4. **The Verdict**: This mathematically proved the host M4 GPU and Metal stack are blistering fast. The combat latency was 100% located upstream in guest shader compilation and virtual disk I/O.
+  4. **Bounded finding**: that instrumented span measured low host graphics latency for the sampled work and shifted suspicion upstream. It did **not** prove that 100% of all combat latency is guest shader compilation or disk I/O across every current run.
 
 ### D. The Observer Effect Trap
 * **The Mystery**: Early automated telemetry runs suffered worse combat stuttering than unmonitored runs.
-* **How We Discovered the Cause**: Profiling revealed that polling `dumpsys SurfaceFlinger --list`, `--latency`, and `pidof` every second spawned **4,253 child processes** in Android over a single match. When frame rates dropped, the logger triggered a 32 MB Perfetto kernel `ftrace` capture, which intercepted every CPU context switch across all 6 vCPUs and completely starved the game's `RHIThread` and `AudioFlinger`.
+* **Historical profiling finding**: one earlier 6-vCPU match generated **4,253 child processes** from aggressive polling and also used a bounded Perfetto/ftrace capture. That combination was considered intrusive and was removed from the preferred measurement path. Do not generalize it as proof that tracing always completely starves RHIThread/AudioFlinger; current profiling must remain bounded.
 * **The Fix**: We restricted `dumpsys SurfaceFlinger --list` to run only when the active layer is lost or reports 0 frames, cached `currentGamePID`, and disabled automatic Perfetto dumps during normal interactive play (`TFTMAC_ENABLE_AUTO_PERFETTO=1` required).
 
 ### E. Apple Silicon M4 CPU/GPU Routing & Thread Allocation Architecture
-* **The Core Discovery**: On the Apple Silicon M4 Mac mini, the hardware consists of 10 CPU cores (4 P-cores at 4.5 GHz, 6 E-cores at 2.85 GHz) and 10 GPU cores sharing unified memory.
-* **Why the GPU Is Already Maximized**: In QEMU with `-gpu gfxstream`, Android does not see or partition physical GPU cores. The guest serializes Vulkan draw calls across the 1 MiB ASG buffer to host MoltenVK. MoltenVK submits native Metal command buffers to Apple Metal. Apple's hardware work distributor automatically executes all Metal command buffers across **all 10 M4 GPU cores**. The GPU finishes 1080p frames in 0.68 ms (<5% of a 16.67 ms frame).
-* **The CPU Routing Golden Ratio**:
-  * Allocating 6 vCPUs (`-cores 6`) to the Android guest leaves 4 physical cores dedicated to the macOS host (WindowServer, gRPC frame streaming, Swift Metal presenter).
-  * Within the 6-vCPU guest, setting `r.pso.PrecompileThreadPoolSize=4` caps background shader compiler workers to 4 threads. This permanently reserves 2 virtual cores for the critical `GameThread` (simulation) and `RHIThread` (render submission), completely eliminating context-switch starvation.
-  * Setting `r.DynamicRes.MinScreenPercentage=85` provides an emergency 15% load-shedding relief floor if multi-spell particle explosions spike frame time, guaranteeing unbroken 60.0 FPS presentation.
+* **Hardware boundary**: the Apple M4 Mac mini has 10 CPU cores (4 performance + 6 efficiency) and 10 GPU cores sharing unified memory. This project does not treat fixed P/E-core MHz values as an authoritative runtime fact because macOS dynamically manages frequency.
+* **GPU scheduling boundary**: the Android guest does not directly allocate physical M4 GPU cores. The current path ultimately submits work to Metal, and macOS/Metal own GPU scheduling. A prior bounded instrumented sample measured about 0.68 ms of Metal GPU work for its sampled frames; that does not prove every 1080p frame finishes in 0.68 ms or that every workload continuously occupies all 10 GPU cores.
+* **CPU/quality tuning history**:
+  * Current DEV uses **8 vCPUs**, not 6. vCPU count does not dedicate or reserve physical host cores; it changes the guest scheduler's available virtual CPUs.
+  * PSO worker-count experiments can reduce or increase contention, but a worker count does not permanently reserve vCPUs for GameThread/RHIThread and cannot be claimed to eliminate context-switch starvation without a matched result.
+  * Dynamic-resolution floors can trade image quality for load shedding when enabled, but no setting guarantees uninterrupted 60 FPS. Any such change requires its own verified DEV comparison.
   * Cloth physics (`p.ClothPhysics=1`) is confirmed safe: with a realistic match ceiling of $\le 30$ active units on screen, cloth simulation consumes only $\sim 0.5\text{ ms}$ of `GameThread` time (<3% of frame budget).
 ### F. Dormant ActivityRecord Leashes & Damage-Driven PIPE Telemetry Truth
 * **The Dormant Leash Trap**: When an Android sub-activity (e.g., Riot's `MobileFREWebViewActivity` webview login) finishes and is dismissed, WindowManager destroys the window (`WIN DEATH`), but SurfaceFlinger retains a dormant parent leash layer in the layer hierarchy:
@@ -190,7 +191,7 @@ Standard diagnostic tools repeatedly failed to provide truthful data because of 
   A naive substring match (`output.contains(tftMobileFREActivity)`) permanently flags the runtime as `.loginPromptActive`, blinding the telemetry sampler from ever hooking back onto the active `SurfaceView[...GameActivity](BLAST)` layer.
   * **The Solution**: `GameFrameTelemetry.hasActiveLoginPrompt(in:)` explicitly ignores `ActivityRecord` leashes and `SnapshotStartingWindow` layers. Only genuine, non-leash window layers trigger the login prompt state.
 * **Damage-Driven gRPC Frame Streaming**: QEMU's gRPC `streamScreenshot` is **damage-driven by design**. When an on-screen interface is static (e.g., waiting on user credentials or during a process stall), Android marks 0 dirty rectangles and gRPC delivers 0 frames (`source_fps = 0.0`). This is normal power-saving guest compositor behavior, not a graphics rendering bottleneck.
-* **Process Priority Maintenance Across ANR Restarts**: If an upstream Android crash or ANR occurs during webview login, Android terminates the old game PID and spawns a new PID. `TFTMACRuntime.swift -> observeGameProcess` immediately re-applies `renice -n -20 -p <new_pid>`, guaranteeing that the replacement game process retains real-time scheduling priority.
+* **Process Priority Maintenance Across PID Restarts**: when the game PID changes, the runtime can reapply its configured nice-priority request. This preserves the requested scheduling preference; it is not a guarantee of Linux real-time scheduling.
 
 ### G. 32-Minute Combat Match Forensics, Memory Audit & 8-vCPU DEV Routing
 * **Match Forensic Analysis (`2026-09-04T17-50-10.043Z`, 892 Windows / ~32 Minutes)**:
@@ -200,10 +201,10 @@ Standard diagnostic tools repeatedly failed to provide truthful data because of 
 * **Definitive Memory Audit (Host vs. Guest)**:
   * **Guest Android RAM (5,120 MB)**: Android consumed only ~3.2 GB out of 5.1 GB. Available memory averaged **1,705 MB** (minimum 1,533 MB). Zero LowMemoryKiller events occurred; Android had >1.5 GB of free headroom at all times.
   * **macOS Host RAM (16 GB Unified)**: Available host RAM was **2,938 MB average** (min 2,620 MB) with 7.2 GB compressed and 1.7 GB swap.
-  * **Why We Do NOT Allocate 8 GB RAM to the Guest**: Bumping guest RAM by +3 GB on a 16 GB unified memory host would force macOS to commit all remaining uncompressed RAM to pinned hypervisor pages, triggering severe OS page compression and active disk swapping. Because Apple Silicon uses a unified memory bus for both CPU and Metal GPU, swap contention immediately stutters GPU frame presentation. 5,120 MB is the exact sweet spot.
-* **The 8-vCPU DEV Allocation Architecture**:
-  * On the 10-core M4 (4 Performance + 6 Efficiency cores), granting 8 vCPUs (`-cores 8`, `hw.cpu.ncore = 8`) in DEV mode leaves 2 dedicated host cores for macOS WindowServer and Metal rendering, while providing the guest with the horsepower required to keep UE4 `GameThread` and `RHIThread` unconstrained during 510% combat load spikes.
-* **UE4 Combat Optimizations**:
+  * **Historical memory finding**: this 5,120-MiB match had adequate guest headroom and showed host compression/swap. It supports avoiding an unproven jump to 8 GiB, but it does not make 5,120 MiB an eternal 'exact sweet spot.' Current verified DEV uses **6144 MiB**, which is the authoritative working value unless a later measured candidate changes it.
+* **The current 8-vCPU DEV allocation**:
+  * Current DEV launches are verified at `-cores 8`. This provides eight guest vCPUs while host scheduling remains macOS/Hypervisor-owned; it does **not** create two dedicated physical host cores or prove GameThread/RHIThread are unconstrained.
+* **Historical Unreal combat optimizations**:
   * `p.ClothPhysics=0`: Disables CPU vertex cloth simulation on 20–30 combat units, reclaiming 5–8 ms of GameThread frame budget.
   * `r.DynamicRes.OperationMode=1`: Activates the Dynamic Resolution master switch with an 85% safety floor (`r.DynamicRes.MinScreenPercentage=85`) and 16.67 ms budget (`r.DynamicRes.FrameTimeBudget=16.666666`).
   * `r.pso.PrecompileThreadPoolSize=2`: Restricts PSO precompile threads to 2, preventing worker threads from swamping vCPUs during combat.

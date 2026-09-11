@@ -1,14 +1,11 @@
 # TFTMAC Benchmark and Analysis Contract
 
-**Authority date:** 2026-08-31 America/Chicago
+**Authority date:** 2026-09-10 America/Chicago
 **Formula version:** `tftmac-benchmark-v3`
-**Current installed runtime:** TFTMAC 2.3.0 build 8 on the M4 Mac mini; automatic graphics lifecycle and complete stack receipts live-verified, including a 42m27s automatic graphics run
+**Current DEV runtime:** TFTMAC DEV 2.3.0 build 8 / StockShadow on the M4 Mac mini; current verified optimization baseline `DEV-B8-WIN-01`, 1920×1080 / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE. Historical Build 8 full-run captures remain benchmark evidence for their recorded configurations.
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
-This file is the current benchmark-analysis authority. `docs/benchmarks.md` is
-the historical M1 Max/userdebug experiment ledger; it must not be mistaken for
-current M4 native-runtime evidence. Machine/runtime facts live in `facts.md`,
-project history in `project.md`, and active engineering hypotheses in `dev.md`.
+This file is the current benchmark-analysis contract, subordinate to project fact/state authority. **Before finalizing any benchmark plan or promotion decision, read and reconcile `facts.md` and `project.md`; `facts.md` wins until validated newer evidence is used to update those records.** `CHANGELOG.md` holds the detailed DEV test/version ledger. `docs/benchmarks.md` is historical experiment evidence and must not be mistaken for current DEV truth.
 
 ## 1. Answer and operating decision
 
@@ -28,23 +25,12 @@ TFTMAC recognizes five evidence modes:
 | `DIAGNOSTIC_ONLY` | Launch, login, lobby, unmarked gameplay, partial capture, or isolated incident | Useful for diagnosis; cannot prove full-run performance or promote a candidate |
 | `INVALID` | Missing/corrupt boundaries, inadequate coverage, changed identity, correctness failure, or other declared invalidator | Retain as negative/operational evidence; do not use for a positive performance claim |
 
-Full runs are preferred because they include the complete performance envelope,
-not a hand-selected scene. Every logged frame and resource/pipeline sample
-inside the automatic process/layer lifecycle participates. A bounded A/B
-remains useful because it produces a faster controlled answer. It does not
-require any semantic phase label. A short winner is not promoted until it also
-survives a complete automatic full run. A full run can immediately veto a
-candidate for correctness or player experience.
+Full runs remain valuable because they include the complete performance envelope, but the current DEV results-first process does not require a full match before retaining every incremental working-version improvement. A bounded matched comparison plus confirmation may promote a DEV candidate when identity, rollback, correctness/stability and verified net benefit are strong enough. Full-run evidence remains a stronger release-level check and may later veto a candidate if it exposes a material regression.
 
 A lobby, a reported `SRC 60`, an `OUT 60`, a successful launch, or an emulator
 process is never a gameplay benchmark.
 
-The graphics-only optimization equation is limited to direct graphics cadence,
-tail latency, missed-vsync/severe behavior, source freshness, stack receipts,
-and conservative owned-boundary joins. The final native presenter is hidden
-correctness context only. CPU, RAM, thermal,
-power, and audio may invalidate correctness or explain health context, but are
-not optimization variables or a substitute graphics owner in this contract.
+The current optimization decision is **net-system efficiency**, with FPS heavily weighted but not exclusive. Direct graphics cadence, 1% low, p95/p99/worst-frame latency, jank, missed-vsync/severe behavior, source freshness and owned-boundary evidence remain primary. CPU/RHI efficiency, memory behavior, allocation/churn, stalls, responsiveness, thermal/power and audio may also be optimization or veto dimensions when directly measured. A small regression in one secondary metric does not automatically reject a candidate when the overall measured result is noticeably better and no correctness/stability/compatibility or severe-tail regression outweighs the gain.
 
 ## 2. Evidence and claim discipline
 

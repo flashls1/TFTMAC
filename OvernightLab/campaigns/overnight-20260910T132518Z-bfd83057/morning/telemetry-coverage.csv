@@ -1,7 +1,0 @@
-id,run_id,producer,expected,schema_version,first_sequence,last_sequence,produced_count,persisted_count,lost_count,malformed_count,parse_error_count,started_monotonic_ns,ended_monotonic_ns,status
-2,run-4dfaa589bcb147a9a0bdcd5ba6ab682d,angle_reason_events,0,1,,,0,0,0,0,0,,,NOT_APPLICABLE
-1,run-4dfaa589bcb147a9a0bdcd5ba6ab682d,native_capture,1,native-v3,1,38,38,38,0,0,0,,,COMPLETE
-4,run-d9ea3854337e4f178372317788f10cce,angle_reason_events,0,1,,,0,0,0,0,0,,,NOT_APPLICABLE
-3,run-d9ea3854337e4f178372317788f10cce,native_capture,1,native-v3,1,11680,11680,11680,0,0,0,,,COMPLETE
-6,run-e2dca4693be44de6ab04e33829a1cde4,angle_reason_events,0,1,,,0,0,0,0,0,,,NOT_APPLICABLE
-5,run-e2dca4693be44de6ab04e33829a1cde4,native_capture,1,native-v3,1,148,148,148,0,0,0,,,COMPLETE

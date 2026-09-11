@@ -1,11 +1,13 @@
 # TFTMAC Developer Record
 
-> Current DEV checkpoint: [2026-09-06 handoff](AGENT_HANDOFF_2026-09-06.md). It supersedes older DEV build, campaign and readiness claims below; historical measurements retain their original dates.
+> **CURRENT DEV ENGINEERING AUTHORITY — 2026-09-10.** Read `facts.md` first, then `project.md`, then `CHANGELOG.md` before using this engineering map. Older material below remains historical evidence only when it conflicts with those current records.
 
-**Development baseline:** untouched TFTMAC 2.3.0 build 8 Control plus a playable isolated Emulator 37.1.11/API 36 stock-shadow DEV runtime; three consecutive DEV native-frame launches passed
-**Control:** High / 60 FPS / Riot Performance Mode OFF  
-**Active campaign:** deterministic owned Vulkan probe screening; `combat_latency_a`, Home Run A, and Performance Mode Beta are retired
-**Primary objective:** hold at least 60 useful FPS across the complete run while preserving the proven native app.
+**Development baseline:** current verified working configuration `DEV-B8-WIN-01` on TFTMAC DEV 2.3.0 build 8 / StockShadow.
+**Effective DEV runtime:** 1920×1080 / 320 dpi / 60 Hz, **8 vCPU**, **6144 MiB (6 GiB)**, host GPU/CoreAudio, OpenGL ES through ANGLE, ADB/console/controller `5041/5586/8556`.
+**Protected Control:** separate immutable normal-play/LKG reference; historical 6-vCPU/5120-MiB Control values are not the DEV baseline.
+**Active campaign model:** results-first, one hypothesis at a time, integrating only verified net improvements and testing the next factor on the latest verified winner.
+**Current winner:** `DEV-B8-WIN-01` removes `syncMonolithicPipelinesToBlobCache` while retaining multifile cache and disabled `preferSubmitAtFBOBoundary`.
+**Primary objective:** improve useful gameplay performance and total system efficiency toward continuous 60 FPS without correctness, login, audio, memory, launch, or cleanup regression.
 
 This is the engineering working file. It contains code ownership, measurement
 contracts, confirmed and rejected experiments, active hypotheses, and the next
@@ -36,6 +38,12 @@ Rules:
 8. Do not modify Riot's signed package, shaders, credentials, or process.
 9. Retain negative results so they are not recycled as “new” ideas.
 10. A launch receipt proves setup, not performance.
+11. Before finalizing any plan or change, re-read `facts.md` and `project.md`; if newer evidence conflicts, validate it and reconcile those authority files before finalization.
+12. Promotion is based on verified **net** improvement, not mean FPS alone; p95/p99/worst-frame latency, jank, missed-vsync, CPU/RHI efficiency, memory behavior, stalls, responsiveness and stability all count.
+13. A verified win becomes the next `DEV-B8-WIN-##` baseline; an unverified/inconclusive/regressing candidate is logged and not integrated.
+14. Do not declare a selected managed change complete with accidental dirty Git state.
+15. OvernightLab telemetry is retained across minor configuration drift; comparability/promotion eligibility is separate from whether the data is worth keeping. Core client/RHI mismatch is data-only and cannot promote the current DEV line.
+16. OvernightLab normal control always starts from the latest verified DEV winner; historical LKG/global-sync and rejected candidates remain cataloged evidence, not automatic queue entries.
 
 **Build 8 process-observer invariant:** invoke Android `pidof` as direct ADB
 arguments (`adb ... shell pidof com.riotgames.league.teamfighttactics`). Do not
@@ -73,9 +81,28 @@ M4, modifying Riot's signed shaders, or adding an unmeasured kernel extension.
 | GPU execution | Apple Metal/M4 | host OS/hardware |
 | official delivery/auth | Google Play/Riot | official guest UI only |
 
-## 3. Current control and candidate
+## 3. Current DEV winner and historical comparison candidates
 
-### Control
+### Current DEV working winner — `DEV-B8-WIN-01`
+
+```text
+app: /Applications/TFTMAC DEV.app / com.flashls1.tftmac.dev
+runtime: advanced_diagnostics / TFTMAC_Diagnostic_StockShadow_R1
+display: 1920x1080 @ 320 dpi / 60 Hz
+effective guest: 8 vCPU / 6144 MiB
+GPU/audio: host / CoreAudio
+RHI: OpenGL ES through ANGLE
+transport: virtio-gpu-asg
+ASG: 1 MiB buffer / 16 KiB write step / 32 KiB ring / 800 us flush
+ANGLE enabled: exposeNonConformant*:exposeES32ForTesting
+ANGLE disabled: preferSubmitAtFBOBoundary
+cache: multifile ON; syncMonolithicPipelinesToBlobCache REMOVED
+TFT: 18.1-5423749 / versionCode 8423749
+```
+
+This is the baseline for the next optimization candidate. The sealed AVD file's 6/5120 values are restoration state, not the effective DEV launch.
+
+### Protected Control — historical comparison only
 
 ```text
 preset: control
@@ -90,7 +117,7 @@ ANGLE disabled: preferSubmitAtFBOBoundary
 MoltenVK: async submit / 64 active command buffers / fast math
 ```
 
-### Combat Latency A
+### Combat Latency A — historical rejected candidate
 
 ```text
 preset: combat_latency_a
@@ -153,12 +180,12 @@ for screening. It remains an engineering launcher and cannot replace Control.
 ## 4. Graphics pipeline and observability
 
 ```text
-Unreal Vulkan render/RHI (current TFT receipt)
-  -> guest Vulkan
+Unreal OpenGL ES render/RHI (current dedicated engine-log receipt)
+  -> ANGLE GLES-to-Vulkan translation
+  -> guest Vulkan/ranchu
   -> gfxstream encoder + ASG guest transport
   -> host gfxstream decode/queues
-  -> host Vulkan submit
-  -> MoltenVK translation/pipeline state
+  -> host Vulkan submit / MoltenVK translation
   -> Metal command buffer/GPU completion
   -> Android SurfaceFlinger actual-present
   -> EmulatorController completed RGBA image
@@ -166,9 +193,7 @@ Unreal Vulkan render/RHI (current TFT receipt)
   -> macOS drawable completion
 ```
 
-ANGLE is installed/observable for conditional GLES/EGL paths, but it is not a
-node in the current TFT game route unless a new per-run receipt proves that
-selection.
+ANGLE is a **verified current node** in the DEV game route. The dedicated engine log selects `OPENGL_ES_ANGLE`; lower-stack Vulkan evidence describes ANGLE/gfxstream's backend rather than proving direct Unreal Vulkan. Direct Unreal Vulkan remains a rejected fast-pass candidate after compatibility failures.
 
 ### What each signal can and cannot prove
 
@@ -464,8 +489,8 @@ and stack receipts.
 promoted. Do not spend the next development cycle on another broad scheduling
 comparison while the internal path remains uninstrumented.
 
-**Accept:** HOME_RUN/PROMISING plus cold confirmation.  
-**Reject:** no gain, worse tails, or any correctness/login/audio/cleanup issue.  
+**Accept:** HOME_RUN/PROMISING plus cold confirmation.
+**Reject:** no gain, worse tails, or any correctness/login/audio/cleanup issue.
 **Critical unknown:** QEMU worker inheritance and worker-specific scheduling.
 
 ### H2 — advanced causal work-ID instrumentation

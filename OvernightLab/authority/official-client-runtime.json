@@ -1,6 +1,14 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "client_scope": "OFFICIAL_LIVE",
+  "working_version": "DEV-B8-WIN-01",
+  "authority_sources": ["facts.md", "project.md", "CHANGELOG.md"],
+  "evidence_reuse_policy": {
+    "minor_configuration_drift": "PRESERVE_AND_LABEL_DATA_ONLY_UNLESS_MATCHED_TO_CURRENT_WINNER",
+    "core_pipeline_or_client_mismatch": "PRESERVE_RAW_EVIDENCE_BUT_EXCLUDE_FROM_CURRENT_PROMOTION",
+    "historical_negative_result": "PRESERVE_AND_DO_NOT_AUTO_RERUN",
+    "current_promotion_baseline": "DEV-B8-WIN-01"
+  },
   "package_name": "com.riotgames.league.teamfighttactics",
   "version_name": "18.1-5423749",
   "version_code": 8423749,
@@ -28,7 +36,7 @@
   "expected_gpu_mode": "host",
   "expected_normal_rhi": "OPENGL_ES_ANGLE",
   "angle_revision": "1166eec4c0b125e9e945196acfc549983ef72b18",
-  "installed_dev_hashes": {
+  "current_dev_hashes": {
     "Contents/MacOS/TFTMACDEVCore": "89dbdce12e8e0b5524108bfc5444bdc31783e023d1b0a34a01653fd84a889cd4",
     "Contents/MacOS/TFTMACDEVLauncher": "b7a04c91b148d5cc71a82e1d1773e9180a1e901acb2fb4ac1a0975ca36cb3337",
     "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
@@ -36,9 +44,22 @@
     "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
     "Contents/Resources/TFTMACVulkanProbe.apk": "fdc6db76fd572ae06cb72135ee5c91a126f76c1bbd4c2b03e283d1720840ad31"
   },
-  "lkg_cache_properties": {
+  "frozen_lkg_hashes": {
+    "Contents/MacOS/TFTMACDEVCore": "89dbdce12e8e0b5524108bfc5444bdc31783e023d1b0a34a01653fd84a889cd4",
+    "Contents/MacOS/TFTMACDEVLauncher": "b7a04c91b148d5cc71a82e1d1773e9180a1e901acb2fb4ac1a0975ca36cb3337",
+    "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
+    "Contents/Resources/DEVHighPerf/profile-transaction.sh": "7d7d89df8db6927b09d4e2866aac932f9924b729584797e8364077102eeb5835",
+    "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
+    "Contents/Resources/TFTMACVulkanProbe.apk": "fdc6db76fd572ae06cb72135ee5c91a126f76c1bbd4c2b03e283d1720840ad31"
+  },
+  "historical_lkg_cache_properties": {
     "debug.egl.blobcache.multifile": "true",
     "debug.angle.feature_overrides_enabled": "exposeNonConformant*:exposeES32ForTesting:syncMonolithicPipelinesToBlobCache",
+    "debug.angle.feature_overrides_disabled": "preferSubmitAtFBOBoundary"
+  },
+  "current_working_cache_properties": {
+    "debug.egl.blobcache.multifile": "true",
+    "debug.angle.feature_overrides_enabled": "exposeNonConformant*:exposeES32ForTesting",
     "debug.angle.feature_overrides_disabled": "preferSubmitAtFBOBoundary"
   },
   "cache_multifile_directory": "/data/user_de/0/com.riotgames.league.teamfighttactics/cache/com.android.opengl.shaders_cache.multifile",

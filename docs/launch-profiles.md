@@ -1,24 +1,55 @@
-# Launch Profiles
+# TFTMAC Launch Profiles
 
-## Current profile
+**Reconciled:** 2026-09-10 America/Chicago
+**Authority:** read `facts.md` first and `project.md` second. This file is a concise launch-profile reference and cannot override them.
 
-Stock Build 8 is the only normal-play authority. Its runtime base is
-`tftmac_5gb_native_v1`, and its current SQL capture configuration is
-`tftmac_stock_build8_high60_control`:
+## Current DEV working profile — `DEV-B8-WIN-01`
 
-- 1920×1080, 320 dpi, 60 Hz
-- 6 vCPU, 5120 MiB guest RAM, host GPU, CoreAudio
-- `virtio-gpu-asg` with the retained ASG/ANGLE/MoltenVK control values
-- TFT High graphics, 60 FPS, Riot Performance Mode OFF
+```text
+Application: /Applications/TFTMAC DEV.app
+Bundle: com.flashls1.tftmac.dev
+Release identity: 2.3.0 build 8
+Runtime mode: advanced_diagnostics / StockShadow
+Runtime root: /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
+AVD: TFTMAC_Diagnostic_StockShadow_R1
+ADB / console / controller: 5041 / 5586 / 8556
+Serial: emulator-5586
+Display: 1920x1080 / 320 dpi / 60 Hz
+Effective guest: 8 vCPU / 6144 MiB
+GPU / audio: host / CoreAudio
+Graphics route: Unreal OpenGL ES -> ANGLE -> Vulkan/ranchu -> gfxstream -> host Vulkan/MoltenVK -> Metal
+ASG: 1 MiB write buffer / 16 KiB write step / 32 KiB ring / 800 us flush
+ANGLE enabled: exposeNonConformant*:exposeES32ForTesting
+ANGLE disabled: preferSubmitAtFBOBoundary
+Cache: debug.egl.blobcache.multifile=true; syncMonolithicPipelinesToBlobCache removed
+Official TFT: 18.1-5423749 / versionCode 8423749
+```
 
-TFTMAC launches through the packaged emulator host using the locked logged-in
-macOS-session chain and ADB 5038 / console 5582 identity. It does not use old
-script launchers, Node, Clara, or a direct service-context spawn.
+The static StockShadow AVD restoration file remains 6 vCPU / 5120 MiB. Current source defaults `advanced_diagnostics` to 8 vCPU and uses the locked 6144-MiB DEV RAM value; live QEMU receipts prove `-cores 8 -memory 6144`. Do not rewrite the static AVD simply to make it resemble the transient effective launch.
 
-`combat_latency_a` is a launch-verified but not performance-promoted historical
-candidate. Riot Performance Mode Beta and Home Run A are rejected and are not
-selectable. A future isolated `advanced_diagnostics` runtime is diagnostic-only,
-not a play profile.
+Every new optimization candidate starts from `DEV-B8-WIN-01` until a later verified winner is promoted. Verified net improvement is integrated; no-win/inconclusive/regression is logged and not integrated.
 
-The legacy launcher table is archived at
-`history/2026-08-31-pre-build8/launch-profiles.md`.
+## Protected Control profile — historical/playable rollback
+
+```text
+Application: /Applications/TFTMAC.app
+Bundle: com.flashls1.tftmac
+Runtime root: /Volumes/MAC MINI M4/TFTMAC/Runtime
+AVD: TFT_Ultra_Tablet
+ADB / console / controller: 5038 / 5582 / 8554
+Serial: emulator-5582
+Historical baseline: 1920x1080 / 320 dpi / 60 Hz / 6 vCPU / 5120 MiB
+TFT: High / 60 FPS / Riot Performance Mode OFF
+```
+
+Control/LKG stays separate and immutable. Its older client/version/performance receipts remain valid only for their recorded dates and are not the current DEV optimization truth.
+
+## Rejected/historical profiles
+
+- `combat_latency_a`: historical rejected candidate; no current promotion.
+- Riot Performance Mode Beta / Home Run A: rejected.
+- Direct Unreal Vulkan: current fast-pass NO WIN due compatibility failures.
+- `queue_submit_inline`: NO WIN / boot-incompatible.
+- `virtual_queue_off`, `fence_contexts_off`: prior official-client NO WIN results.
+
+The legacy launcher table remains archived under `docs/history/2026-08-31-pre-build8/`.

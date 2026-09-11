@@ -19,26 +19,36 @@ The product does not bundle, mirror, patch, re-sign, or privately update Riot bi
 
 ## Runtime authority
 
-The working runtime is stored outside the repository under:
+Current DEV optimization authority and protected Control are intentionally separate:
 
 ```text
-/Volumes/MAC MINI M4/TFTMAC/Runtime
+DEV:     /Applications/TFTMAC DEV.app
+         /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
+         1920x1080 / 60 Hz / 8 vCPU / 6144 MiB
+         ADB 5041 / console 5586 / controller 8556
+         current winner DEV-B8-WIN-01
+
+Control: /Applications/TFTMAC.app
+         /Volumes/MAC MINI M4/TFTMAC/Runtime
+         protected historical/playable rollback authority
 ```
 
-The current stock emulator authority is Android Emulator 37.1.11. The exact installed EmulatorController protocol is vendored at `Vendor/AndroidEmulator/emulator_controller.proto` with provenance in `Vendor/AndroidEmulator/SOURCE.json`.
+The stock emulator authority is Android Emulator 37.1.11. Current DEV test receipts select OpenGL ES through ANGLE and use TFT `18.1-5423749` / `8423749`. The exact installed EmulatorController protocol is vendored at `Vendor/AndroidEmulator/emulator_controller.proto` with provenance in `Vendor/AndroidEmulator/SOURCE.json`.
 
 The source-built emulator laboratory is not part of the normal product path.
 `flashls1/tftmac-runtime@c8aa26e` is eligible only as an isolated,
 non-comparable diagnostic source runtime for the planned causal logger.
 
-## Current handoff authority
+## Current authority and handoff
 
-- [`AGENT_HANDOFF_2026-09-06.md`](AGENT_HANDOFF_2026-09-06.md) — current DEV r17 checkpoint, SHA receipts, Keychain blocker and unproven 60 FPS acceptance.
-- [`facts.md`](facts.md) — locked facts, current observations, verified results, and explicit unknowns.
-- [`project.md`](project.md) — complete project history, architecture pivots, current Build 8 logger state, and continuity for a new chat.
-- [`dev.md`](dev.md) — code ownership, experiment ledger, SQL contracts, hypotheses, and the next development gates.
+Read in this order before planning or finalizing a change:
 
-Historical plans and benchmark records remain useful evidence, but they do not override these current boundaries or the machine-readable files under `ssot/`. The dated archive under `docs/history/2026-08-31-pre-build8/` is not current execution authority.
+1. [`facts.md`](facts.md) — first project-specific factual/policy authority.
+2. [`project.md`](project.md) — living current-state wiki; must agree with `facts.md`.
+3. [`CHANGELOG.md`](CHANGELOG.md) — detailed DEV test/version ledger and integration decisions.
+4. [`benchmark.md`](benchmark.md) and [`dev.md`](dev.md) — analysis/engineering contracts after reconciliation with the files above.
+
+Dated handoffs such as `AGENT_HANDOFF_2026-09-06.md`, historical plans, benchmark records and machine-readable/reference SSOT files remain evidence but never silently override `facts.md`/`project.md`. If credible newer evidence conflicts, validate it, update the authority records first, then finalize the plan or change.
 
 ## Native build
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """TFTMAC OvernightLab.
 
-Small external, official-client-only controller that reuses the installed
-LKG-identical TFTMAC DEV app and StockShadow runtime.  It never contains or
-creates another app/SDK/emulator/AVD.  Raw native capture remains authoritative;
-this database supplies cross-run identity, field-level requested/effective
-values, coverage, rollback, failure quarantine and conservative comparisons.
+Small external, official-client-only telemetry/controller layer that reuses the
+installed TFTMAC DEV app and StockShadow runtime while keeping the frozen LKG
+separate.  It never contains or creates another app/SDK/emulator/AVD.  Raw native
+capture remains authoritative; this database preserves cross-run identity,
+requested/effective values, drift, coverage, rollback, failure quarantine and
+conservative comparison eligibility.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import sqlite3
@@ -25,7 +27,7 @@ import sys
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -52,7 +54,7 @@ CLASSIFICATIONS = {
     "HARD_REJECT", "INCONCLUSIVE", "NO_SIGNAL", "MECHANISM_WORKING",
     "POSITIVE_PROVISIONAL", "PROMOTION_CANDIDATE", "WIN_60", "CONTROL_VALID",
     "CONTROL_SETUP_FAILED", "TELEMETRY_INCOMPLETE", "INTERRUPTED",
-    "AUTH_BLOCKED", "UI_BLOCKED", "SKIPPED", "QUARANTINED",
+    "AUTH_BLOCKED", "UI_BLOCKED", "SKIPPED", "QUARANTINED", "DATA_ONLY_NONCOMPARABLE",
 }
 
 
@@ -159,6 +161,11 @@ class RunContext:
     angle_applied: bool = False
     profile_overlay_applied: bool = False
     cache_overrides_applied: bool = False
+    package_version: Optional[str] = None
+    version_code: Optional[int] = None
+    decision_admissible: bool = True
+    evidence_scope: str = "CURRENT_PROMOTION"
+    drift_reasons: list[str] = field(default_factory=list)
 
 
 class Database:
@@ -252,9 +259,9 @@ class OvernightLab:
                  evidence_path,evidence_sha256,identity_verification_method,identity_confidence,
                  decision_admissible,created_utc) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (str(uuid.uuid4()), ctx.campaign_id, ctx.candidate["id"], ctx.run_id, "OFFICIAL_LIVE",
-             self.package, self.authority["version_name"], str(self.authority["version_code"]), ctx.package_pid,
+             self.package, ctx.package_version or self.authority["version_name"], str(ctx.version_code or self.authority["version_code"]), ctx.package_pid,
              None, None, kind, str(path), digest,
-             "running package/version + LKG host identity", confidence, 1 if admissible else 0, utc_now()))
+             "observed package/version + current DEV host identity", confidence, 1 if admissible else 0, utc_now()))
 
     def coverage(self, ctx: RunContext, producer: str, *, expected: bool, produced: int,
                  persisted: int, lost: int = 0, malformed: int = 0, parse_errors: int = 0,
@@ -328,26 +335,27 @@ class OvernightLab:
             raise LabError("StockShadow AVD config is not at its accepted baseline and has no recovery journal", error_class="AVD_BASELINE_MISMATCH", phase="preflight")
         self.ensure_classifier()
         lkg_app = self.lkg_root / "TFTMAC DEV.app"
-        mismatches = []
-        for relative, expected in self.authority["installed_dev_hashes"].items():
+        current_mismatches = []
+        for relative, expected in self.authority["current_dev_hashes"].items():
             installed = self.dev_app / relative
+            if not installed.is_file() or sha256_file(installed) != expected:
+                current_mismatches.append(relative)
+        if current_mismatches:
+            raise LabError(f"installed current DEV integrity mismatch: {current_mismatches}", error_class="DEV_INTEGRITY_FAILED", phase="preflight")
+        lkg_mismatches = []
+        for relative, expected in self.authority["frozen_lkg_hashes"].items():
             frozen = lkg_app / relative
-            if not installed.is_file() or not frozen.is_file():
-                mismatches.append(f"missing:{relative}")
-                continue
-            installed_sha = sha256_file(installed)
-            frozen_sha = sha256_file(frozen)
-            if installed_sha != expected or frozen_sha != expected or installed_sha != frozen_sha:
-                mismatches.append(relative)
-        if mismatches:
-            raise LabError(f"installed DEV/LKG integrity mismatch: {mismatches}", error_class="LKG_INTEGRITY_FAILED", phase="preflight")
+            if not frozen.is_file() or sha256_file(frozen) != expected:
+                lkg_mismatches.append(relative)
+        if lkg_mismatches:
+            raise LabError(f"frozen LKG integrity mismatch: {lkg_mismatches}", error_class="LKG_INTEGRITY_FAILED", phase="preflight")
         forbidden = [ROOT / n for n in ("SDK", "AVD", "emulator", "TFTMAC DEV.app")]
         if any(p.exists() for p in forbidden):
             raise LabError("OvernightLab contains a forbidden runtime/app copy", error_class="RUNTIME_CLONE_FORBIDDEN", phase="preflight")
         codesign = self.command(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(self.dev_app)], timeout=30)
         if codesign.returncode != 0:
             raise LabError("installed DEV codesign verification failed", error_class="DEV_CODESIGN_INVALID", phase="preflight")
-        return {"installed_dev_lkg_integrity": True, "pbe_hits": [], "codesign": "PASS"}
+        return {"installed_dev_integrity": True, "frozen_lkg_integrity": True, "pbe_hits": [], "codesign": "PASS", "working_version": self.authority["working_version"]}
 
     def candidate(self, candidate_id: str) -> dict[str, Any]:
         matches = [c for c in self.manifest.get("candidates", []) if c.get("id") == candidate_id]
@@ -366,8 +374,8 @@ class OvernightLab:
         for c in self.manifest["candidates"]:
             definition = canonical_json(c)
             self.db.execute(
-                "INSERT OR REPLACE INTO candidates(candidate_id,family,kind,build_scope,restart_class,definition_json,definition_sha256,enabled) VALUES(?,?,?,?,?,?,?,1)",
-                (c["id"], c["family"], c["kind"], c["build_scope"], c["restart_class"], definition, sha256_bytes(definition.encode())))
+                "INSERT OR REPLACE INTO candidates(candidate_id,family,kind,build_scope,restart_class,definition_json,definition_sha256,enabled) VALUES(?,?,?,?,?,?,?,?)",
+                (c["id"], c["family"], c["kind"], c["build_scope"], c["restart_class"], definition, sha256_bytes(definition.encode()), int(c.get("enabled", True))))
 
     def create_campaign(self) -> str:
         self.verify_static_authority()
@@ -428,6 +436,10 @@ class OvernightLab:
         run_dir = self.campaign_dir(cid) / "runs" / rid
         run_dir.mkdir(parents=True, exist_ok=False)
         ctx = RunContext(cid, candidate, rid, run_dir)
+        if not candidate.get("enabled", True):
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_DISABLED_CANDIDATE"
+            ctx.drift_reasons.append(f"candidate_status:{candidate.get('status', 'disabled')}")
         self.db.execute(
             "INSERT INTO runs(run_id,campaign_id,candidate_id,started_utc,state) VALUES(?,?,?,?,?)",
             (rid, cid, candidate["id"], utc_now(), "STARTING"))
@@ -628,13 +640,60 @@ class OvernightLab:
         ps = self.command(["/bin/ps", "-p", str(pid), "-ww", "-o", "command="], check=False)
         return pid, ps.stdout.strip()
 
-    def wait_for_shell_and_package(self, ctx: RunContext, timeout: int = 180) -> None:
+    def apply_session_properties_before_tft(self, ctx: RunContext, timeout: int = 30) -> dict[str, str]:
+        """Apply the current verified working guest properties before first TFT PID."""
+        working = self.authority["current_working_cache_properties"]
+        values = dict(ctx.candidate.get("guest_properties", working))
         deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            uid = self.adb("shell", "id", "-u", timeout=4, check=False)
+            pid = self.adb("shell", "pidof", self.package, timeout=4, check=False)
+            if pid.returncode == 0 and pid.stdout.strip():
+                raise LabError(
+                    "TFT started before mandatory current-working session properties were applied",
+                    error_class="SESSION_PROPERTIES_LATE", component="runtime", phase="boot")
+            if uid.returncode == 0 and uid.stdout.strip() in {"0", "2000"}:
+                observed: dict[str, str] = {}
+                for key, value in values.items():
+                    self.adb("shell", "setprop", key, value, timeout=6)
+                    actual = self.adb("shell", "getprop", key, timeout=6).stdout.strip()
+                    if actual != value:
+                        raise LabError(
+                            f"mandatory session property not effective: {key}",
+                            error_class="PROPERTY_NOT_EFFECTIVE", component="runtime", phase="boot")
+                    observed[key] = actual
+                ctx.cache_overrides_applied = values != working
+                atomic_json(ctx.run_dir / "session-properties.json", {
+                    "applied_before_tft_pid": True,
+                    "shell_uid": uid.stdout.strip(),
+                    "properties": observed,
+                    "observed_utc": utc_now(),
+                })
+                self.record_artifact(ctx, "session_properties", ctx.run_dir / "session-properties.json")
+                return observed
+            if not self.owned_emulator_pids():
+                raise LabError(
+                    "emulator exited before mandatory Sept.10 session properties could be applied",
+                    error_class="BOOT_FAILURE", component="runtime", phase="boot")
+            time.sleep(0.25)
+        raise LabError(
+            "mandatory current-working session properties were not applied before TFT startup",
+            error_class="SESSION_PROPERTIES_TIMEOUT", component="runtime", phase="boot")
+
+    def wait_for_shell_and_package(self, ctx: RunContext, timeout: int = 180) -> None:
+        started = time.monotonic()
+        deadline = started + timeout
         while time.monotonic() < deadline:
             uid = self.adb("shell", "id", "-u", timeout=5, check=False)
             package = self.adb("shell", "pm", "path", self.package, timeout=7, check=False)
             if uid.returncode == 0 and uid.stdout.strip() == "2000" and package.returncode == 0 and "package:" in package.stdout:
                 return
+            # If the native owner has already failed, restored, and stopped the emulator,
+            # there is no useful reason to burn the full readiness timeout.
+            if time.monotonic() - started > 10 and not self.owned_emulator_pids():
+                raise LabError(
+                    "emulator exited before normal shell/package readiness",
+                    error_class="BOOT_FAILURE", component="runtime", phase="boot")
             self.heartbeat(ctx, "WAIT_RUNTIME_READY")
             time.sleep(1)
         raise LabError("normal shell/package readiness timed out", error_class="RUNTIME_READY_TIMEOUT", phase="runtime")
@@ -651,11 +710,14 @@ class OvernightLab:
 
     def find_engine_log(self, capture: Optional[Path]) -> Optional[Path]:
         if not capture or not capture.is_dir(): return None
-        candidates = []
+        # Priority matters: the dedicated engine boot log is selection authority.
+        # A newer generic logcat file may contain Vulkan capability text without the
+        # Unreal RHI selection decision and must not displace the engine log.
         for pattern in ("*engine*boot*.log", "*engine*.log", "TFT.log", "*logcat*.txt"):
-            candidates.extend(capture.glob(pattern))
-        candidates = [p for p in candidates if p.is_file()]
-        return max(candidates, key=lambda p: p.stat().st_mtime_ns) if candidates else None
+            candidates = [p for p in capture.glob(pattern) if p.is_file()]
+            if candidates:
+                return max(candidates, key=lambda p: p.stat().st_mtime_ns)
+        return None
 
     def selected_rhi(self, capture: Optional[Path]) -> tuple[str, Optional[str]]:
         raw = None
@@ -682,23 +744,41 @@ class OvernightLab:
         dump = self.adb("shell", "dumpsys", "package", self.package, timeout=20).stdout
         vm = re.search(r"versionName=([^\s]+)", dump)
         vc = re.search(r"versionCode=(\d+)", dump)
-        if not vm or vm.group(1) != self.authority["version_name"]:
-            raise LabError(f"versionName mismatch: {vm.group(1) if vm else 'missing'}", error_class="VERSION_MISMATCH", phase="identity")
-        if not vc or int(vc.group(1)) != int(self.authority["version_code"]):
-            raise LabError("versionCode mismatch", error_class="VERSION_MISMATCH", phase="identity")
+        if not vm or not vc:
+            raise LabError("official package version identity is missing", error_class="VERSION_IDENTITY_MISSING", phase="identity")
+        ctx.package_version = vm.group(1)
+        ctx.version_code = int(vc.group(1))
+        if ctx.package_version != self.authority["version_name"] or ctx.version_code != int(self.authority["version_code"]):
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_CORE_CLIENT_DRIFT"
+            ctx.drift_reasons.append(f"client:{ctx.package_version}/{ctx.version_code} expected {self.authority['version_name']}/{self.authority['version_code']}")
         pid_text = self.adb("shell", "pidof", self.package, check=False).stdout.strip().split()
         ctx.package_pid = int(pid_text[0]) if pid_text and pid_text[0].isdigit() else None
         qemu_pid, qcmd = self.qemu_command()
-        required_qemu = ["-cores 8", "-memory 6144", "-skin 1920x1080", "-vsync-rate 60", "-gpu host"]
-        missing_qemu = [x for x in required_qemu if x not in qcmd]
-        if missing_qemu:
-            raise LabError(f"effective emulator launch mismatch: {missing_qemu}", error_class="RUNTIME_CONFIG_MISMATCH", phase="identity")
+        def qemu_int(flag: str) -> Optional[int]:
+            match = re.search(rf"(?:^|\s){re.escape(flag)}\s+(\d+)(?:\s|$)", qcmd)
+            return int(match.group(1)) if match else None
+        actual_vcpu = qemu_int("-cores")
+        actual_ram_mib = qemu_int("-memory")
+        critical_qemu = ["-skin 1920x1080", "-vsync-rate 60", "-gpu host"]
+        missing_critical = [x for x in critical_qemu if x not in qcmd]
+        if missing_critical:
+            raise LabError(f"effective emulator launch critical mismatch: {missing_critical}", error_class="RUNTIME_CONFIG_MISMATCH", phase="identity")
+        if actual_vcpu != int(self.authority["expected_vcpu"]):
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_MINOR_CONFIG_DRIFT"
+            ctx.drift_reasons.append(f"vcpu:{actual_vcpu} expected {self.authority['expected_vcpu']}")
+        if actual_ram_mib != int(self.authority["expected_ram_mib"]):
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_MINOR_CONFIG_DRIFT"
+            ctx.drift_reasons.append(f"ram_mib:{actual_ram_mib} expected {self.authority['expected_ram_mib']}")
         wm_size = self.adb("shell", "wm", "size").stdout
         wm_density = self.adb("shell", "wm", "density").stdout
         if "1920x1080" not in wm_size or "320" not in wm_density:
             raise LabError("display/density mismatch", error_class="DISPLAY_MISMATCH", phase="identity")
         props = {}
-        for key in self.authority["lkg_cache_properties"]:
+        requested_props = ctx.candidate.get("guest_properties", self.authority["current_working_cache_properties"])
+        for key in sorted(set(self.authority["current_working_cache_properties"]) | set(requested_props)):
             props[key] = self.adb("shell", "getprop", key).stdout.strip()
         ctx.selected_rhi, ctx.raw_native_rhi = self.selected_rhi(ctx.capture)
         rhi_deadline = time.monotonic() + 30
@@ -707,22 +787,30 @@ class OvernightLab:
                 break
             time.sleep(1)
             ctx.selected_rhi, ctx.raw_native_rhi = self.selected_rhi(ctx.capture)
-        if ctx.candidate["kind"] != "vulkan_canary" and ctx.selected_rhi != self.authority["expected_normal_rhi"]:
-            raise LabError(
-                f"expected current LKG RHI {self.authority['expected_normal_rhi']}, observed {ctx.selected_rhi}",
-                error_class="RHI_SELECTION_UNPROVEN", component="runtime", phase="identity")
+        expected_rhi = ctx.candidate.get("expected_rhi", self.authority["expected_normal_rhi"])
+        if ctx.selected_rhi != expected_rhi:
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_CORE_PIPELINE_DRIFT"
+            ctx.drift_reasons.append(f"selected_rhi:{ctx.selected_rhi} expected {expected_rhi}")
         identity = {
             "package_paths": package_paths,
-            "version_name": vm.group(1), "version_code": int(vc.group(1)),
+            "version_name": ctx.package_version, "version_code": ctx.version_code,
             "pid": ctx.package_pid, "qemu_pid": qemu_pid, "qemu_command": qcmd,
+            "effective_vcpu": actual_vcpu, "effective_ram_mib": actual_ram_mib,
             "wm_size": wm_size.strip(), "wm_density": wm_density.strip(), "cache_properties": props,
             "selected_game_rhi": ctx.selected_rhi, "raw_native_classifier_value": ctx.raw_native_rhi,
+            "decision_admissible": ctx.decision_admissible, "evidence_scope": ctx.evidence_scope,
+            "drift_reasons": list(ctx.drift_reasons),
         }
         atomic_json(ctx.run_dir / "runtime-identity.json", identity)
         self.record_artifact(ctx, "runtime_identity", ctx.run_dir / "runtime-identity.json")
         self.db.execute("UPDATE runs SET package_verified=1,runtime_verified=1,selected_game_rhi=?,raw_native_classifier_value=? WHERE run_id=?",
                         (ctx.selected_rhi, ctx.raw_native_rhi, ctx.run_id))
         self.record_variables(ctx, identity)
+        if any(reason.startswith("client:") or reason.startswith("selected_rhi:") for reason in ctx.drift_reasons):
+            raise LabError(
+                "core client/RHI identity does not match the admitted experiment; evidence retained as data-only",
+                error_class="CORE_IDENTITY_MISMATCH", component="runtime", phase="identity")
         return identity
 
     def upsert_variable(self, ctx: RunContext, category: str, name: str, baseline: Any, requested: Any,
@@ -746,15 +834,17 @@ class OvernightLab:
             "display.height": (a["expected_height"], a["expected_height"], a["expected_height"]),
             "display.dpi": (a["expected_dpi"], a["expected_dpi"], a["expected_dpi"]),
             "refresh_hz": (a["expected_refresh_hz"], a["expected_refresh_hz"], a["expected_refresh_hz"]),
-            "vcpu": (a["expected_vcpu"], a["expected_vcpu"], a["expected_vcpu"]),
-            "ram_mib": (a["expected_ram_mib"], a["expected_ram_mib"], a["expected_ram_mib"]),
+            "vcpu": (a["expected_vcpu"], a["expected_vcpu"], identity["effective_vcpu"]),
+            "ram_mib": (a["expected_ram_mib"], a["expected_ram_mib"], identity["effective_ram_mib"]),
             "gpu_mode": (a["expected_gpu_mode"], a["expected_gpu_mode"], a["expected_gpu_mode"]),
             "selected_game_rhi": (a["expected_normal_rhi"], a["expected_normal_rhi"], identity["selected_game_rhi"]),
         }
         for name, (base, req, eff) in core.items():
             self.upsert_variable(ctx, "runtime", name, base, req, eff, "direct runtime identity", "VERIFIED" if str(req) == str(eff) else "MISMATCH")
-        requested_props = ctx.candidate.get("guest_properties", a["lkg_cache_properties"])
-        for key, baseline in a["lkg_cache_properties"].items():
+        requested_props = ctx.candidate.get("guest_properties", a["current_working_cache_properties"])
+        property_keys = sorted(set(a["current_working_cache_properties"]) | set(requested_props))
+        for key in property_keys:
+            baseline = a["current_working_cache_properties"].get(key)
             requested = requested_props.get(key, baseline)
             effective = self.adb("shell", "getprop", key, check=False).stdout.strip()
             self.upsert_variable(ctx, "guest_property", key, baseline, requested, effective, "adb getprop", "VERIFIED" if str(requested) == effective else "MISMATCH")
@@ -799,7 +889,7 @@ class OvernightLab:
         if not ctx.cache_overrides_applied: return True
         try:
             self.adb("shell", "am", "force-stop", self.package, timeout=10, check=False)
-            for key, value in self.authority["lkg_cache_properties"].items():
+            for key, value in self.authority["current_working_cache_properties"].items():
                 self.adb("shell", "setprop", key, value, timeout=8)
                 if self.adb("shell", "getprop", key, timeout=8).stdout.strip() != value:
                     return False
@@ -858,7 +948,7 @@ class OvernightLab:
         original_stage = self.authority["highperf_stage_profile"]
         self.adb("shell", "am", "force-stop", self.package, timeout=15)
         self.adb_root()
-        expected = self.authority["installed_dev_hashes"]["Contents/Resources/DEVHighPerf/DeviceProfiles.ini"]
+        expected = self.authority["current_dev_hashes"]["Contents/Resources/DEVHighPerf/DeviceProfiles.ini"]
         current_sha = self.adb("shell", "sha256sum", target).stdout.split()[0]
         original_sha = self.adb("shell", "sha256sum", original_stage).stdout.split()[0]
         if current_sha != expected or original_sha != expected:
@@ -882,7 +972,7 @@ class OvernightLab:
         if not ctx.profile_overlay_applied: return True
         target = self.authority["device_profile_target"]
         original_stage = self.authority["highperf_stage_profile"]
-        expected = self.authority["installed_dev_hashes"]["Contents/Resources/DEVHighPerf/DeviceProfiles.ini"]
+        expected = self.authority["current_dev_hashes"]["Contents/Resources/DEVHighPerf/DeviceProfiles.ini"]
         try:
             self.adb("shell", "am", "force-stop", self.package, timeout=10, check=False)
             self.adb_root()
@@ -979,40 +1069,100 @@ class OvernightLab:
         return refresh, sorted(set(actual))
 
     def measure_stage(self, ctx: RunContext, stage: str, rounds: int) -> list[dict[str, Any]]:
-        layer = self.surface_layer()
-        results = []
-        for sequence in range(1, rounds + 1):
-            started = mono_ns()
-            self.adb("shell", "dumpsys", "SurfaceFlinger", "--latency-clear", layer, timeout=10, check=False)
-            time.sleep(1.0)
-            output = self.adb("shell", "dumpsys", "SurfaceFlinger", "--latency", layer, timeout=10).stdout
-            ended = mono_ns()
-            refresh_ns, actual = self.parse_latency(output)
-            intervals = [(b - a) / 1_000_000 for a, b in zip(actual, actual[1:]) if b > a]
-            duration_ms = sum(intervals)
-            fps = (len(intervals) / (duration_ms / 1000)) if duration_ms > 0 else 0.0
-            one_low = 1000 / percentile(intervals, 0.99) if intervals and percentile(intervals, 0.99) > 0 else 0.0
-            row = {
-                "stage": stage, "phase": "combat", "sequence": sequence,
-                "started_monotonic_ns": started, "ended_monotonic_ns": ended,
-                "frame_count": len(intervals), "weighted_fps": fps, "one_percent_low_fps": one_low,
-                "p50_ms": percentile(intervals, .50), "p95_ms": percentile(intervals, .95),
-                "p99_ms": percentile(intervals, .99), "max_ms": max(intervals) if intervals else 0.0,
-                "over_25ms": sum(v > 25 for v in intervals), "over_50ms": sum(v > 50 for v in intervals),
-                "over_100ms": sum(v > 100 for v in intervals),
-                "history_truncated": 1 if len(actual) >= 127 else 0,
-                "semantic_gate_passed": 1,
-                "refresh_ns": refresh_ns,
-                "layer": layer,
-            }
-            results.append(row)
-            self.db.execute(
-                """INSERT INTO performance_windows(run_id,stage,phase,sequence,started_monotonic_ns,ended_monotonic_ns,
-                   frame_count,weighted_fps,one_percent_low_fps,p50_ms,p95_ms,p99_ms,max_ms,over_25ms,over_50ms,
-                   over_100ms,history_truncated,semantic_gate_passed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (ctx.run_id, stage, "combat", sequence, started, ended, len(intervals), fps, one_low,
-                 row["p50_ms"], row["p95_ms"], row["p99_ms"], row["max_ms"], row["over_25ms"], row["over_50ms"],
-                 row["over_100ms"], row["history_truncated"], 1))
+        # TFTMAC's native collector is the frame-timing authority.  It already
+        # normalizes SurfaceFlinger layer names, preserves rolling-history
+        # adjacency, and records each accepted actual-present interval.  The lab
+        # must consume those windows rather than clear/re-sample SurfaceFlinger
+        # and create a second, subtly different FPS implementation.
+        if not ctx.capture:
+            raise LabError("native capture is unavailable for combat measurement", error_class="CAPTURE_FAILURE", component="telemetry", phase="measure")
+        native_db = ctx.capture / "TFTMAC_NATIVE_RUNTIME.sqlite"
+        if not native_db.is_file():
+            raise LabError("native runtime telemetry database is unavailable", error_class="TELEMETRY_FAILURE", component="telemetry", phase="measure")
+
+        def connect_native() -> sqlite3.Connection:
+            connection = sqlite3.connect(f"file:{native_db}?mode=ro", uri=True, timeout=5)
+            connection.row_factory = sqlite3.Row
+            return connection
+
+        try:
+            with connect_native() as native:
+                baseline_row = native.execute("SELECT COALESCE(MAX(id),0) FROM game_frame_windows").fetchone()
+                baseline_id = int(baseline_row[0]) if baseline_row else 0
+        except sqlite3.Error as exc:
+            raise LabError(f"native frame-window baseline could not be read: {exc}", error_class="TELEMETRY_FAILURE", component="telemetry", phase="measure") from exc
+
+        native_rows: list[sqlite3.Row] = []
+        deadline = time.monotonic() + max(15.0, rounds * 6.0)
+        while time.monotonic() < deadline:
+            if not self.dev_core_running() or not self.owned_emulator_pids():
+                raise LabError("DEV stopped while waiting for native combat telemetry", error_class="TELEMETRY_FAILURE", component="telemetry", phase="measure")
+            try:
+                with connect_native() as native:
+                    native_rows = list(native.execute(
+                        """SELECT * FROM game_frame_windows
+                           WHERE id>? AND status='AVAILABLE' AND frame_count>0 AND effective_fps IS NOT NULL
+                           ORDER BY id ASC LIMIT ?""",
+                        (baseline_id, rounds),
+                    ))
+            except sqlite3.Error:
+                native_rows = []
+            if len(native_rows) >= rounds:
+                break
+            time.sleep(0.25)
+        if len(native_rows) < rounds:
+            raise LabError(
+                f"native combat telemetry produced {len(native_rows)} of {rounds} required windows",
+                error_class="TELEMETRY_FAILURE", component="telemetry", phase="measure")
+
+        results: list[dict[str, Any]] = []
+        try:
+            with connect_native() as native:
+                for sequence, native_row in enumerate(native_rows, start=1):
+                    interval_rows = list(native.execute(
+                        "SELECT interval_ms FROM game_frame_intervals WHERE game_frame_window_id=? ORDER BY id",
+                        (int(native_row["id"]),),
+                    ))
+                    intervals = [float(item[0]) for item in interval_rows if item[0] is not None]
+                    row = {
+                        "stage": stage,
+                        "phase": "combat",
+                        "sequence": sequence,
+                        "native_window_id": int(native_row["id"]),
+                        "started_monotonic_ns": int(native_row["started_monotonic_ns"]),
+                        "ended_monotonic_ns": int(native_row["ended_monotonic_ns"]),
+                        "frame_count": int(native_row["frame_count"]),
+                        "weighted_fps": float(native_row["effective_fps"]),
+                        "one_percent_low_fps": float(native_row["one_percent_low_fps"] or 0.0),
+                        "p50_ms": float(native_row["p50_interval_ms"] or 0.0),
+                        "p95_ms": float(native_row["p95_interval_ms"] or 0.0),
+                        "p99_ms": float(native_row["p99_interval_ms"] or 0.0),
+                        "max_ms": float(native_row["maximum_interval_ms"] or 0.0),
+                        "over_25ms": sum(value > 25.0 for value in intervals),
+                        "over_50ms": sum(value > 50.0 for value in intervals),
+                        "over_100ms": sum(value > 100.0 for value in intervals),
+                        "jank_count": int(native_row["jank_count"]),
+                        "severe_count": int(native_row["severe_count"]),
+                        "missed_vsync_equivalents": int(native_row["missed_vsync_equivalents"]),
+                        "history_truncated": int(native_row["history_truncated"]),
+                        "semantic_gate_passed": 1,
+                        "refresh_ns": int(native_row["refresh_period_ns"] or 0),
+                        "layer": native_row["layer_name"],
+                        "native_interval_count": len(intervals),
+                    }
+                    results.append(row)
+                    self.db.execute(
+                        """INSERT INTO performance_windows(run_id,stage,phase,sequence,started_monotonic_ns,ended_monotonic_ns,
+                           frame_count,weighted_fps,one_percent_low_fps,p50_ms,p95_ms,p99_ms,max_ms,over_25ms,over_50ms,
+                           over_100ms,history_truncated,semantic_gate_passed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (ctx.run_id, stage, "combat", sequence, row["started_monotonic_ns"], row["ended_monotonic_ns"],
+                         row["frame_count"], row["weighted_fps"], row["one_percent_low_fps"], row["p50_ms"],
+                         row["p95_ms"], row["p99_ms"], row["max_ms"], row["over_25ms"], row["over_50ms"],
+                         row["over_100ms"], row["history_truncated"], 1))
+        except sqlite3.Error as exc:
+            raise LabError(f"native combat telemetry could not be imported: {exc}", error_class="TELEMETRY_FAILURE", component="telemetry", phase="measure") from exc
+
+        self.coverage(ctx, "native_combat_windows", expected=True, produced=len(results), persisted=len(results), schema_version="native-v3")
         with (ctx.run_dir / f"measurement-{stage}.json").open("w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, sort_keys=True); f.write("\n")
         return results
@@ -1041,10 +1191,11 @@ class OvernightLab:
                 if state.get("reason") == "sign_in_splash":
                     now = time.monotonic()
                     if login_splash_taps < 3 and (login_splash_taps == 0 or now - last_login_splash_tap >= 8):
-                        # Current native DEV uses center-x and 65.74% of the physical 1080p height.
-                        # Keep this semantic splash action in the same coordinate space as the LKG owner.
+                        # Sept.10 native-1080 live evidence: the upper SIGN IN button occupies
+                        # approximately y=630...680; the old 65.74% target lands in the gap
+                        # before the lower CREATE ACCOUNT button. Tap the measured SIGN IN center.
                         self.adb("shell", "input", "tap", str(self.authority["expected_width"] // 2),
-                                 str(round(self.authority["expected_height"] * 0.6574)), timeout=8)
+                                 str(round(self.authority["expected_height"] * (655 / 1080))), timeout=8)
                         login_splash_taps += 1
                         last_login_splash_tap = now
                 elif time.monotonic() - login_since > 180:
@@ -1060,7 +1211,13 @@ class OvernightLab:
                 if "YOU DISCONNECTED" in evidence and "RECONNECT" in evidence: self.tap(1280, 720)
                 else: raise LabError("unknown disconnect UI", error_class="UNKNOWN_UI", component="ui", phase="navigation")
             elif name == "error":
-                raise LabError(f"Riot/TFT error screen: {evidence}", error_class="GAME_ERROR_UI", component="ui", phase="navigation")
+                if "declined ready check" in evidence.lower() and "returned to the lobby" in evidence.lower():
+                    # Existing autonomous Trials authority treats this exact modal as
+                    # recoverable: acknowledge it and re-enter through the normal lobby
+                    # flow.  Generic Riot/TFT errors remain fail-closed.
+                    self.tap(1280, 773)
+                else:
+                    raise LabError(f"Riot/TFT error screen: {evidence}", error_class="GAME_ERROR_UI", component="ui", phase="navigation")
             elif name == "trial_choice":
                 if not stage: raise LabError("choice without stage", error_class="UNKNOWN_UI", component="ui", phase="navigation")
                 if state.get("reason") == "trial_option_choice": self.tap(700, 520, game=True)
@@ -1092,28 +1249,46 @@ class OvernightLab:
 
     # ---------- cache evidence ----------
     def cache_snapshot(self, ctx: RunContext, label: str) -> dict[str, Any]:
-        # Root only after normal gameplay/login timing. Read metadata, then immediately unroot.
+        # Property readback is the normal evidence path. Root-only file inventory is opt-in
+        # because changing ADB privilege can itself disturb an otherwise valid performance run.
         snapshot: dict[str, Any] = {"label": label, "utc": utc_now(), "properties": {}}
-        for key in self.authority["lkg_cache_properties"]:
+        keys = set(self.authority["current_working_cache_properties"])
+        keys.update(ctx.candidate.get("guest_properties", {}))
+        for key in sorted(keys):
             snapshot["properties"][key] = self.adb("shell", "getprop", key, check=False).stdout.strip()
+        if not ctx.candidate.get("root_cache_inventory", False):
+            snapshot["root_inventory"] = "SKIPPED_NOT_REQUIRED"
+            path = ctx.run_dir / f"cache-{label}.json"
+            atomic_json(path, snapshot)
+            self.record_artifact(ctx, f"cache_{label}", path)
+            return snapshot
         try:
             self.adb_root()
-            directory = self.authority["cache_multifile_directory"]
-            listing = self.adb("shell", "sh", "-c", f"if [ -d '{directory}' ]; then find '{directory}' -maxdepth 1 -type f -printf '%f|%s|%T@\\n' | sort; fi", timeout=20, check=False).stdout
-            files = []
-            for line in listing.splitlines():
-                parts = line.split("|", 2)
-                if len(parts) == 3:
-                    files.append({"name": parts[0], "bytes": int(parts[1]) if parts[1].isdigit() else None, "mtime": parts[2]})
-            snapshot["files"] = files
-            snapshot["entry_count"] = len([x for x in files if x["name"] != "cache.status"])
-            snapshot["file_bytes"] = sum(x["bytes"] or 0 for x in files)
-            mono = self.authority["cache_monolithic_file"]
-            stat = self.adb("shell", "sh", "-c", f"if [ -f '{mono}' ]; then stat -c '%s|%Y' '{mono}'; fi", check=False).stdout.strip()
-            snapshot["monolithic_stat"] = stat
-        finally:
-            try: self.adb_unroot()
-            except Exception: pass
+        except LabError as exc:
+            # Root-only cache inventory is optional evidence. It must never block
+            # the actual yes/no performance test when the requested properties
+            # were already applied and read back before TFT started.
+            snapshot["root_inventory"] = "UNAVAILABLE"
+            snapshot["root_inventory_error"] = normalize_error(str(exc))
+        else:
+            try:
+                directory = self.authority["cache_multifile_directory"]
+                listing = self.adb("shell", "sh", "-c", f"if [ -d '{directory}' ]; then find '{directory}' -maxdepth 1 -type f -printf '%f|%s|%T@\\n' | sort; fi", timeout=20, check=False).stdout
+                files = []
+                for line in listing.splitlines():
+                    parts = line.split("|", 2)
+                    if len(parts) == 3:
+                        files.append({"name": parts[0], "bytes": int(parts[1]) if parts[1].isdigit() else None, "mtime": parts[2]})
+                snapshot["files"] = files
+                snapshot["entry_count"] = len([x for x in files if x["name"] != "cache.status"])
+                snapshot["file_bytes"] = sum(x["bytes"] or 0 for x in files)
+                mono = self.authority["cache_monolithic_file"]
+                stat = self.adb("shell", "sh", "-c", f"if [ -f '{mono}' ]; then stat -c '%s|%Y' '{mono}'; fi", check=False).stdout.strip()
+                snapshot["monolithic_stat"] = stat
+                snapshot["root_inventory"] = "AVAILABLE"
+            finally:
+                try: self.adb_unroot()
+                except Exception: pass
         path = ctx.run_dir / f"cache-{label}.json"
         atomic_json(path, snapshot)
         self.record_artifact(ctx, f"cache_{label}", path)
@@ -1154,7 +1329,7 @@ class OvernightLab:
         if not native_db.is_file():
             self.coverage(ctx, "native_capture", expected=True, produced=0, persisted=0, status="MISSING")
             return
-        self.record_provenance(ctx, "native_runtime_sqlite", native_db, admissible=True)
+        self.record_provenance(ctx, "native_runtime_sqlite", native_db, admissible=ctx.decision_admissible)
         self.record_artifact(ctx, "native_runtime_sqlite", native_db)
         tables = ["game_frame_intervals", "game_frame_windows", "graphics_pipeline_snapshots", "host_presentation_windows", "resource_samples", "telemetry_coverage"]
         produced = 0
@@ -1243,6 +1418,8 @@ class OvernightLab:
 
     def classify_result(self, ctx: RunContext, navigation: Optional[dict[str, Any]], error: Optional[BaseException]) -> str:
         if isinstance(error, AuthBlocked): return "AUTH_BLOCKED"
+        if not ctx.decision_admissible:
+            return "DATA_ONLY_NONCOMPARABLE"
         if error:
             error_class = getattr(error, "error_class", "")
             phase = getattr(error, "phase", "")
@@ -1281,11 +1458,13 @@ class OvernightLab:
             self.verify_static_authority()
             self.launch_dev(ctx)
             self.wait_for_device(ctx)
+            self.apply_session_properties_before_tft(ctx)
             self.wait_for_shell_and_package(ctx)
-            # Post-launch candidates that intentionally alter only guest runtime state.
+            # Session properties are applied before first TFT PID. Cache candidates now
+            # snapshot the already-effective requested state rather than force-stopping
+            # and relaunching the game after startup.
             if candidate["kind"] in {"cache_comparator", "cache_current"}:
                 cache_before = self.cache_snapshot(ctx, "before")
-                self.set_guest_properties(ctx, candidate["guest_properties"])
             elif candidate["kind"] == "vulkan_canary":
                 profile = self.prepare_vulkan_profile(ctx)
                 self.apply_vulkan_overlay(ctx, profile)
@@ -1342,6 +1521,8 @@ class OvernightLab:
             "error": normalize_error(str(error)) if error else None, "rollback": rollback,
             "cache_before": cache_before, "cache_after": cache_after,
             "selected_game_rhi": ctx.selected_rhi, "raw_native_classifier_value": ctx.raw_native_rhi,
+            "decision_admissible": ctx.decision_admissible, "evidence_scope": ctx.evidence_scope,
+            "drift_reasons": list(ctx.drift_reasons),
         }
         atomic_json(ctx.run_dir / "result.json", result)
         self.db.execute(
@@ -1359,12 +1540,19 @@ class OvernightLab:
         perf = self.db.rows("SELECT * FROM performance_windows WHERE run_id=?", (run_id,))
         values = [r["weighted_fps"] for r in perf if r["weighted_fps"] is not None]
         p95 = [r["p95_ms"] for r in perf if r["p95_ms"] is not None]
+        result = {}
+        if run and run["result_json"]:
+            try: result = json.loads(run["result_json"])
+            except json.JSONDecodeError: result = {}
         return {
             "run_id": run_id,
             "candidate": run["candidate_id"] if run else None,
             "classification": run["classification"] if run else None,
             "rollback_verified": bool(run["rollback_verified"]) if run else False,
             "selected_rhi": run["selected_game_rhi"] if run else None,
+            "decision_admissible": result.get("decision_admissible"),
+            "evidence_scope": result.get("evidence_scope"),
+            "drift_reasons": ";".join(result.get("drift_reasons", [])),
             "mean_fps": statistics.mean(values) if values else None,
             "mean_p95_ms": statistics.mean(p95) if p95 else None,
             "window_count": len(perf),
@@ -1378,7 +1566,7 @@ class OvernightLab:
         runs = self.db.rows("SELECT * FROM runs WHERE campaign_id=? ORDER BY started_utc", (cid,))
         summaries = [self.summarize_run(r["run_id"]) for r in runs]
         with (out / "candidate-results.csv").open("w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=["run_id", "candidate", "classification", "rollback_verified", "selected_rhi", "mean_fps", "mean_p95_ms", "window_count"])
+            w = csv.DictWriter(f, fieldnames=["run_id", "candidate", "classification", "rollback_verified", "selected_rhi", "decision_admissible", "evidence_scope", "drift_reasons", "mean_fps", "mean_p95_ms", "window_count"])
             w.writeheader(); w.writerows(summaries)
         exports = {
             "experiment-variables.csv": "SELECT * FROM experiment_variables WHERE run_id IN (SELECT run_id FROM runs WHERE campaign_id=?) ORDER BY run_id,category,variable_name",
@@ -1399,15 +1587,18 @@ class OvernightLab:
         campaign = self.db.one("SELECT * FROM campaigns WHERE campaign_id=?", (cid,))
         lines = [f"# TFTMAC Overnight Report — {cid}", "",
                  f"- Official package authority: `{self.package}` `{self.authority['version_name']}`",
-                 f"- LKG integrity: {'PASS' if campaign and campaign['lkg_integrity_passed'] else 'FAIL'}",
+                 f"- Working DEV baseline: `{self.authority['working_version']}`",
+                 f"- Frozen LKG integrity: {'PASS' if campaign and campaign['lkg_integrity_passed'] else 'FAIL'}",
                  f"- PBE evidence admitted: {'YES — FAILURE' if campaign and campaign['pbe_evidence_admitted'] else 'NO'}",
                  "", "## Runs", ""]
         for s in summaries:
-            lines.append(f"- `{s['candidate']}` / `{s['run_id']}`: **{s['classification']}**, rollback={'PASS' if s['rollback_verified'] else 'FAIL'}, RHI={s['selected_rhi']}, windows={s['window_count']}, meanFPS={s['mean_fps']}, meanP95ms={s['mean_p95_ms']}")
+            lines.append(f"- `{s['candidate']}` / `{s['run_id']}`: **{s['classification']}**, rollback={'PASS' if s['rollback_verified'] else 'FAIL'}, RHI={s['selected_rhi']}, admissible={s['decision_admissible']}, scope={s['evidence_scope']}, drift={s['drift_reasons'] or 'none'}, windows={s['window_count']}, meanFPS={s['mean_fps']}, meanP95ms={s['mean_p95_ms']}")
         lines += ["", "## Decision boundaries", "",
                   "Cache existence/storage is not described as compile-time or FPS savings without a matched current-client comparison.",
                   "RHI sample percentages are not converted into removable frame milliseconds.",
                   "Any required producer whose coverage is not COMPLETE makes the dependent claim INCONCLUSIVE.",
+                  "Minor CPU/RAM or comparable configuration drift does not delete telemetry; it is retained as DATA_ONLY_NONCOMPARABLE until a valid matched comparison exists.",
+                  "Core client/RHI/pipeline mismatch remains useful forensic data but is not admissible for current DEV promotion.",
                   "Historical/PBE evidence is not admissible for current-client promotion.", ""]
         report = out / "MORNING_REPORT.md"
         report.write_text("\n".join(lines), encoding="utf-8")
@@ -1423,9 +1614,16 @@ class OvernightLab:
         assert refresh == 16666666 and actual == [1000000000, 1016666666, 1033333332]
         assert self.menu_xy(1280, 720) == (960, 540)
         assert self.game_xy(1280, 720) == (1200, 675)
-        # Candidate admission must be clean.
+        # Candidate admission must be clean and automatic execution must start only from the latest verified winner.
         for c in self.manifest["candidates"]: assert not self.contains_pbe(c)
-        # Current LKG RHI selection must win over generic Vulkan capability evidence.
+        assert self.manifest["queue"] == ["control"]
+        assert self.candidate("control").get("baseline") == self.authority["working_version"]
+        assert "syncMonolithicPipelinesToBlobCache" not in self.authority["current_working_cache_properties"]["debug.angle.feature_overrides_enabled"]
+        drift_ctx = RunContext("self-test", self.candidate("control"), "run-drift", Path("/tmp"),
+                               decision_admissible=False, evidence_scope="DATA_ONLY_MINOR_CONFIG_DRIFT",
+                               drift_reasons=["vcpu:6 expected 8"])
+        assert self.classify_result(drift_ctx, None, None) == "DATA_ONLY_NONCOMPARABLE"
+        # Current working RHI selection must win over generic Vulkan capability evidence.
         with tempfile.TemporaryDirectory() as td:
             capture = Path(td)
             (capture / "highperf-engine-boot.log").write_text(
@@ -1442,7 +1640,8 @@ class OvernightLab:
         cache_ctx = RunContext("self-test", self.candidate("cache-current"), "run-cache", Path("/tmp"))
         assert self.classify_result(cache_ctx, None, setup_error) == "INCONCLUSIVE"
         return {"static": static, "latency_parser": "PASS", "coordinate_scaling": "PASS",
-                "candidate_admission": "PASS", "rhi_precedence": "PASS", "failure_classification": "PASS"}
+                "candidate_admission": "PASS", "rhi_precedence": "PASS", "failure_classification": "PASS",
+                "current_winner_baseline": "PASS", "evidence_reuse_policy": "PASS", "root_inventory_default": "NO_ROOT"}
 
     def fault_test(self) -> dict[str, Any]:
         cases: dict[str, bool] = {}

@@ -1,4 +1,0 @@
-run_id,candidate,classification,rollback_verified,selected_rhi,mean_fps,mean_p95_ms,window_count
-run-4dfaa589bcb147a9a0bdcd5ba6ab682d,control,HARD_REJECT,False,UNKNOWN,,,0
-run-d9ea3854337e4f178372317788f10cce,control,,False,UNKNOWN,,,0
-run-e2dca4693be44de6ab04e33829a1cde4,control,HARD_REJECT,True,UNKNOWN,,,0

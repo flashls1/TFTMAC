@@ -1,15 +1,16 @@
 schema: 3
 frozen_at: "2026-09-02T07:59:18Z"
+reconciled_at: "2026-09-10 America/Chicago"
 phase0_status: PASS
 
 authority:
   mode: "released_native_runtime"
   runtime_authority: "ssot/runtime-authority.json"
   ssot_version: "4.0-build8-reconciliation"
-  documentation_authority: "facts.md + project.md + dev.md + benchmark.md"
+  documentation_authority: "facts.md > project.md > CHANGELOG.md > benchmark.md + dev.md + supporting references"
   authority_inputs: "ssot/AUTHORITY_INPUTS.sha256"
-  runtime_authority_sha256: "2646434592e1867cdaf1c5860cb86ce4fea250ab8aca01c7c122a3cf6caaec47"
-  authority_inputs_sha256: "15f19180a970954a942d6f476a2373aef0e68680235b0445497f8c4ace7da511"
+  runtime_authority_sha256: "3607fef47c7ca0b7ebd3ced416e0b3eb9e7dd37143624b97da2670ee283c7169"
+  authority_inputs_sha256: "3ab439c575e87ea9127cc939d7aed43148e1d3c135479a6edb89addf402d9e62"
   zengate_version: "2.3"
   zengate_score: 95.8
   zengate_result: "PASS"
@@ -94,8 +95,42 @@ launcher_products:
     state_namespace: "advanced_diagnostics"
     runtime_variant: "stock_shadow"
     avd_name: "TFTMAC_Diagnostic_StockShadow_R1"
-    status: "THREE_CONSECUTIVE_FIRST_FRAME_PASSES_PROBE_CAMPAIGN_PENDING"
+    status: "DEV_B8_WIN_01_CURRENT_WORKING_AUTHORITY"
   concurrency_policy: "GLOBAL_RUNTIME_LEASE_NO_CONCURRENT_CONTROL_AND_DEV"
+
+current_dev_working:
+  working_version: "DEV-B8-WIN-01"
+  observed_date: "2026-09-10"
+  application: "/Applications/TFTMAC DEV.app"
+  bundle_id: "com.flashls1.tftmac.dev"
+  app_version: "2.3.0"
+  app_build: "8"
+  runtime_mode: "advanced_diagnostics"
+  runtime_variant: "stock_shadow"
+  runtime_root: "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow"
+  avd_name: "TFTMAC_Diagnostic_StockShadow_R1"
+  adb_server_port: 5041
+  emulator_console_port: 5586
+  controller_port: 8556
+  adb_serial: "emulator-5586"
+  display: "1920x1080"
+  density_dpi: 320
+  refresh_hz: 60
+  effective_vcpu: 8
+  effective_ram_mib: 6144
+  static_avd_baseline_vcpu: 6
+  static_avd_baseline_ram_mib: 5120
+  static_avd_baseline_sha256: "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125"
+  gpu: "host"
+  audio: "coreaudio"
+  selected_game_rhi: "OPENGL_ES_ANGLE"
+  official_tft_version: "18.1-5423749"
+  official_tft_version_code: 8423749
+  cache_multifile: true
+  angle_enabled: "exposeNonConformant*:exposeES32ForTesting"
+  angle_disabled: "preferSubmitAtFBOBoundary"
+  sync_monolithic_pipelines_to_blob_cache: false
+  promotion_state: "VERIFIED_NET_IMPROVEMENT_INTEGRATED"
 
 verification_contracts:
   repository_source: "scripts/verify-tftmac.command; no installed app, external runtime, signing identity, credentials, or private capture"
@@ -109,6 +144,7 @@ android_command_line_tools:
   installed_revision: "22.0"
 
 android:
+  scope: "protected_control_historical_runtime_reference"
   api: 36
   play_image_package: "system-images;android-36;google_apis_playstore;arm64-v8a"
   play_image_revision: 7
@@ -170,6 +206,7 @@ modern_causal_source:
   source_hooks: "NOT_IMPLEMENTED"
 
 owned_probe_campaign:
+  scope: "historical_handoff_state"
   baseline: "stock_shadow"
   sequence: "control,queue_submit_inline,control,virtual_queue_off,control,fence_contexts_off,control"
   keychain_service: "com.flashls1.tftmac.android-unlock.v2"
@@ -191,6 +228,7 @@ latest_playability_comparison:
   causal_scope: "WORKLOADS_NOT_FORMALLY_MATCHED_QOS_CAUSALITY_NOT_CLAIMED"
 
 current_gameplay_capture:
+  scope: "historical_build8_capture_2026_08_31"
   id: "2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200"
   storage: "private_local_only"
   database_byte_count: 63897600
@@ -220,7 +258,7 @@ current_gameplay_capture:
   advanced_source_causal_logger: "partial_source_schema_and_cpp_abi_not_live_accepted"
 
 development_verification:
-  native_test_inventory: 54
+  native_test_inventory: 110
   causal_cpp_abi_test: PASS
   causal_event_bytes: 96
   causal_ring_capacity: 256
@@ -237,12 +275,15 @@ generality:
 
 resource_profiles:
   A:
+    scope: "protected_control_historical"
     vcpu: 6
     ram_mb: 5120
   B:
+    scope: "current_dev_working"
     vcpu: 8
     ram_mb: 6144
-  selected: A
+  protected_control: A
+  dev_working: B
 
 phase0_evidence:
   status: "historical_source_research_only"

@@ -24,7 +24,7 @@ This section is the running test/version ledger for the current TFTMAC DEV optim
 
 #### Baseline — CONTROL_GREEN
 
-**Outcome:** `PASS / HISTORICAL CONTROL`  
+**Outcome:** `PASS / HISTORICAL CONTROL`
 **Integration:** keep as immutable comparison evidence; do not overwrite it when a later setting wins.
 
 - Current official TFT client, `1920x1080`, 8 vCPU, 6144 MiB, OpenGL/ANGLE.
@@ -34,7 +34,7 @@ This section is the running test/version ledger for the current TFTMAC DEV optim
 
 #### P1 — Buffer-view retention / `dev-observed-reuse-cache-r14`
 
-**Outcome:** `NO WIN`  
+**Outcome:** `NO WIN`
 **Integration:** `NO` — do not promote; do not build more split-reason infrastructure during the fast-pass.
 
 - Candidate loaded and executed against the real official client.
@@ -45,8 +45,8 @@ This section is the running test/version ledger for the current TFTMAC DEV optim
 
 #### WIN-01 / P2 — Cache / remove `syncMonolithicPipelinesToBlobCache`
 
-**Test configuration identity:** `DEV-B8-WIN-01`  
-**Outcome:** `VERIFIED WIN`  
+**Test configuration identity:** `DEV-B8-WIN-01`
+**Outcome:** `VERIFIED WIN`
 **Integration:** `YES — RETAIN AS WORKING CACHE WINNER`.
 
 **Exact delta**
@@ -98,7 +98,7 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 
 #### P3 — Direct Vulkan
 
-**Outcome:** `NO WIN`  
+**Outcome:** `NO WIN`
 **Integration:** `NO` — preserve the OpenGL/ANGLE working route.
 
 - A bounded canary using the LKG plus only the Vulkan RHI delta was attempted; the lab-side overlay attempt was inconclusive because post-launch ADB root did not become effective, and rollback passed.
@@ -107,7 +107,7 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 
 #### Follow-up — Queue Submit Inline / `-VulkanQueueSubmitWithCommands`
 
-**Outcome:** `NO WIN / BOOT-INCOMPATIBLE`  
+**Outcome:** `NO WIN / BOOT-INCOMPATIBLE`
 **Integration:** `NO`.
 
 - Prior official-client attempt had boot-failed under low-storage conditions, so the same existing one-setting DEV preset was retested once with adequate storage.
@@ -135,6 +135,35 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 - Historical LKG with global sync remains preserved as the matched control, but **global monolithic pipeline sync is no longer part of the preferred working test configuration**.
 
 **Current scoreboard:** one verified fast win — `cache-no-global-sync`; buffer retention, direct Vulkan, queue-submit-inline, virtual-queue-off and fence-contexts-off are not promoted.
+
+#### OvernightLab authority/evidence reconciliation — 2026-09-10
+
+**Outcome:** `TOOLING RECONCILED / TELEMETRY PRESERVED`
+**Integration:** `YES` — this changes the logger/control-plane rules, not the DEV performance winner; `DEV-B8-WIN-01` remains the working baseline.
+
+- Updated OvernightLab authority to schema 2 and made `DEV-B8-WIN-01` the normal control baseline.
+- Normal session properties now use the current winner: multifile cache ON, `preferSubmitAtFBOBoundary` disabled, and **no** `syncMonolithicPipelinesToBlobCache`.
+- Frozen LKG hashes/cache properties remain separate historical comparator authority; current installed DEV integrity and frozen LKG integrity are verified independently instead of requiring them to be permanently identical.
+- Historical CPU/RAM/configuration drift no longer causes evidence deletion: telemetry is preserved and labeled `DATA_ONLY_NONCOMPARABLE` when it is not valid for current promotion.
+- Client/RHI/core-pipeline mismatch is recorded, marked data-only, and stops the intended current experiment after identity capture rather than being mistaken for current-route evidence.
+- Effective vCPU/RAM are parsed from the actual QEMU command and recorded rather than copied from expected values.
+- Native evidence provenance now inherits the run's promotion admissibility.
+- Resolved candidates remain in the manifest with status/reason, but the automatic queue contains only current working control. Buffer retention remains a logged NO WIN, no-global-sync is integrated, old global-sync cache is historical comparator only, and direct Vulkan remains a logged rejected core-route candidate.
+- Root-only cache inventory is now opt-in; property readback/native frame telemetry remain the ordinary non-disruptive evidence path.
+- Self-test and fault-test pass with explicit checks for current-winner baseline, drift retention, RHI precedence and no-root cache inventory default.
+- Existing campaign/database outputs remain useful historical data and are not discarded solely because of minor authority drift.
+
+#### Authority reconciliation — 2026-09-10
+
+**Outcome:** `CURRENT-DOC TRUTH RECONCILED`.
+
+- Verified installed DEV identity: `com.flashls1.tftmac.dev`, TFTMAC 2.3.0 build 8.
+- Verified effective DEV execution from current source plus live QEMU receipts: **8 vCPU / 6144 MiB**, 1920×1080 / 320 dpi / 60 Hz, host GPU/CoreAudio, ports `5041/5586/8556`.
+- Verified static StockShadow restoration file remains 6 vCPU / 5120 MiB; this is intentionally a sealed baseline, not the effective live DEV profile.
+- Verified current official client `18.1-5423749` / `8423749` and current selected game RHI `OPENGL_ES_ANGLE`.
+- Corrected authority rules so `facts.md` is first project authority and `project.md` is the living state wiki; credible newer evidence must be validated and used to update those files before a plan/change is finalized.
+- Added the clean-workspace completion rule: the selected managed change cannot be called complete with accidental dirty Git state.
+- Historical Control values (6 vCPU / 5120 MiB / ports 5038/5582/8554) remain valid only when explicitly labeled protected Control/history and no longer describe the current DEV optimization baseline.
 
 ### Documentation
 

@@ -1,10 +1,10 @@
-# TFTMAC Runtime — Single Source of Truth
+# TFTMAC Runtime Reference
 
-**Status:** CURRENT RUNTIME AUTHORITY  
-**Updated:** 2026-08-31
+**Status:** SUPPORTING RUNTIME REFERENCE — `facts.md` + `project.md` are current authority
+**Reconciled:** 2026-09-10
 **Project:** TFTMAC
 
-## Current production/control runtime
+## Protected production/Control runtime (historical/playable rollback)
 
 TFTMAC uses the released Google Android Emulator already proven on the target Apple Silicon host. Source-built AEMU is retired from the normal product path and is not required for build, launch, test, repair, or release.
 
@@ -20,11 +20,23 @@ Package: com.riotgames.league.teamfighttactics
 Installer/update authority: com.android.vending
 ```
 
-The normal-play control is `tftmac_5gb_native_v1` at 6 vCPU / 5120 MB, High
-graphics, 60 FPS, Performance OFF. The latest Build 8 capture observed
-`combat_latency_a` layered over those values; that is an observed active preset,
-not a performance promotion. Ultra High and Riot Performance Mode Beta remain
-rejected on the target M4 host because of unacceptable tails and playability.
+The protected normal-play Control is historically `tftmac_5gb_native_v1` at 6 vCPU / 5120 MiB, High graphics, 60 FPS, Performance OFF. Those values describe Control/history, **not the current DEV optimization baseline**.
+
+## Current DEV optimization runtime
+
+```text
+Application: /Applications/TFTMAC DEV.app / com.flashls1.tftmac.dev / 2.3.0 build 8
+Runtime: /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
+AVD: TFTMAC_Diagnostic_StockShadow_R1
+ADB / console / controller: 5041 / 5586 / 8556
+Display: 1920x1080 / 320 dpi / 60 Hz
+Effective launch: 8 vCPU / 6144 MiB / host GPU / CoreAudio
+Official TFT: 18.1-5423749 / 8423749
+Selected RHI: OpenGL ES through ANGLE
+Working winner: DEV-B8-WIN-01
+```
+
+The static StockShadow AVD restoration file remains 6 vCPU / 5120 MiB. Current source defaults `advanced_diagnostics` to 8 vCPU and retains the 6144-MiB locked DEV profile; live QEMU receipts prove `-cores 8 -memory 6144`. The static file is therefore restoration state, not the effective current DEV launch.
 
 The launcher boundary is frozen: TFTMAC starts its packaged `TFTMAC Emulator Host.app` through `/usr/bin/open -n -W --env ... --args ...` in the logged-in user session. It does not directly spawn QEMU from a Node/service context and does not inject `ADB_VENDOR_KEYS`. The previous `5040/5592` direct-service identity is retained only in historical evidence as the ADB-authorization regression.
 
@@ -57,10 +69,7 @@ Google Play owns package installation and updates. Riot owns its own application
 
 ## Graphics/control evidence
 
-The known-good stock control uses host GPU acceleration through gfxstream,
-host Vulkan, MoltenVK and Metal. The latest TFT receipt identifies direct Unreal
-Vulkan; ANGLE may be present for another guest path but is not assumed to render
-the game. The native Mac presenter is hidden correctness context only.
+Protected Control history includes lower-stack Vulkan evidence. **Current DEV engine-log authority selects OpenGL ES through ANGLE**, with ANGLE's Vulkan backend feeding gfxstream/ranchu and host Vulkan/MoltenVK/Metal. A generic classifier that observes Vulkan below ANGLE does not override the selected game RHI. Direct Unreal Vulkan was tested separately and is not promoted.
 
 Build 8 automatic logging is live-verified and captures the TFT process/layer
 lifetime without match markers. It can prove exact SurfaceFlinger degradation,
@@ -91,7 +100,4 @@ Current-host installed/runtime/signing validation is deliberately separate:
 /bin/zsh scripts/verify-installed-runtime.command
 ```
 
-The 2026-08-31 current-host audit confirmed matching Build 8 executable and
-emulator-host hashes, but found zero available local signing identities and
-`CSSMERR_TP_NOT_TRUSTED`. That local verifier remains non-passing until a
-separate signing-identity repair; historical release acceptance remains intact.
+The 2026-08-31 host audit found a temporary local signing-trust failure. A later 2026-09-02 recheck restored the local `TFTMAC Local Code Signing` identity and recorded deep/strict verification PASS for Control and DEV. The older blocked audit remains historical evidence, not current signing status.
