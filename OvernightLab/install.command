@@ -26,6 +26,7 @@ copy_file() {
 
 # Source/config only. Generated campaigns/database/reports/bin remain in place.
 copy_file 755 "$SOURCE_LAB/overnight_lab.py" "$LIVE_LAB/overnight_lab.py"
+copy_file 755 "$SOURCE_LAB/incremental_lab.py" "$LIVE_LAB/incremental_lab.py"
 copy_file 755 "$SOURCE_LAB/install.command" "$LIVE_LAB/install.command"
 copy_file 755 "$SOURCE_LAB/run-overnight-campaign.command" "$LIVE_LAB/run-overnight-campaign.command"
 copy_file 644 "$SOURCE_LAB/README.md" "$LIVE_LAB/README.md"
@@ -33,6 +34,7 @@ copy_file 644 "$SOURCE_LAB/schema.sql" "$LIVE_LAB/schema.sql"
 copy_file 644 "$SOURCE_LAB/authority/official-client-runtime.json" "$LIVE_LAB/authority/official-client-runtime.json"
 copy_file 644 "$SOURCE_LAB/authority/native-capture-recovery-2026-09-11.json" "$LIVE_LAB/authority/native-capture-recovery-2026-09-11.json"
 copy_file 644 "$SOURCE_LAB/manifests/official-candidates.json" "$LIVE_LAB/manifests/official-candidates.json"
+copy_file 644 "$SOURCE_LAB/manifests/incremental-candidates.json" "$LIVE_LAB/manifests/incremental-candidates.json"
 
 # Existing controller code resolves these two classifier inputs from ROOT.parent.
 copy_file 644 "$PROJECT_ROOT/tools/tft-screen-classifier.swift" "$LIVE_ROOT/tools/tft-screen-classifier.swift"

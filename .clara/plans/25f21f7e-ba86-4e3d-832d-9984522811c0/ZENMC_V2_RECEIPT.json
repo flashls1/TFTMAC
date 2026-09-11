@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "model": "TFTMAC_INCREMENTAL_4H_LIFECYCLE_V2",
+  "seed": 20260911,
+  "trajectories": 100000,
+  "invariants": {
+    "admitted_run_finishes_and_rolls_back_before_terminal": true,
+    "deadline_prevents_next_run_admission": true,
+    "frozen_lkg_never_mutated": true,
+    "no_candidate_after_queue_exhaustion": true,
+    "promotion_requires_positive_confirmation": true,
+    "rollback_failure_stops_future_admission": true,
+    "stability_uses_current_working_profile_only": true
+  },
+  "stats": {
+    "complete_queue": 84721,
+    "deadline_during_queue": 0,
+    "inconclusive": 66501,
+    "parent_skipped": 71492,
+    "promoted": 46363,
+    "queue_exhausted_before_deadline": 84721,
+    "rejected": 170858,
+    "rollback_fail": 62015,
+    "stability_runs": 1564611
+  },
+  "violation_count": 0,
+  "violations": [],
+  "result": "PASS",
+  "receipt_sha256": "857b5abdff538ca5903473a9ca7c7e58fdccd0dab39eacae96ba24de93b7300e",
+  "source_operation_id": "god-dc1f03dd-5205-4f56-bf95-830d66f53be0"
+}

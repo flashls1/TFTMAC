@@ -187,6 +187,24 @@ This is a verified **frame-pacing / tail-latency win**, not a claim that mean FP
 - Recovery therefore uses surviving native session evidence plus the synchronized record books. A fresh live OvernightLab may be initialized from current authority, but historical derived campaign rows/results must not be synthesized merely to replace deleted local output.
 - This continuity repair does not reopen buffer retention, direct Vulkan, queue-submit-inline, virtual-queue-off, fence-contexts-off, historical global-sync, or any other resolved fast-pass candidate.
 
+#### Four-hour incremental optimization sweep — 2026-09-11
+
+**Campaign:** `incremental-20260911T082151Z-1f32770a`
+**Outcome:** `DEADLINE_COMPLETE / NO NEW WINNER`
+**Integration:** `NONE` — `DEV-B8-WIN-01` remains the verified working winner.
+**Final working profile SHA-256:** `45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c`.
+
+- `r.pso.PrecompileThreadPoolSize 4 -> 2`: **INCONCLUSIVE / NOT INTEGRATED**. A valid matched 1-5 control completed, but candidate apply failed because ADB shell privilege was not restored after the root profile-overlay transaction. No admissible candidate performance windows exist.
+- `r.ShaderPipelineCache.BackgroundBatchSize 20 -> 4`: **INCONCLUSIVE / NOT INTEGRATED**. The matched control completed; candidate apply again failed on ADB unroot. No candidate performance conclusion is allowed.
+- `a.Budget.BudgetMs 6.0 -> 5.0`: **INCONCLUSIVE / NOT INTEGRATED**. The matched control completed; candidate apply failed because ADB root did not become effective.
+- `a.Budget.BudgetMs 5.0 -> 4.0`: **SKIPPED** exactly as planned because the 5 ms parent was not accepted.
+- No candidate entered the cumulative working stack, so no `DEV-B8-WIN-02` identity is created.
+- Three valid post-queue `DEV-B8-WIN-01` stability soaks at stage 1-5 averaged **57.687**, **58.657**, and **59.789 FPS** respectively. Their mean p95 values were **20.677**, **19.716**, and **19.092 ms**; mean p99 values were **34.411**, **29.954**, and **23.170 ms**. A fourth soak was inconclusive after the expected ADB device disappeared, but rollback still passed.
+- Every recorded run verified DEV/emulator shutdown, profile restoration, installed DEV integrity, and frozen LKG integrity. Protected Control/LKG was not modified.
+- The campaign also repaired blocking controller/classifier defects encountered while obtaining valid evidence: cross-line OCR falsely forming `ERROR`, missing Tocker 1-5 score-only combat-phase recognition, process-local monotonic deadline persistence, and abort-on-inconclusive stability soak behavior. These are tooling/controller repairs, not performance wins.
+- The three candidate settings remain **unresolved, not rejected**. A future campaign must first make the DeviceProfiles bind-overlay root/unroot transaction reliable, then may retest the same evidence-backed queue. Do not add these settings to the historical no-recycle list from this run.
+- Full terminal decisions, native capture IDs/hashes, stability evidence, and next-test boundary are recorded in `.clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/FINAL_RESULTS.md`.
+
 ### Documentation
 
 - Reconciled current Build 8 runtime, automatic-logging, and graphics-causality

@@ -3,7 +3,7 @@
 set -eu
 mode="$1"
 session="$2"
-expected=aa9672cd730e5e3c32e6c9a793a4ef98bef90d80124c7e22b196d2e174af07e1
+expected=45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c
 package=com.riotgames.league.teamfighttactics
 target=/data/user/0/$package/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini
 parent=${target%/*}

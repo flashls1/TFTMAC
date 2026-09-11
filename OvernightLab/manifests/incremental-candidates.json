@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "campaign": "TFTMAC_INCREMENTAL_SMALL_GAINS_V1",
+  "baseline": "DEV-B8-WIN-01",
+  "target_stages": ["1-5"],
+  "maximum_seconds_per_run": 720,
+  "candidates": [
+    {
+      "id": "pso-precompile-threads-2",
+      "family": "unreal_cpu_contention",
+      "cvar": "r.pso.PrecompileThreadPoolSize",
+      "from": "4",
+      "to": "2",
+      "reason": "Reduce concurrent PSO precompile CPU contention on the 8-vCPU guest during interactive/heavy gameplay."
+    },
+    {
+      "id": "shader-background-batch-4",
+      "family": "unreal_shader_cache_contention",
+      "cvar": "r.ShaderPipelineCache.BackgroundBatchSize",
+      "from": "20",
+      "to": "4",
+      "reason": "Reduce burst background PSO cache compile work during interactive gameplay."
+    },
+    {
+      "id": "animation-budget-5ms",
+      "family": "unreal_animation_budget",
+      "cvar": "a.Budget.BudgetMs",
+      "from": "6.0",
+      "to": "5.0",
+      "reason": "Apply earlier skeletal-animation budgeting during unit-dense combat to protect game-thread frame time."
+    },
+    {
+      "id": "animation-budget-4ms",
+      "family": "unreal_animation_budget",
+      "cvar": "a.Budget.BudgetMs",
+      "from": "5.0",
+      "to": "4.0",
+      "requires_parent": "animation-budget-5ms",
+      "reason": "Conditional refinement only after a confirmed 5ms animation-budget win."
+    }
+  ]
+}

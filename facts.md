@@ -3,7 +3,7 @@
 > **CURRENT DEV AUTHORITY — 2026-09-11 America/Chicago.** The DEV optimization/versioning records in `project.md` and `CHANGELOG.md` supersede older mutable DEV build, campaign, performance, and readiness claims below. Historical measurements retain their original dates and remain evidence for their recorded configuration only.
 
 **Authority date:** 2026-09-11 America/Chicago
-**Current DEV evidence through:** 2026-09-11 incremental-gains optimization doctrine; latest performance winner remains `DEV-B8-WIN-01`
+**Current DEV evidence through:** 2026-09-11 terminal four-hour evidence-grounded incremental sweep; no candidate was promoted and latest performance winner remains `DEV-B8-WIN-01`
 **Purpose:** preserve current facts and hard boundaries that future TFTMAC work must not casually reinterpret.
 
 ## Mandatory current-authority reading and record-book rule

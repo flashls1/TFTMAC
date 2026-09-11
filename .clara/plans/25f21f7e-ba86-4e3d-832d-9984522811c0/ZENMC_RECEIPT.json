@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "model": "TFTMAC_INCREMENTAL_4H_LIFECYCLE_V1",
+  "seed": 20260911,
+  "trajectories": 100000,
+  "queue": [
+    "pso_threads_2",
+    "pso_background_batch_4",
+    "anim_budget_5ms",
+    "anim_budget_4ms_if_parent_wins"
+  ],
+  "invariants": {
+    "deadline_prevents_new_work": true,
+    "frozen_lkg_never_mutated": true,
+    "no_queue_advance_after_unproven_rollback": true,
+    "promotion_requires_positive_confirmation": true,
+    "verified_restore_before_next_candidate": true
+  },
+  "stats": {
+    "candidate_promising": 51997,
+    "candidate_reject": 237459,
+    "complete": 90064,
+    "confirm_fail": 23120,
+    "deadline": 0,
+    "launch_fail": 7144,
+    "promoted": 28665,
+    "recovered_interrupt": 1781,
+    "rollback_fail": 2531,
+    "telemetry_invalid": 7647
+  },
+  "violation_count": 0,
+  "violations": [],
+  "result": "PASS",
+  "receipt_sha256": "d7d26be584b26853fc3e05d554764c8d8f0dae2fc67b09e2045f52da121ca03a",
+  "source_operation_id": "tftmac-4h-zenmc-20260911-v1"
+}

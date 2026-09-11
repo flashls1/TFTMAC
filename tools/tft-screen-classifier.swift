@@ -441,22 +441,58 @@ private func classifierSelfTest() -> Bool {
         confidence: 1,
         boundingBox: CGRect(x: 0.8, y: 0.1, width: 0.1, height: 0.04)
     )
+    let scoreOnly = OCRLine(
+        text: "Score",
+        normalized: "SCORE",
+        compact: "SCORE",
+        confidence: 1,
+        boundingBox: CGRect(x: 0.85, y: 0.78, width: 0.08, height: 0.04)
+    )
     let postCombatPhase = battlePhase(
         for: battle,
-        lines: [timeBonus],
+        lines: [timeBonus, scoreOnly],
         combatCyanPixels: 0,
         combatCyanLongestRun: 0,
         imageWidth: referenceWidth,
-        imageHeight: referenceHeight
+        imageHeight: referenceHeight,
+        shopOpen: true,
+        fightButtonVisible: false
     )
     let planningPhase = battlePhase(
         for: battle,
-        lines: [timeBonus, planning],
+        lines: [scoreOnly, planning],
         combatCyanPixels: 0,
         combatCyanLongestRun: 0,
         imageWidth: referenceWidth,
-        imageHeight: referenceHeight
+        imageHeight: referenceHeight,
+        shopOpen: false,
+        fightButtonVisible: true
     )
+    let scoreCombatPhase = battlePhase(
+        for: battle,
+        lines: [scoreOnly],
+        combatCyanPixels: 0,
+        combatCyanLongestRun: 0,
+        imageWidth: referenceWidth,
+        imageHeight: referenceHeight,
+        shopOpen: false,
+        fightButtonVisible: false
+    )
+    let scoreShopBlockedPhase = battlePhase(
+        for: battle,
+        lines: [scoreOnly],
+        combatCyanPixels: 0,
+        combatCyanLongestRun: 0,
+        imageWidth: referenceWidth,
+        imageHeight: referenceHeight,
+        shopOpen: true,
+        fightButtonVisible: false
+    )
+    let crossLineErrorTrap = EvidenceMatcher(lines: [
+        OCRLine(text: "Brawler", normalized: "BRAWLER", compact: "BRAWLER", confidence: 1, boundingBox: .zero),
+        OCRLine(text: "r", normalized: "R", compact: "R", confidence: 1, boundingBox: .zero),
+        OCRLine(text: "Ornn", normalized: "ORNN", compact: "ORNN", confidence: 1, boundingBox: .zero),
+    ])
     return shopCost(red: 37, green: 51, blue: 65) == 1
         && shopCost(red: 19, green: 53, blue: 44) == 2
         && shopCost(red: 28, green: 32, blue: 72) == 3
@@ -466,6 +502,10 @@ private func classifierSelfTest() -> Bool {
         && boardOccupancy(in: [noisyOccupancy])?.capacity == 4
         && postCombatPhase == "post_combat"
         && planningPhase == "planning"
+        && scoreCombatPhase == "combat"
+        && scoreShopBlockedPhase == nil
+        && crossLineErrorTrap.has("ERROR")
+        && !crossLineErrorTrap.hasLineLocal("ERROR")
 }
 
 private func emitDebugLines(_ lines: [OCRLine]) {
@@ -502,6 +542,18 @@ private final class EvidenceMatcher {
 
     func hasAny(_ phrases: [String]) -> Bool {
         phrases.contains(where: has)
+    }
+
+    func hasLineLocal(_ phrase: String) -> Bool {
+        let needle = compactText(normalizedText(phrase))
+        guard !needle.isEmpty else {
+            return false
+        }
+        return lines.contains { $0.compact.contains(needle) }
+    }
+
+    func hasAnyLineLocal(_ phrases: [String]) -> Bool {
+        phrases.contains { hasLineLocal($0) }
     }
 
     func matchedText(for phrases: [String], limit: Int = 4) -> [String] {
@@ -679,7 +731,7 @@ private func classify(lines: [OCRLine]) -> Classification {
     }) && lines.contains(where: {
         $0.normalized == "+" && $0.boundingBox.minX >= 0.75 && $0.boundingBox.midY >= 0.90
     })
-    if matcher.hasAny(strongErrorMarkers) || (matcher.has("ERROR") && !hasTopBarErrorCurrency) {
+    if matcher.hasAnyLineLocal(strongErrorMarkers) || (matcher.hasLineLocal("ERROR") && !hasTopBarErrorCurrency) {
         return Classification(
             state: .error,
             stage: nil,
@@ -793,7 +845,9 @@ private func battlePhase(
     combatCyanPixels: Int,
     combatCyanLongestRun: Int,
     imageWidth: Int,
-    imageHeight: Int
+    imageHeight: Int,
+    shopOpen: Bool,
+    fightButtonVisible: Bool
 ) -> String? {
     guard classification.state == .battle || classification.state == .trialChoice else {
         return nil
@@ -833,8 +887,16 @@ private func battlePhase(
     // the stable semantic marker on that completed-combat screen. Exposing a
     // separate phase lets the harness open each reward chooser without ever
     // guessing from a generic battle frame.
-    if EvidenceMatcher(lines: lines).has("TIME BONUS") {
+    let matcher = EvidenceMatcher(lines: lines)
+    if matcher.has("TIME BONUS") {
         return "post_combat"
+    }
+    // Tocker stage 1-5 can omit the cyan combat timer while retaining the
+    // battle HUD and SCORE. Treat that bounded shape as combat only after all
+    // stronger phase signals above have failed, and only when neither the shop
+    // nor the FIGHT control is visible.
+    if matcher.hasLineLocal("SCORE") && !shopOpen && !fightButtonVisible {
+        return "combat"
     }
     return nil
 }
@@ -908,6 +970,7 @@ private func main() -> Int32 {
         let combatCyanMetrics = combatCyanMetrics(in: image)
         let interfaceMatcher = EvidenceMatcher(lines: lines)
         let shopOpen = interfaceMatcher.has("REROLL")
+        let fightButtonVisible = interfaceMatcher.has("FIGHT")
         let occupancy = boardOccupancy(in: lines)
         try emit(
             classification,
@@ -917,7 +980,9 @@ private func main() -> Int32 {
                 combatCyanPixels: combatCyanMetrics.pixels,
                 combatCyanLongestRun: combatCyanMetrics.longestRun,
                 imageWidth: image.width,
-                imageHeight: image.height
+                imageHeight: image.height,
+                shopOpen: shopOpen,
+                fightButtonVisible: fightButtonVisible
             ),
             ocrCount: lines.count,
             combatCyanPixels: combatCyanMetrics.pixels,
@@ -928,7 +993,7 @@ private func main() -> Int32 {
             shopCosts: shopCosts(in: image, shopOpen: shopOpen),
             boardUnits: occupancy?.units,
             boardCapacity: occupancy?.capacity,
-            fightButtonVisible: interfaceMatcher.has("FIGHT"),
+            fightButtonVisible: fightButtonVisible,
             combatBannerVisible: interfaceMatcher.has("COMBAT")
         )
         return 0
