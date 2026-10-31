@@ -1,5 +1,17 @@
 # TFTMAC Project — Current State & Roadmap
 
+## Current successor workstream — TFT TURBO 2, 2026-10-30
+
+User authorized implementation with a mandatory stop at every numbered checkpoint. Current managed change: `fda4732b-70e6-45dd-97ca-cfc2b1f48c6c`; branch: `clara/tft-turbo-2-fda4732b`; source base: `0a18c7f707730a18072df2bd74f5920ca1f98f56`. The October source snapshot is `04a6ac9673e44714b4cf1524290a4f7cbc64023a`, with 482-file blob/mode parity proven. This is not stale September master.
+
+CP1 scope is preservation, isolated source branch and continuity only. `TFT_TURBO_2_PLAN.md` preserves the approved thirteen-checkpoint roadmap. CP2 (application/runtime isolation) is next only after explicit continue. No Turbo2 application has been built or installed; the existing TURBO and Ranked apps, SDK/AVD and Google/Riot account state are unchanged. Source-only final acceptance belongs to this change's CP1 receipt, not the historical runtime PASS rows below.
+
+Snapshot publication preserved all intended October source, tests, scripts, icons and history. The old checkout retains generated Python cache and rejected driver artifacts locally; neither was deleted or copied into the new source branch. Private build inputs remain outside Git.
+
+Immediate deferred dependency: existing builder and verifier hard-code TURBO1 paths. Their output/signing/isolation protections must be implemented before any future candidate build, even though final packaging acceptance is checkpoint10. Existing source retains the audio defect; no emulator version or performance improvement is accepted by CP1.
+
+The dated October29 sections below remain incumbent baseline/history. Current facts.md supersedes inaccurate Android API and CPU-percentage wording. Do not infer current audio health from historical static build verification.
+
 **Status:** ACTIVE OPTIMIZATION & DECOUPLING PIPELINE  
 **Updated:** 2026-10-29  
 **Host Hardware:** Apple Mac mini (`Mac18,5`, Apple M6: 12 Cores [2 Super + 4 Performance + 6 Efficiency], 12-Core GPU [Metal 4], 16 GB Unified Memory)  

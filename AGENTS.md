@@ -1,5 +1,13 @@
 # AGENTS.md — AI Coding Agent Operating Briefing & Architecture Guide
 
+## TFT TURBO 2 checkpoint guard — 2026-10-30
+
+This successor branch is `clara/tft-turbo-2-fda4732b` in project `tftmac`, change `fda4732b-70e6-45dd-97ca-cfc2b1f48c6c`. Read current facts.md, project.md, TFT_TURBO_2_PLAN.md and this change's paired plan before effects. Flash requires STOP after each numbered checkpoint and explicit continue before the next. CP1 is source preservation only; no build, emulator update, AVD/account mutation or product delivery is included.
+
+Never execute the historical build commands below against this successor before isolating the candidate output/runtime. `build-turbo-app.py` deletes its output, defaults to TFT TURBO.app, and its verifier also hard-codes that original path. Protect BOTH TFT TURBO.app and TFT Ranked.app. The eventual TFT TURBO 2 target and credentials-preserving migration are later gates. Do not run a full source rebuild or change ports/SDK merely because this branch exists.
+
+Existing rules below describe the incumbent build. Preserve their safety intent, but static G-06 pattern checks are not evidence of clean playback; future approved audio parameters require measured runtime acceptance and reconciled authority. Native tests were not rerun for the source-only CP1 checkpoint. Do not store routine operation transcripts in scratchpad; use HANDOFF for exact resume state. No automatic continuation wake may cross the user's checkpoint pause.
+
 **Current as of:** October 2026  
 **Host Target:** Apple Mac mini (`Mac18,5`, Apple M6 SoC: 12 Cores [2 Super + 4 Performance + 6 Efficiency], Metal 4, 16 GB Unified Memory)  
 **Operating Target:** `/Users/flash/Desktop/TFT TURBO.app`  

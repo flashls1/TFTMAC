@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "project_id": "tftmac",
+  "change_id": "fda4732b-70e6-45dd-97ca-cfc2b1f48c6c",
+  "checkpoint": 1,
+  "observed_utc": "2026-10-31T03:54:35.952666+00:00",
+  "scope": "SOURCE_PRESERVATION_AND_MANAGED_BRANCH_ONLY",
+  "branch": "clara/tft-turbo-2-fda4732b",
+  "validation_head_before_document_checkpoint": "ca1512114ae378bfacae8a5f6af4304d76ef13fa",
+  "source_snapshot_sha": "04a6ac9673e44714b4cf1524290a4f7cbc64023a",
+  "verified_branch_base_sha": "0a18c7f707730a18072df2bd74f5920ca1f98f56",
+  "manifest_path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/TURBO2_CP1_SOURCE_MANIFEST.json",
+  "manifest_file_sha256": "6e61f207cb09965962b6ac78abaebfb9985b9b76aeca75740134e99fdb6383cc",
+  "source_manifest_sha256": "e4ca3173c0c0f8e1f77054cb521a19ee2d81173254effd0a03729457d28bbfb4",
+  "snapshot_blob_and_mode_count": 482,
+  "snapshot_blob_and_mode_result": "PASS",
+  "current_exactly_preserved_source_files": 478,
+  "reviewed_document_exceptions": [
+    "AGENTS.md",
+    "facts.md",
+    "improvements.md",
+    "project.md"
+  ],
+  "new_document_diff_check": "PASS",
+  "approved_checkpoint_count": 13,
+  "document_sha256": {
+    "TFT_TURBO_2_PLAN.md": "238a2b2f71128912ea49ecd4f18b89b0d5bc7db8bc81a42fba152e47ca453545",
+    "AGENTS.md": "47fd9768f57d86c24a7e6d7679e06b01a1db2f049428fb3e1216dbf29293d26a",
+    "facts.md": "30172d8cdaefe2048571734bc0f27e398da9c1cb1d2251ead436f5c0235cd84a",
+    "improvements.md": "7692d88d48f882d7ce6eca548706784389a0e2dce9a659ddfda33f1eb116e502",
+    "project.md": "1a1d180204e428dc87e335771c8fad28df1f9be186f42b563520e2fed398ee98",
+    ".clara/plans/fda4732b-70e6-45dd-97ca-cfc2b1f48c6c/PREFLIGHT.md": "671669c6420518d1b264ae0213efdc1328e7a6f1d5b280767cc7c38ef6503bda",
+    ".clara/plans/fda4732b-70e6-45dd-97ca-cfc2b1f48c6c/IMPLEMENTATION_PLAN.md": "decd47882b233dac7393d8a1ce1232345d7ac03bdb12f80fab37be20cc053f15"
+  },
+  "protected_installed_artifacts": [
+    {
+      "app": "TFT TURBO.app",
+      "verified_nonsecret_artifacts": 4,
+      "core_sha256": "a3955be420b00b1fd13801a5dfcad65fe085fe7e3486a763b6788750acb1ed67",
+      "state": "UNCHANGED"
+    },
+    {
+      "app": "TFT Ranked.app",
+      "verified_nonsecret_artifacts": 4,
+      "core_sha256": "00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee",
+      "state": "UNCHANGED"
+    }
+  ],
+  "source_preservation_acceptance": "PASS",
+  "remote_publication_receipt_owner": "tft-turbo2-cp1-final-publication-20261030-v1",
+  "final_clean_state_owner": "Clara changes.status following exact checkpoint publication",
+  "native_tests": "NOT_RUN_NO_PRODUCT_BUILD",
+  "application_builds": "NONE",
+  "emulator_changes": "NONE",
+  "AVD_or_credentials_changes": "NONE",
+  "checkpoint_2": "NOT_STARTED",
+  "next_action": "After explicit user continue, begin CP2 application/runtime isolation only; preserve checkpoint pauses."
+}

@@ -1,5 +1,17 @@
 # TFTMAC Facts — Current Operating Authority
 
+## P0 — TFT TURBO 2 source-only checkpoint authority, 2026-10-30
+
+This branch is the separately authorized TFT TURBO 2 workstream, Clara change `fda4732b-70e6-45dd-97ca-cfc2b1f48c6c`, branched from verified October source `0a18c7f707730a18072df2bd74f5920ca1f98f56`. It is NOT an installed Turbo2 release. `TFT_TURBO_2_PLAN.md` records the approved roadmap. STOP after every checkpoint until Flash explicitly says continue. CP1 preserves source only; CP2 has not started.
+
+Both existing Desktop apps, TFT TURBO.app and TFT Ranked.app, and their runtime/account state remain protected from successor builds. The legacy builder and verifier still target TURBO 1: do not execute them for Turbo2 until exact output/runtime isolation and signing safeguards exist. No emulator upgrade, AVD clone, login change, build or gameplay validation is claimed at CP1.
+
+Current project-local SDK evidence is Android Emulator 37.1.11/build15917651, Google Play ARM64 API36 image revision7 and platform-tools37.0.1. The older Android34 label below is corrected. Legacy performance percentages below are historical wording: 87.4 to71.2 is a 16.2-percentage-point CPU reduction; 275.5 to234.3 is41.2 points (about15.0% relative), not41.2% relative.
+
+The October29 static G-06/build PASS record does not prove current clean audio. Preserved Oct30 capture evidence contains persistent ranchu PCM EIO; no repair is claimed. Future official engine versions named in the roadmap must be reverified against official release/SDK metadata at CP4 before selection. The 482-file preservation manifest and exact source receipt are under `.clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/`.
+
+The following October29 sections describe the incumbent TURBO baseline and historical build rules, not authorization to overwrite it from this successor branch.
+
 **Updated:** 2026-10-29  
 **Operating Baseline:** Personal TFT TURBO Candidate  
 **Durable Execution Register:** [`improvements.md`](file:///Volumes/MAC%20MINI%20M4/Clara/Worktrees/flashls1--tftmac/tftmac--7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/improvements.md) (and [`implementation.md`](file:///Volumes/MAC%20MINI%20M4/Clara/Worktrees/flashls1--tftmac/tftmac--7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/implementation.md))  
@@ -37,7 +49,7 @@
 - Active candidate app: [`/Users/flash/Desktop/TFT TURBO.app`](file:///Users/flash/Desktop/TFT%20TURBO.app)
 - Bundle ID: `com.flashls1.tftmac.dev`
 - Packaging Script: `python3 scripts/build-turbo-app.py`
-- Runtime Environment: StockShadow Android 34 emulator (build 15917651), 8 vCPU, 6144 MiB RAM, host GPU, CoreAudio, 1920x1080 @ 60 Hz display.
+- Runtime Environment: Android Emulator 37.1.11 (build 15917651), StockShadow Google Play ARM64 API36 image revision7, 8 vCPU, 6144 MiB RAM, host GPU, CoreAudio, 1920x1080 @ 60 Hz display.
 - Official Game: Riot Teamfight Tactics (`com.riotgames.league.teamfighttactics`).
 - ADB Port: 5041 | Console Port: 5586 | Controller Port: 8556.
 
