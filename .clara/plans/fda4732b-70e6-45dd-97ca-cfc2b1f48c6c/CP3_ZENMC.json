@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "source_sha256": "7e4b07db85149b4aebbf897a6e149f45c65c3f2ff406de8133ee2c1712c53c71",
+  "reachable_states": 54,
+  "transitions": 76,
+  "reachable_actions": [
+    "account_accepted",
+    "acquire",
+    "alias_detected",
+    "backup_verified",
+    "copy_complete",
+    "foreign_exit",
+    "foreign_launch",
+    "interruption",
+    "launch",
+    "normal_stop",
+    "publish_atomic",
+    "quarantine",
+    "resume_revalidate",
+    "signed_candidate",
+    "source_drift",
+    "verify"
+  ],
+  "negative_controls_detected": 7,
+  "scope": "CP3 offline migration and activation constraints; not real-world acceptance"
+}
