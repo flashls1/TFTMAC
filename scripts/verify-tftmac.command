@@ -18,7 +18,7 @@ require_command() {
 # /Applications/TFTMAC.app, the external emulator runtime, a signing identity,
 # user credentials, or a private capture. Those checks belong to the separate
 # local-only verify-installed-runtime.command contract.
-for tool in git jq node plutil rg shasum sips xcodebuild zsh; do
+for tool in git jq node plutil python3 rg shasum sips xcodebuild zsh; do
   require_command "$tool"
 done
 
@@ -55,12 +55,11 @@ for required in \
   scripts/build-native-app.command \
   scripts/build-dev-launcher.command \
   scripts/build-control-launcher.command \
-  scripts/prepare-causal-source-runtime.command \
-  scripts/build-causal-stock-runtime.command \
   scripts/build-stock-shadow-runtime.command \
   scripts/build-vulkan-probe.command \
   scripts/install-desktop-launchers.command \
   scripts/run-vulkan-experiment-campaign.command \
+  scripts/riot-update-audit.py \
   scripts/setup-android-unlock.command \
   scripts/analyze-vulkan-experiment-campaign.mjs \
   scripts/sign-apk-v2.mjs \
@@ -125,7 +124,7 @@ jq -e '
   .runtimeProfile.tftFrameRateCap == 60 and
   .runtimeProfile.tftPerformanceModeBeta == false and
   .runtimeProfile.activeExperiment == "control" and
-  .package.scope == "PROTECTED_CONTROL_HISTORICAL_OBSERVATION" and
+  .package.scope == "PROTECTED_CONTROL_FALLBACK_NOT_REVERIFIED_IN_POST_CLEANUP_RECEIPT" and
   .currentDevWorking.workingVersion == "DEV-B8-WIN-01" and
   .currentDevWorking.application.path == "/Applications/TFTMAC DEV.app" and
   .currentDevWorking.application.bundleId == "com.flashls1.tftmac.dev" and
@@ -144,17 +143,19 @@ jq -e '
   .currentDevWorking.runtime.storedAvdBaselineRamMiB == 5120 and
   .currentDevWorking.runtime.storedAvdBaselineSHA256 == "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125" and
   .currentDevWorking.runtime.display == "1920x1080" and
-  .currentDevWorking.runtime.densityDpi == 320 and
+  .currentDevWorking.runtime.densityDpi == 416 and
   .currentDevWorking.runtime.refreshHz == 60 and
   .currentDevWorking.package.name == "com.riotgames.league.teamfighttactics" and
-  .currentDevWorking.package.versionName == "18.1-5423749" and
-  .currentDevWorking.package.versionCode == "8423749" and
+  .currentDevWorking.package.versionPolicy == "GOOGLE_PLAY_CURRENT_OBSERVED" and
+  .currentDevWorking.package.installerAuthority == "com.android.vending" and
+  (.currentDevWorking.package.versionName | type == "string" and length > 0) and
+  (.currentDevWorking.package.versionCode | type == "string" and test("^[0-9]+$")) and
   .currentDevWorking.graphics.selectedGameRHI == "OPENGL_ES_ANGLE" and
   .currentDevWorking.cache.multifile == true and
   .currentDevWorking.cache.angleEnabled == "exposeNonConformant*:exposeES32ForTesting" and
   .currentDevWorking.cache.angleDisabled == "preferSubmitAtFBOBoundary" and
   .currentDevWorking.cache.syncMonolithicPipelinesToBlobCache == false and
-  .currentDevWorking.promotionState == "VERIFIED_NET_IMPROVEMENT_INTEGRATED" and
+  .currentDevWorking.promotionState == "VERIFIED_18_3_1080P_PLAYABILITY_PROMOTED" and
   .finalInstalledRelease.version == "2.3.0" and
   .finalInstalledRelease.build == "8" and
   .finalInstalledRelease.receiptScope == "HISTORICAL_BUILD8_RELEASE_ACCEPTANCE" and
@@ -279,8 +280,10 @@ while read -r expected_hash authority_path; do
   [[ "$actual_hash" == "$expected_hash" ]] || fail "authority input hash drifted: $authority_path"
 done < ssot/AUTHORITY_INPUTS.sha256
 
+python3 -m py_compile scripts/riot-update-audit.py || fail "Riot update audit script is not valid Python"
+
 readonly TEST_FUNCTION_COUNT="$(rg -n '^[[:space:]]*func test' Tests/TFTMACTests --glob '*.swift' | wc -l | tr -d '[:space:]')"
-[[ "$TEST_FUNCTION_COUNT" == "112" ]] || fail "native test inventory drifted: expected 112, found $TEST_FUNCTION_COUNT"
+[[ "$TEST_FUNCTION_COUNT" == "133" ]] || fail "native test inventory drifted: expected 133, found $TEST_FUNCTION_COUNT"
 [[ "$(plutil -extract LSSupportsGameMode raw "$INFO")" == "true" ]] \
   || fail "native app is not eligible for macOS Game Mode"
 [[ "$(shasum -a 256 tftmac/Assets/TFTMAC-Official-Icon.png | awk '{print $1}')" == "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016" ]] \
@@ -312,10 +315,18 @@ rg -q -F 'process.arguments = ["-P", adbPort, "-s", serial, "shell"]' ControlLau
   || fail "Control unlock wrapper does not keep the PIN out of process arguments"
 rg -q -F 'setenv("TFTMAC_RUNTIME_MODE", kRuntimeMode, 1)' DevLauncher/main.c \
   || fail "DEV launcher does not enforce its runtime mode"
-rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/setup-android-unlock.command \
-  || fail "DEV unlock setup does not use the isolated DEV Keychain service"
-rg -q -F 'readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"' scripts/run-vulkan-experiment-campaign.command \
-  || fail "DEV experiment campaign does not use the isolated DEV Keychain service"
+rg -q -F 'Launch TFTMAC DEV to set up automatic Android unlock.' scripts/setup-android-unlock.command \
+  || fail "DEV PIN setup does not direct users to the secure native flow"
+if rg -q -F 'com.flashls1.tftmac.dev.android-unlock.v1' scripts/run-vulkan-experiment-campaign.command; then
+  fail "DEV experiment campaign still requires the retired DEV PIN Keychain item"
+fi
+rg -q -F 'TFTMACGuestUnlockSecretStore.loadOrPrompt(' tftmac/App/AppCoordinator.swift \
+  || fail "native automatic unlock does not use the secure Keychain flow"
+rg -q -F 'com.flashls1.tftmac.dev.android-unlock.v1' tftmac/Runtime/GuestUnlockSecret.swift \
+  || fail "DEV unlock service is not isolated from Control"
+if rg -q -F 'try clearLegacyDevScreenCredential(' tftmac/Runtime/TFTMACRuntime.swift; then
+  fail "normal DEV startup still removes the user-authorized credential"
+fi
 
 readonly PROTO_SHA="$(shasum -a 256 "$PROTO" | awk '{print $1}')"
 readonly RECORDED_PROTO_SHA="$(jq -r '.vendoredProtoSHA256' "$PROTO_SOURCE")"

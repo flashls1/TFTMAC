@@ -748,6 +748,13 @@ class OvernightLab:
             raise LabError("official package version identity is missing", error_class="VERSION_IDENTITY_MISSING", phase="identity")
         ctx.package_version = vm.group(1)
         ctx.version_code = int(vc.group(1))
+        install_source = self.adb("shell", "pm", "list", "packages", "-i", self.package, check=False, timeout=20).stdout
+        installer_match = re.search(r"(?:installerPackageName|installer)=([^\s]+)", install_source)
+        installer_package = installer_match.group(1) if installer_match else None
+        if installer_package != self.authority.get("installer_authority", "com.android.vending"):
+            ctx.decision_admissible = False
+            ctx.evidence_scope = "DATA_ONLY_PACKAGE_AUTHORITY_DRIFT"
+            ctx.drift_reasons.append(f"installer:{installer_package or 'unknown'} expected {self.authority.get('installer_authority', 'com.android.vending')}")
         if ctx.package_version != self.authority["version_name"] or ctx.version_code != int(self.authority["version_code"]):
             ctx.decision_admissible = False
             ctx.evidence_scope = "DATA_ONLY_CORE_CLIENT_DRIFT"

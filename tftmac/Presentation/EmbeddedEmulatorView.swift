@@ -201,6 +201,50 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
     private var primaryTouchSequence = PrimaryTouchSequence()
     private let statusLabel = NSTextField(labelWithString: "Preparing native Android runtime…")
     private let fpsLabel = NSTextField(labelWithString: "0 FPS")
+    private var trackingAreaRef: NSTrackingArea?
+
+    private static let gamingCursor: NSCursor = {
+        let size = NSSize(width: 32, height: 32)
+        let img = NSImage(size: size, flipped: true) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 2, y: 2))
+            path.addLine(to: CGPoint(x: 2, y: 26))
+            path.addLine(to: CGPoint(x: 8.5, y: 20))
+            path.addLine(to: CGPoint(x: 14.5, y: 29))
+            path.addLine(to: CGPoint(x: 18.5, y: 26.5))
+            path.addLine(to: CGPoint(x: 12.5, y: 17.5))
+            path.addLine(to: CGPoint(x: 21.5, y: 17.5))
+            path.closeSubpath()
+
+            // 1. Thick solid black border (3.0pt wide, sharp high contrast on any bright carousel surface)
+            ctx.setLineJoin(.round)
+            ctx.setLineCap(.round)
+            ctx.setLineWidth(3.0)
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.addPath(path)
+            ctx.strokePath()
+
+            // 2. Solid high-visibility gold fill (100% opaque, bright on dark arena floors)
+            ctx.setFillColor(NSColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 1.0).cgColor)
+            ctx.addPath(path)
+            ctx.fillPath()
+
+            // 3. Bright core highlight (enhances 3D perception and edge tracking)
+            let highlight = CGMutablePath()
+            highlight.move(to: CGPoint(x: 3.5, y: 4.5))
+            highlight.addLine(to: CGPoint(x: 3.5, y: 23))
+            highlight.addLine(to: CGPoint(x: 8.5, y: 18.5))
+            highlight.addLine(to: CGPoint(x: 13.5, y: 26))
+            ctx.setLineWidth(1.5)
+            ctx.setStrokeColor(NSColor(white: 1.0, alpha: 0.9).cgColor)
+            ctx.addPath(highlight)
+            ctx.strokePath()
+
+            return true
+        }
+        return NSCursor(image: img, hotSpot: NSPoint(x: 2, y: 2))
+    }()
 
     init(frame: NSRect, mailbox: LatestFrameMailbox) {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -219,13 +263,41 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         super.init(frame: frame, device: device)
         framebufferOnly = true
         colorPixelFormat = .bgra8Unorm_srgb
-        preferredFramesPerSecond = 60
+        preferredFramesPerSecond = Self.optimalPreferredFramesPerSecond(for: nil)
         enableSetNeedsDisplay = false
         isPaused = false
         clearColor = MTLClearColorMake(0.015, 0.018, 0.025, 1.0)
         delegate = self
         configureOverlays()
         updatePerformanceOverlay()
+    }
+
+    private static func optimalPreferredFramesPerSecond(for screen: NSScreen?) -> Int {
+        let hardwareHz = screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 60
+        // When the display refresh rate is an exact multiple of 60 Hz (such as 60 Hz or 120 Hz),
+        // requesting 60 FPS uses an exact integer divisor (60/1 = 60.0 FPS or 120/2 = 60.0 FPS)
+        // and avoids 60 redundant Metal drawable submissions per second. Only when the display
+        // uses a non-60-multiple rate (such as 144 Hz, where 144/3 = 48.0 FPS) do we request
+        // the native hardware refresh rate.
+        return (hardwareHz > 60 && hardwareHz % 60 != 0) ? hardwareHz : 60
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        preferredFramesPerSecond = Self.optimalPreferredFramesPerSecond(for: window?.screen)
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleWindowDidChangeScreen(_:)),
+                name: NSWindow.didChangeScreenNotification,
+                object: window
+            )
+        }
+    }
+
+    @objc private func handleWindowDidChangeScreen(_ notification: Notification) {
+        preferredFramesPerSecond = Self.optimalPreferredFramesPerSecond(for: window?.screen)
     }
 
     required init(coder: NSCoder) {
@@ -323,15 +395,72 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         updatePresentationSampleIfNeeded()
     }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: Self.gamingCursor)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingAreaRef {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .cursorUpdate, .mouseMoved, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        sendTouch(event, isContact: true)
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendTouch(event, isContact: true, clampToViewport: false)
     }
-    override func mouseDragged(with event: NSEvent) { sendTouch(event, isContact: true) }
-    override func mouseUp(with event: NSEvent) { sendTouch(event, isContact: false) }
-    override func rightMouseDown(with event: NSEvent) { sendMouse(event, buttons: 2) }
-    override func rightMouseDragged(with event: NSEvent) { sendMouse(event, buttons: 2) }
-    override func rightMouseUp(with event: NSEvent) { sendMouse(event, buttons: 0) }
+    override func mouseDragged(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendTouch(event, isContact: true, clampToViewport: true)
+    }
+    override func mouseUp(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendTouch(event, isContact: false, clampToViewport: true)
+    }
+    override func rightMouseDown(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendMouse(event, buttons: 2, clampToViewport: false)
+    }
+    override func rightMouseDragged(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendMouse(event, buttons: 2, clampToViewport: true)
+    }
+    override func rightMouseUp(with event: NSEvent) {
+        Self.gamingCursor.set()
+        NSCursor.unhide()
+        sendMouse(event, buttons: 0, clampToViewport: true)
+    }
 
     override func keyDown(with event: NSEvent) {
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
@@ -397,21 +526,24 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         onSourceFramePresented?(sequence)
     }
 
-    private func androidPoint(for event: NSEvent) -> TouchPoint? {
+    private func androidPoint(for event: NSEvent, clampToViewport: Bool = false) -> TouchPoint? {
         let location = convert(event.locationInWindow, from: nil)
         let mapper = ViewportMapper(
             sourceSize: CGSize(width: FrameContract.width, height: FrameContract.height),
             viewportSize: bounds.size
         )
-        guard let source = mapper.sourcePoint(for: location) else { return nil }
+        let source = clampToViewport
+            ? mapper.clampedSourcePoint(for: location)
+            : mapper.sourcePoint(for: location)
+        guard let source else { return nil }
         let x = Int32(max(0, min(FrameContract.width - 1, Int(source.x.rounded()))))
         let topOriginY = FrameContract.height - 1 - Int(source.y.rounded())
         let y = Int32(max(0, min(FrameContract.height - 1, topOriginY)))
         return TouchPoint(x: x, y: y)
     }
 
-    private func sendTouch(_ event: NSEvent, isContact: Bool) {
-        let point = androidPoint(for: event)
+    private func sendTouch(_ event: NSEvent, isContact: Bool, clampToViewport: Bool = false) {
+        let point = androidPoint(for: event, clampToViewport: clampToViewport)
         let input = isContact
             ? primaryTouchSequence.contact(at: point)
             : primaryTouchSequence.release(at: point)
@@ -419,8 +551,8 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
         onTouchInput?(input, Self.eventTimestampNS(event))
     }
 
-    private func sendMouse(_ event: NSEvent, buttons: Int32) {
-        guard let point = androidPoint(for: event) else { return }
+    private func sendMouse(_ event: NSEvent, buttons: Int32, clampToViewport: Bool = false) {
+        guard let point = androidPoint(for: event, clampToViewport: clampToViewport) else { return }
         onMouseInput?(point.x, point.y, buttons, Self.eventTimestampNS(event))
     }
 
@@ -508,7 +640,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
 
         fpsLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .bold)
         fpsLabel.textColor = .white
-        fpsLabel.alignment = .right
+        fpsLabel.alignment = .center
         fpsLabel.maximumNumberOfLines = 2
         fpsLabel.translatesAutoresizingMaskIntoConstraints = false
         fpsLabel.wantsLayer = true
@@ -522,7 +654,7 @@ final class EmbeddedEmulatorView: MTKView, MTKViewDelegate {
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.72),
             statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             fpsLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            fpsLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            fpsLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             fpsLabel.widthAnchor.constraint(equalToConstant: 300),
             fpsLabel.heightAnchor.constraint(equalToConstant: 46)
         ])

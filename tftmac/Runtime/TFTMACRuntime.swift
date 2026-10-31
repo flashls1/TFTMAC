@@ -188,6 +188,7 @@ private struct LogcatAggregate: Sendable {
     let angleWarningCount: Int
     let vulkanWarningCount: Int
     let audioErrorCount: Int
+    let pcmIOErrorCount: Int
 }
 
 private struct PipelineLogAggregate: Sendable {
@@ -201,7 +202,7 @@ private struct PipelineLogAggregate: Sendable {
 
 private struct GraphicsPipelineSnapshot: Sendable {
     static let requiredReceiptKeys: Set<String> = [
-        "tft_package_version", "tft_surface", "unreal_engine", "game_graphics_api", "angle",
+        "tft_package_version", "tft_surface", "unreal_engine", "game_graphics_api", "selected_game_rhi", "angle",
         "gfxstream", "moltenvk", "host_vulkan_device", "metal_device",
         "native_presenter", "configuration_sha256"
     ]
@@ -313,6 +314,18 @@ private struct GraphicsPipelineIncident: Sendable {
     let explicitUnknowns: [String]
 }
 
+struct SimpleperfSymbolEntry: Sendable {
+    let percent: Double
+    let dso: String
+    let symbol: String
+}
+
+struct SimpleperfReportSummary: Sendable {
+    let sampleCount: Int
+    let dsoPercentages: [String: Double]
+    let topSymbols: [SimpleperfSymbolEntry]
+}
+
 private enum DiagnosticTraceScope: String, Sendable {
     case combatBenchmark = "COMBAT_BENCHMARK"
     case automaticGraphics = "AUTOMATIC_GRAPHICS"
@@ -324,11 +337,41 @@ struct TFTMACRuntimeError: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
+
 private enum SQLiteValue: Sendable {
     case integer(Int64)
     case real(Double)
     case text(String)
     case null
+}
+
+private struct ParsedPipelineEvent: Sendable {
+    let schemaVersion: UInt16
+    let eventKind: String
+    let boundary: String
+    let boundaryOrdinal: UInt16
+    let processID: UInt32
+    let threadID: UInt64
+    let timestampNS: UInt64
+    let transportWorkID: String?
+    let presentLineageID: String?
+    let generation: UInt32
+    let sourceSiteID: UInt32
+    let queueDepth: UInt32
+    let durationNS: UInt64
+    let payloadHash: String
+}
+
+private struct PipelineIngestSummary: Sendable {
+    var segmentCount = 0
+    var eventCount = 0
+    var overwriteCount: UInt64 = 0
+    var lossCount: UInt64 = 0
+    var invalidSegmentCount = 0
+    var invalidReasons: [String] = []
+    var firstObservedNS: UInt64?
+    var lastObservedNS: UInt64?
+    var events: [ParsedPipelineEvent] = []
 }
 
 final class TFTMACNativeTelemetry: @unchecked Sendable {
@@ -344,14 +387,18 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
     private var activeGraphicsRunPID: Int32?
     private var activeGraphicsStackSHA256: String?
     private var activePipelineEpochID: String?
+    private var automaticPipelineEpochID: String?
     private var activePipelineEpochStartedUTC: String?
     private var activePipelineEpochStartedNS: UInt64?
+    private var activeGameRunID: String?
+    private var automaticGameRunID: String?
     private var activeDevFeatureReceiptJSON = "{}"
     private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(profile: TFTMACRuntimeProfile, applicationSupport: URL, configurationReceipt: RuntimeExperimentConfigurationReceipt? = nil) throws {
         configurationSHA256 = (configurationReceipt ?? profile.experimentConfigurationReceipt).sha256
         targetFPS = profile.refreshHz
+        Self.recoverUnsealedCaptures(applicationSupport: applicationSupport)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         sessionIdentifier = formatter.string(from: Date())
@@ -387,11 +434,56 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             "INSERT INTO sessions(session_id, started_utc, status, profile_id) VALUES(?, ?, 'STARTING', ?)",
             [.text(sessionIdentifier), .text(Self.utcNow()), .text(profile.identifier)]
         )
+        let automaticRunStartedUTC = Self.utcNow()
+        let automaticRunStartedNS = DispatchTime.now().uptimeNanoseconds
+        let automaticRunID = UUID().uuidString.lowercased()
+        try execute(
+            "INSERT INTO game_runs(game_run_id, session_id, started_utc, started_monotonic_ns, status, configuration_sha256, profile_id, run_scope, start_reason) VALUES(?, ?, ?, ?, 'OPEN', ?, ?, 'ONE_MATCH_PER_LAUNCH', 'LOGGER_INITIALIZED')",
+            [.text(automaticRunID), .text(sessionIdentifier), .text(automaticRunStartedUTC),
+             .integer(Int64(bitPattern: automaticRunStartedNS)), .text(configurationSHA256),
+             .text(profile.identifier)]
+        )
+        activeGameRunID = automaticRunID
+        automaticGameRunID = automaticRunID
+        let automaticEpochID = "match-" + automaticRunID
+        automaticPipelineEpochID = automaticEpochID
+        try execute(
+            "INSERT INTO pipeline_diagnostic_epochs(epoch_id, session_id, workload_kind, experiment_profile_id, configuration_sha256, workload_manifest_sha256, started_utc, started_monotonic_ns, status, explicit_unknowns_json) VALUES(?, ?, 'FULL_MATCH', 'ONE_MATCH_PER_LAUNCH', ?, NULL, ?, ?, 'RUNNING', '[]')",
+            [.text(automaticEpochID), .text(sessionIdentifier), .text(configurationSHA256),
+             .text(automaticRunStartedUTC), .integer(Int64(bitPattern: automaticRunStartedNS))]
+        )
+        let automaticMarkerPayload: [String: Any] = [
+            "automatic": true,
+            "run_scope": "ONE_MATCH_PER_LAUNCH",
+            "game_run_id": automaticRunID,
+            "profile_id": profile.identifier,
+            "source": "native_logger"
+        ]
+        let automaticMarkerPayloadText = Self.json(automaticMarkerPayload)
+        try execute(
+            "INSERT INTO events(session_id, observed_utc, monotonic_ns, kind, payload_json) VALUES(?, ?, ?, 'AUTOMATIC_GAME_RUN_STARTED', ?)",
+            [.text(sessionIdentifier), .text(automaticRunStartedUTC),
+             .integer(Int64(bitPattern: automaticRunStartedNS)), .text(automaticMarkerPayloadText)]
+        )
+        try execute(
+            "INSERT INTO phase_markers(session_id, game_run_id, phase, observed_utc, monotonic_ns, source, confidence, clock_domain) VALUES(?, ?, 'CAPTURE_START', ?, ?, 'automatic_logger', 'DIRECT', 'HOST_MONOTONIC')",
+            [.text(sessionIdentifier), .text(automaticRunID), .text(automaticRunStartedUTC),
+             .integer(Int64(bitPattern: automaticRunStartedNS))]
+        )
+        let automaticMarkerLine = Data((Self.json([
+            "session_id": sessionIdentifier,
+            "observed_utc": automaticRunStartedUTC,
+            "monotonic_ns": String(automaticRunStartedNS),
+            "kind": "AUTOMATIC_GAME_RUN_STARTED",
+            "payload": automaticMarkerPayload
+        ]) + "\n").utf8)
+        try eventLog?.write(contentsOf: automaticMarkerLine)
         recordEvent("LOGGER_INITIALIZED", payload: [
             "database": databaseURL.lastPathComponent,
             "rawEventLog": logURL.lastPathComponent,
             "loggerStartsBeforeEmulator": true,
             "graphics_logger_mode": "AUTOMATIC_TFT_PROCESS_LIFETIME",
+            "game_logger_mode": "ONE_MATCH_PER_LAUNCH_LIFETIME",
             "graphics_schema_version": 3
         ])
     }
@@ -401,6 +493,107 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             try? eventLog?.close()
             if let database { sqlite3_close(database) }
             database = nil
+        }
+    }
+
+    /// A process crash can occur before the normal async cleanup path reaches
+    /// `finish`.  Recover only prior capture directories that have no sealed
+    /// manifest and still contain an open session.  The recovery receipt is
+    /// deliberately marked unsealed: it closes the lifecycle truthfully but
+    /// cannot promote incomplete evidence into causal ownership.
+    private static func recoverUnsealedCaptures(applicationSupport: URL) {
+        let captures = applicationSupport.appendingPathComponent("Captures", isDirectory: true)
+        guard let directories = try? FileManager.default.contentsOfDirectory(
+            at: captures,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for directory in directories where (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            let databaseURL = directory.appendingPathComponent("TFTMAC_NATIVE_RUNTIME.sqlite")
+            let manifestURL = directory.appendingPathComponent("capture-manifest.json")
+            guard FileManager.default.fileExists(atPath: databaseURL.path),
+                  !FileManager.default.fileExists(atPath: manifestURL.path) else { continue }
+            recoverUnsealedCapture(databaseURL: databaseURL, captureDirectory: directory)
+        }
+    }
+
+    private static func recoverUnsealedCapture(databaseURL: URL, captureDirectory: URL) {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
+              let database else { return }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 1_000)
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+        func scalar(_ sql: String) -> String? {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+                  let statement else { return nil }
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_step(statement) == SQLITE_ROW,
+                  let value = sqlite3_column_text(statement, 0) else { return nil }
+            return String(cString: value)
+        }
+
+        func execute(_ sql: String, _ values: [String] = []) -> Bool {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+                  let statement else { return false }
+            defer { sqlite3_finalize(statement) }
+            for (index, value) in values.enumerated() {
+                guard sqlite3_bind_text(statement, Int32(index + 1), value, -1, transient) == SQLITE_OK else { return false }
+            }
+            return sqlite3_step(statement) == SQLITE_DONE
+        }
+
+        guard let sessionID = scalar("SELECT session_id FROM sessions ORDER BY started_utc LIMIT 1"),
+              let sessionStatus = scalar("SELECT status FROM sessions WHERE session_id = '\(sessionID)' LIMIT 1"),
+              sessionStatus != "STOPPED", sessionStatus != "FAILED_RECOVERED",
+              let endedUTC = scalar("SELECT COALESCE(ended_utc, '') FROM sessions WHERE session_id = '\(sessionID)' LIMIT 1"),
+              endedUTC.isEmpty,
+              let runID = scalar("SELECT game_run_id FROM game_runs WHERE session_id = '\(sessionID)' AND ended_utc IS NULL ORDER BY started_monotonic_ns DESC LIMIT 1") else { return }
+        let now = utcNow()
+        let nowNS = String(DispatchTime.now().uptimeNanoseconds)
+        let reason = "RECOVERED_AFTER_PROCESS_TERMINATION"
+        guard execute("BEGIN IMMEDIATE") else { return }
+        let markerInserted = execute(
+            "INSERT INTO phase_markers(session_id, game_run_id, phase, observed_utc, monotonic_ns, source, confidence, clock_domain) VALUES(?, ?, 'CAPTURE_END', ?, ?, 'automatic_recovery', 'DIRECT', 'HOST_MONOTONIC')",
+            [sessionID, runID, now, nowNS]
+        )
+        let eventInserted = execute(
+            "INSERT INTO events(session_id, observed_utc, monotonic_ns, kind, payload_json) VALUES(?, ?, ?, 'CAPTURE_RECOVERED_UNSEALED', ?)",
+            [sessionID, now, nowNS, Self.json(["automatic": true, "reason": reason, "manifest": "UNSEALED"])]
+        )
+        let runUpdated = execute(
+            "UPDATE game_runs SET ended_utc = ?, ended_monotonic_ns = ?, status = 'FAILED', end_reason = ? WHERE session_id = ? AND ended_utc IS NULL",
+            [now, nowNS, reason, sessionID]
+        )
+        _ = execute(
+            "UPDATE game_process_sessions SET ended_utc = ?, ended_monotonic_ns = ? WHERE session_id = ? AND ended_utc IS NULL",
+            [now, nowNS, sessionID]
+        )
+        let sessionUpdated = execute(
+            "UPDATE sessions SET ended_utc = ?, status = 'FAILED_RECOVERED' WHERE session_id = ? AND ended_utc IS NULL",
+            [now, sessionID]
+        )
+        _ = execute("UPDATE pipeline_diagnostic_epochs SET ended_utc = ?, ended_monotonic_ns = ?, status = 'RECOVERED_UNSEALED', explicit_unknowns_json = ? WHERE session_id = ? AND status = 'RUNNING'", [now, nowNS, Self.jsonArray(["CAPTURE_INTERRUPTED_BEFORE_SEAL"]), sessionID])
+        guard markerInserted && eventInserted && runUpdated && sessionUpdated,
+              sqlite3_exec(database, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+            sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
+            return
+        }
+        let recovery: [String: Any] = [
+            "schema": 1,
+            "session_id": sessionID,
+            "recovered_utc": now,
+            "recovery_reason": reason,
+            "capture_status": "RECOVERED_UNSEALED",
+            "causal_ownership": "INVALID",
+            "next_action": "Retain raw evidence and rerun a complete one-launch match; do not use this capture for a ROOT_NAMED decision.",
+            "lifecycle_markers": ["capture_end_inserted": markerInserted, "event_inserted": eventInserted]
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: recovery, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: captureDirectory.appendingPathComponent("capture-recovery.json"), options: .atomic)
         }
     }
 
@@ -529,6 +722,55 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 [.text(self.sessionIdentifier), .text(utc), .integer(Int64(bitPattern: monotonic)), .text(kind), .text(payloadText)]
             )
             try self.eventLog?.write(contentsOf: lineData)
+        }
+    }
+
+    /// Records an optional semantic gameplay annotation. The full capture is
+    /// already owned by the automatic session-scoped game run; these markers
+    /// never open, close, or invalidate that run.
+    func recordSemanticMarker(_ marker: String, profileID: String) {
+        let allowed = [
+            "MATCH_ENTRY", "CAROUSEL_START", "CAROUSEL_END",
+            "COMBAT_START", "COMBAT_END", "MATCH_END"
+        ]
+        guard allowed.contains(marker) else { return }
+        queue.sync {
+            let observedUTC = Self.utcNow()
+            let observedNS = DispatchTime.now().uptimeNanoseconds
+            do {
+                let runValue = activeGameRunID.map(SQLiteValue.text) ?? .null
+                let payload: [String: Any] = [
+                    "source": "native_menu",
+                    "profile_id": profileID,
+                    "marker_schema": 1,
+                    "phase": marker,
+                    "game_run_id": activeGameRunID ?? NSNull(),
+                    "annotation_only": true,
+                    "run_scope": "ONE_MATCH_PER_LAUNCH",
+                    "host_monotonic_timestamp": true
+                ]
+                let payloadText = Self.json(payload)
+                let lineData = Data((Self.json([
+                    "session_id": sessionIdentifier,
+                    "observed_utc": observedUTC,
+                    "monotonic_ns": String(observedNS),
+                    "kind": marker,
+                    "payload": payload
+                ]) + "\n").utf8)
+                try execute(
+                    "INSERT INTO events(session_id, observed_utc, monotonic_ns, kind, payload_json) VALUES(?, ?, ?, ?, ?)",
+                    [.text(sessionIdentifier), .text(observedUTC), .integer(Int64(bitPattern: observedNS)),
+                     .text(marker), .text(payloadText)]
+                )
+                try execute(
+                    "INSERT INTO phase_markers(session_id, game_run_id, phase, observed_utc, monotonic_ns, source, confidence, clock_domain) VALUES(?, ?, ?, ?, ?, 'native_menu', 'DIRECT', 'HOST_MONOTONIC')",
+                    [.text(sessionIdentifier), runValue, .text(marker), .text(observedUTC),
+                     .integer(Int64(bitPattern: observedNS))]
+                )
+                try eventLog?.write(contentsOf: lineData)
+            } catch {
+                fputs("TFTMAC semantic-marker error: \(error.localizedDescription)\n", stderr)
+            }
         }
     }
 
@@ -877,7 +1119,33 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                     sample.metalRegistryID.map(SQLiteValue.text) ?? .null
                 ]
             )
+            try self.recordPipelineTruthMatrix(sample: sample, observedMonotonicNS: DispatchTime.now().uptimeNanoseconds)
             self.activeGraphicsStackSHA256 = sample.receipt.sha256
+        }
+    }
+
+    private func recordPipelineTruthMatrix(sample: GraphicsPipelineSnapshot, observedMonotonicNS: UInt64) throws {
+        let rows: [(String, String, String, String, String, String?)] = [
+            ("TFT_UNREAL", sample.gamePID.map(String.init) ?? "UNKNOWN", "TFT process observation", sample.gamePID == nil ? "UNKNOWN" : "DIRECT", sample.gamePID == nil ? "UNKNOWN" : "DIRECT", nil),
+            ("ANGLE", sample.angleState, "official TFT package-process runtime evidence", sample.angleState == "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED" ? "DIRECT" : "UNKNOWN", sample.angleState == "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED" ? "DIRECT" : "UNKNOWN", nil),
+            ("GUEST_VULKAN", sample.guestVulkanImplementation ?? "UNKNOWN", "adb getprop ro.hardware.vulkan", sample.guestVulkanImplementation == nil ? "UNKNOWN" : "DIRECT", sample.guestVulkanImplementation == nil ? "UNKNOWN" : "DIRECT", nil),
+            ("GFXSTREAM_ASG", sample.gfxstreamState, "emulator initialization receipt", sample.gfxstreamState == "PROVEN_ACTIVE" ? "DIRECT" : "UNKNOWN", sample.gfxstreamState == "PROVEN_ACTIVE" ? "DIRECT" : "UNKNOWN", nil),
+            ("HOST_VULKAN", sample.hostVulkanDevice ?? "UNKNOWN", "emulator Vulkan device-selection receipt", sample.hostVulkanDevice == nil ? "UNKNOWN" : "DIRECT", sample.hostVulkanDevice == nil ? "UNKNOWN" : "DIRECT", nil),
+            ("MOLTENVK", sample.moltenVKState, "MoltenVK ICD/driver receipt", sample.moltenVKState == "PROVEN_ACTIVE" ? "DIRECT" : "UNKNOWN", sample.moltenVKState == "PROVEN_ACTIVE" ? "DIRECT" : "UNKNOWN", nil),
+            ("MOLTENVK_CONFIGURATION", sample.moltenVKConfiguration, "TFTMAC host launch environment", "REQUESTED", "REQUESTED", configurationSHA256),
+            ("EMULATOR_IMAGE_PUBLICATION", "UNKNOWN", "no source work ID in packaged runtime", "UNKNOWN", "UNKNOWN", nil),
+            ("SURFACEFLINGER", sample.exactLayerName ?? "UNKNOWN", "exact TFT SurfaceView layer selection", sample.exactLayerName == nil ? "UNKNOWN" : "DIRECT", sample.exactLayerName == nil ? "UNKNOWN" : "DIRECT", nil),
+            ("TFTMAC_METAL_PRESENTER", "TFTMAC_MTKVIEW_METAL_PRESENTER", "owned native presenter source", "DIRECT", "DIRECT", nil)
+        ]
+        for (boundary, value, source, confidence, state, binaryOrSourceHash) in rows {
+            try execute(
+                "INSERT INTO pipeline_truth_matrix(session_id, graphics_run_id, observed_monotonic_ns, sample_label, boundary, value, source, confidence, observed_interval_start_ns, observed_interval_end_ns, binary_or_source_hash, evidence_state) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    .text(sessionIdentifier), graphicsRunValue(), .integer(Int64(bitPattern: observedMonotonicNS)), .text(sample.label),
+                    .text(boundary), .text(value), .text(source), .text(confidence), .integer(Int64(bitPattern: observedMonotonicNS)),
+                    .integer(Int64(bitPattern: observedMonotonicNS)), binaryOrSourceHash.map(SQLiteValue.text) ?? .null, .text(state)
+                ]
+            )
         }
     }
 
@@ -1158,8 +1426,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             }
             if let currentPID {
                 try self.execute(
-                    "INSERT INTO game_process_sessions(session_id, game_pid, started_utc, started_monotonic_ns) VALUES(?, ?, ?, ?)",
-                    [.text(self.sessionIdentifier), .integer(Int64(currentPID)), .text(now), .integer(monotonic)]
+                    "INSERT INTO game_process_sessions(session_id, game_pid, started_utc, started_monotonic_ns, game_run_id) VALUES(?, ?, ?, ?, ?)",
+                    [.text(self.sessionIdentifier), .integer(Int64(currentPID)), .text(now), .integer(monotonic),
+                     self.activeGameRunID.map(SQLiteValue.text) ?? .null]
                 )
             }
         }
@@ -1275,6 +1544,31 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 "UPDATE input_dispatch_samples SET status = 'NOT_ACKNOWLEDGED_SESSION_ENDED' WHERE session_id = ? AND status IN ('QUEUED', 'DISPATCHED')",
                 [.text(self.sessionIdentifier)]
             )
+            if let activeGameRunID {
+                let endReason = status == "STOPPED" ? "LOGGER_FINISHED" : "LOGGER_FAILED"
+                let endPayload: [String: Any] = [
+                    "automatic": true,
+                    "run_scope": "ONE_MATCH_PER_LAUNCH",
+                    "game_run_id": activeGameRunID,
+                    "session_status": status,
+                    "end_reason": endReason
+                ]
+                let endPayloadText = Self.json(endPayload)
+                try? self.execute(
+                    "INSERT INTO events(session_id, observed_utc, monotonic_ns, kind, payload_json) VALUES(?, ?, ?, 'AUTOMATIC_GAME_RUN_ENDED', ?)",
+                    [.text(self.sessionIdentifier), .text(now), .integer(monotonic), .text(endPayloadText)]
+                )
+                try? self.execute(
+                    "INSERT INTO phase_markers(session_id, game_run_id, phase, observed_utc, monotonic_ns, source, confidence, clock_domain) VALUES(?, ?, 'CAPTURE_END', ?, ?, 'automatic_logger', 'DIRECT', 'HOST_MONOTONIC')",
+                    [.text(self.sessionIdentifier), .text(activeGameRunID), .text(now), .integer(monotonic)]
+                )
+                try? self.execute(
+                    "UPDATE game_runs SET ended_utc = ?, ended_monotonic_ns = ?, status = ?, end_reason = ? WHERE game_run_id = ? AND ended_utc IS NULL",
+                    [.text(now), .integer(monotonic), .text(status == "STOPPED" ? "COMPLETED" : "FAILED"),
+                     .text(endReason), .text(activeGameRunID)]
+                )
+                self.activeGameRunID = nil
+            }
             if let activeGraphicsRunID {
                 try? self.closeGraphicsRun(
                     activeGraphicsRunID,
@@ -1294,6 +1588,24 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
                 "UPDATE sessions SET ended_utc = ?, status = ? WHERE session_id = ?",
                 [.text(now), .text(status), .text(self.sessionIdentifier)]
             )
+            do {
+                try self.sealFullMatchCapture(status: status, endedUTC: now, endedMonotonicNS: UInt64(bitPattern: monotonic))
+            } catch {
+                let failure = error.localizedDescription
+                let payload = Self.json([
+                    "automatic": true,
+                    "capture_status": "SEAL_FAILED",
+                    "causal_ownership": "INVALID",
+                    "error": failure,
+                    "next_action": "Retain raw evidence and repair the first failed producer or sealing step before the next match."
+                ])
+                try? self.execute(
+                    "INSERT INTO events(session_id, observed_utc, monotonic_ns, kind, payload_json) VALUES(?, ?, ?, 'CAPTURE_SEAL_FAILED', ?)",
+                    [.text(self.sessionIdentifier), .text(now), .integer(monotonic), .text(payload)]
+                )
+                let data = Data(payload.utf8)
+                try? data.write(to: self.captureDirectory.appendingPathComponent("capture-seal-failure.json"), options: .atomic)
+            }
             try? self.eventLog?.synchronize()
         }
     }
@@ -1309,6 +1621,31 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           ended_utc TEXT,
           status TEXT NOT NULL,
           profile_id TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS game_runs(
+          game_run_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          started_utc TEXT NOT NULL,
+          started_monotonic_ns INTEGER NOT NULL,
+          ended_utc TEXT,
+          ended_monotonic_ns INTEGER,
+          status TEXT NOT NULL,
+          configuration_sha256 TEXT NOT NULL,
+          profile_id TEXT NOT NULL,
+          run_scope TEXT NOT NULL DEFAULT 'ONE_MATCH_PER_LAUNCH',
+          start_reason TEXT NOT NULL DEFAULT 'LOGGER_INITIALIZED',
+          end_reason TEXT
+        );
+        CREATE TABLE IF NOT EXISTS phase_markers(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          game_run_id TEXT,
+          phase TEXT NOT NULL,
+          observed_utc TEXT NOT NULL,
+          monotonic_ns INTEGER NOT NULL,
+          source TEXT NOT NULL,
+          confidence TEXT NOT NULL,
+          clock_domain TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS runtime_receipts(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1682,7 +2019,8 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           started_utc TEXT NOT NULL,
           started_monotonic_ns INTEGER NOT NULL,
           ended_utc TEXT,
-          ended_monotonic_ns INTEGER
+          ended_monotonic_ns INTEGER,
+          game_run_id TEXT
         );
         CREATE TABLE IF NOT EXISTS input_samples(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1737,6 +2075,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           lineage_generation INTEGER,
           source_site_id INTEGER,
           queue_depth INTEGER,
+          queue_identity TEXT,
           duration_ns INTEGER,
           payload_json TEXT NOT NULL
         );
@@ -1746,13 +2085,19 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           epoch_id TEXT NOT NULL,
           started_monotonic_ns INTEGER NOT NULL,
           ended_monotonic_ns INTEGER NOT NULL,
+          segment_sequence INTEGER NOT NULL DEFAULT 0,
           event_count INTEGER NOT NULL,
           overwrite_count INTEGER NOT NULL,
+          loss_count INTEGER NOT NULL DEFAULT 0,
           relative_path TEXT NOT NULL,
           byte_count INTEGER NOT NULL,
           payload_sha256 TEXT NOT NULL,
           previous_segment_sha256 TEXT NOT NULL,
-          segment_sha256 TEXT NOT NULL
+          segment_sha256 TEXT NOT NULL,
+          flush_state TEXT NOT NULL DEFAULT 'SEALED',
+          validation_state TEXT NOT NULL DEFAULT 'UNVALIDATED',
+          source_file_sha256 TEXT,
+          source_file_name TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS pipeline_source_sites(
           source_site_id INTEGER NOT NULL,
@@ -1763,6 +2108,10 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           function_name TEXT NOT NULL,
           line_number INTEGER,
           instrumentation_state TEXT NOT NULL,
+          site_range_hash TEXT,
+          loaded_binary_uuid TEXT,
+          loaded_binary_sha256 TEXT,
+          instrumentation_schema_version INTEGER NOT NULL DEFAULT 1,
           PRIMARY KEY(source_site_id, component, source_commit)
         );
         CREATE TABLE IF NOT EXISTS pipeline_lineage(
@@ -1772,17 +2121,87 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           transport_work_id TEXT,
           present_lineage_id TEXT,
           generation INTEGER NOT NULL,
+          queue_identity TEXT,
           first_boundary TEXT,
           last_boundary TEXT,
           unambiguous INTEGER NOT NULL,
-          ambiguity_reason TEXT
+          ambiguity_reason TEXT,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          eligible_frame_count INTEGER NOT NULL DEFAULT 0,
+          clock_uncertainty_ns INTEGER,
+          first_divergent_boundary TEXT,
+          first_divergent_duration_ns INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_stage_spans(
+          span_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          epoch_id TEXT NOT NULL,
+          transport_work_id TEXT,
+          present_lineage_id TEXT,
+          lineage_generation INTEGER,
+          queue_identity TEXT,
+          component TEXT NOT NULL,
+          boundary TEXT NOT NULL,
+          source_site_id INTEGER,
+          started_monotonic_ns INTEGER NOT NULL,
+          ended_monotonic_ns INTEGER NOT NULL,
+          duration_ns INTEGER NOT NULL,
+          clock_uncertainty_ns INTEGER,
+          state TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pipeline_truth_matrix(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          graphics_run_id TEXT,
+          observed_monotonic_ns INTEGER NOT NULL,
+          sample_label TEXT NOT NULL,
+          boundary TEXT NOT NULL,
+          value TEXT NOT NULL,
+          source TEXT NOT NULL,
+          confidence TEXT NOT NULL,
+          observed_interval_start_ns INTEGER,
+          observed_interval_end_ns INTEGER,
+          binary_or_source_hash TEXT,
+          evidence_state TEXT NOT NULL CHECK(evidence_state IN ('DIRECT','CORRELATED','REQUESTED','INFERRED','UNKNOWN'))
+        );
+        CREATE TABLE IF NOT EXISTS producer_health(
+          session_id TEXT NOT NULL,
+          producer_name TEXT NOT NULL,
+          required INTEGER NOT NULL,
+          first_observed_monotonic_ns INTEGER,
+          last_observed_monotonic_ns INTEGER,
+          expected_cadence_ms REAL,
+          row_count INTEGER NOT NULL,
+          gap_count INTEGER NOT NULL,
+          loss_count INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('HEALTHY','MISSING','GAPPED','UNSEALED','UNKNOWN')),
+          reason TEXT NOT NULL,
+          evidence_path TEXT,
+          PRIMARY KEY(session_id, producer_name)
+        );
+        CREATE TABLE IF NOT EXISTS capture_manifests(
+          session_id TEXT PRIMARY KEY,
+          game_run_id TEXT,
+          schema_version INTEGER NOT NULL,
+          database_sha256 TEXT NOT NULL,
+          wal_sha256 TEXT,
+          shm_sha256 TEXT,
+          sidecar_hashes_json TEXT NOT NULL,
+          runtime_configuration_sha256 TEXT NOT NULL,
+          package_receipt_sha256 TEXT,
+          producer_coverage_json TEXT NOT NULL,
+          manifest_relative_path TEXT NOT NULL,
+          manifest_sha256 TEXT NOT NULL,
+          hash_scope TEXT NOT NULL,
+          sealed_utc TEXT NOT NULL,
+          seal_status TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS pipeline_findings(
           finding_id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL,
           epoch_id TEXT NOT NULL,
           created_utc TEXT NOT NULL,
-          state TEXT NOT NULL CHECK(state IN ('ROOT_NAMED','ROOT_CANDIDATE','UNKNOWN','UNREAL_OR_PRE_HOST_UNKNOWN')),
+          state TEXT NOT NULL CHECK(state IN ('ROOT_NAMED','ROOT_CANDIDATE','UNREAL_OR_PRE_HOST_UNKNOWN','UNKNOWN_PRESENT_LINEAGE_GAP','UNKNOWN_CLOCK_UNCERTAINTY','UNKNOWN_STREAM_LOSS','UNKNOWN_RENDERER_PATH','UNKNOWN_SURFACE_IDENTITY','UNKNOWN_OWNER','UNKNOWN')),
           first_divergent_boundary TEXT,
           owner_component TEXT,
           confidence REAL NOT NULL,
@@ -1819,6 +2238,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
           decision_reason TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_events_kind_time ON events(kind, monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_game_runs_session_time ON game_runs(session_id, started_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_game_process_sessions_run_time ON game_process_sessions(game_run_id, started_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_phase_markers_run_time ON phase_markers(game_run_id, monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_graphics_runs_session_time ON graphics_runs(session_id, started_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_frames_time ON frame_samples(received_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_frames_graphics_run ON frame_samples(graphics_run_id, received_monotonic_ns);
@@ -1844,6 +2266,9 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS idx_inputs_time ON input_samples(monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_pipeline_events_epoch_time ON pipeline_events(epoch_id, observed_monotonic_ns);
         CREATE INDEX IF NOT EXISTS idx_pipeline_lineage_epoch_work ON pipeline_lineage(epoch_id, transport_work_id, present_lineage_id);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_stage_spans_epoch_work ON pipeline_stage_spans(epoch_id, transport_work_id, started_monotonic_ns);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_truth_matrix_time ON pipeline_truth_matrix(session_id, observed_monotonic_ns, boundary);
+        CREATE INDEX IF NOT EXISTS idx_producer_health_session ON producer_health(session_id, status);
         CREATE INDEX IF NOT EXISTS idx_pipeline_findings_epoch ON pipeline_findings(epoch_id, created_utc);
         CREATE INDEX IF NOT EXISTS idx_pipeline_experiment_profile ON pipeline_experiment_runs(experiment_profile_id, ended_utc);
         DROP VIEW IF EXISTS graphics_frame_facts;
@@ -2043,7 +2468,7 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
            ORDER BY s2.monotonic_ns DESC
            LIMIT 1
         );
-        PRAGMA user_version=3;
+        PRAGMA user_version=6;
         """
         guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
             throw TFTMACRuntimeError("The native SQL telemetry schema could not be created.")
@@ -2126,6 +2551,567 @@ final class TFTMACNativeTelemetry: @unchecked Sendable {
             return ("UNAVAILABLE", "ADB_ERROR")
         case .unavailable(.loginPromptActive):
             return ("UNAVAILABLE", "LOGIN_PROMPT_ACTIVE")
+        }
+    }
+
+    // MARK: - Full-match causal capture sealing
+
+    private func sealFullMatchCapture(status: String, endedUTC: String, endedMonotonicNS: UInt64) throws {
+        let ingest = try ingestPipelineSegments()
+        try recordPipelineLineageAndFinding(ingest: ingest, endedUTC: endedUTC)
+        let health = try recordProducerHealth(ingest: ingest)
+        try updateAutomaticPipelineEpoch(ingest: ingest, endedUTC: endedUTC, endedMonotonicNS: endedMonotonicNS)
+
+        let databaseURL = captureDirectory.appendingPathComponent("TFTMAC_NATIVE_RUNTIME.sqlite")
+        try eventLog?.synchronize()
+        let databaseHash = Self.fileSHA256(databaseURL) ?? "UNAVAILABLE"
+        let walURL = databaseURL.appendingPathExtension("-wal")
+        let shmURL = databaseURL.appendingPathExtension("-shm")
+        let walHash = Self.fileSHA256(walURL)
+        let shmHash = Self.fileSHA256(shmURL)
+        var sidecars: [String: String] = [:]
+        let sidecarNames = [
+            "native-events.jsonl", "emulator.stdout.log", "emulator.stderr.log",
+            "logcat.raw.txt", "logcat.stderr.log", "angle-driver-evidence.json",
+            "pipeline-site-manifest.json"
+        ]
+        for name in sidecarNames {
+            let url = captureDirectory.appendingPathComponent(name)
+            if let hash = Self.fileSHA256(url) { sidecars[name] = hash }
+        }
+        let segmentDirectory = captureDirectory.appendingPathComponent("pipeline-events", isDirectory: true)
+        if let entries = try? FileManager.default.contentsOfDirectory(at: segmentDirectory, includingPropertiesForKeys: nil) {
+            for url in entries where url.pathExtension == "bin" {
+                if let hash = Self.fileSHA256(url) { sidecars["pipeline-events/\(url.lastPathComponent)"] = hash }
+            }
+        }
+        let packageReceipt = try? scalarString(
+            "SELECT receipt_value FROM runtime_receipts WHERE session_id = ? AND receipt_key = 'tft_package_version' ORDER BY id DESC LIMIT 1",
+            [.text(sessionIdentifier)]
+        )
+        let packageHash = packageReceipt.flatMap { Self.stringSHA256($0) }
+        let healthJSON = Self.json(health.reduce(into: [String: Any]()) { result, row in
+            result[row.producerName] = [
+                "required": row.required,
+                "status": row.status,
+                "row_count": row.rowCount,
+                "gap_count": row.gapCount,
+                "loss_count": row.lossCount,
+                "reason": row.reason
+            ]
+        })
+        let manifestObject: [String: Any] = [
+            "schema": 1,
+            "session_id": sessionIdentifier,
+            "game_run_id": automaticGameRunID ?? "unknown",
+            "run_scope": "ONE_MATCH_PER_LAUNCH",
+            "sealed_utc": endedUTC,
+            "seal_status": status == "STOPPED" ? "SEALED" : "SEALED_FAILED_SESSION",
+            "database_sha256": databaseHash,
+            "wal_sha256": walHash ?? NSNull(),
+            "shm_sha256": shmHash ?? NSNull(),
+            "sidecar_hashes": sidecars,
+            "schema_version": 6,
+            "runtime_configuration_sha256": configurationSHA256,
+            "package_receipt_sha256": packageHash ?? NSNull(),
+            "producer_coverage": healthJSON,
+            "pipeline_segments": [
+                "count": ingest.segmentCount,
+                "event_count": ingest.eventCount,
+                "overwrite_count": ingest.overwriteCount,
+                "loss_count": ingest.lossCount,
+                "invalid_segment_count": ingest.invalidSegmentCount,
+                "invalid_reasons": ingest.invalidReasons
+            ] as [String: Any],
+            "hash_scope": "database_hash_is_before_capture_manifests_row"
+        ]
+        let manifestData = try JSONSerialization.data(withJSONObject: manifestObject, options: [.prettyPrinted, .sortedKeys])
+        let manifestURL = captureDirectory.appendingPathComponent("capture-manifest.json")
+        try manifestData.write(to: manifestURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+        let manifestHash = Self.stringSHA256(String(decoding: manifestData, as: UTF8.self)) ?? "UNAVAILABLE"
+        try execute(
+            "INSERT OR REPLACE INTO capture_manifests(session_id, game_run_id, schema_version, database_sha256, wal_sha256, shm_sha256, sidecar_hashes_json, runtime_configuration_sha256, package_receipt_sha256, producer_coverage_json, manifest_relative_path, manifest_sha256, hash_scope, sealed_utc, seal_status) VALUES(?, ?, 6, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                .text(sessionIdentifier), automaticGameRunID.map(SQLiteValue.text) ?? .null,
+                .text(databaseHash), walHash.map(SQLiteValue.text) ?? .null, shmHash.map(SQLiteValue.text) ?? .null,
+                .text(Self.json(sidecars)), .text(configurationSHA256), packageHash.map(SQLiteValue.text) ?? .null,
+                .text(healthJSON), .text("capture-manifest.json"), .text(manifestHash),
+                .text("database_hash_is_before_capture_manifests_row"), .text(endedUTC),
+                .text(status == "STOPPED" ? "SEALED" : "SEALED_FAILED_SESSION")
+            ]
+        )
+    }
+
+    private struct ProducerHealthRow {
+        let producerName: String
+        let required: Bool
+        let status: String
+        let rowCount: Int64
+        let gapCount: Int64
+        let lossCount: UInt64
+        let reason: String
+    }
+
+    private func recordProducerHealth(ingest: PipelineIngestSummary) throws -> [ProducerHealthRow] {
+        let specs: [(String, Bool, String, String?, String?, Double?)] = [
+            ("native_logger_events", true, "events", "monotonic_ns", "monotonic_ns", 1_000),
+            ("game_process", true, "game_process_sessions", "started_monotonic_ns", "ended_monotonic_ns", nil),
+            ("surfaceflinger_frames", true, "game_frame_intervals", "observed_monotonic_ns", "actual_present_ns", 16.667),
+            ("frame_windows", true, "game_frame_windows", "started_monotonic_ns", "ended_monotonic_ns", 1_000),
+            ("native_presenter", true, "native_drawable_presentations", "callback_monotonic_ns", "presented_host_time_ns", 16.667),
+            ("host_presentation", true, "host_presentation_windows", "started_monotonic_ns", "ended_monotonic_ns", 1_000),
+            ("audio", true, "audio_samples", "monotonic_ns", "monotonic_ns", 1_000),
+            ("logcat", true, "logcat_aggregates", "monotonic_ns", "monotonic_ns", 1_000),
+            ("input", false, "input_samples", "monotonic_ns", "monotonic_ns", nil),
+            ("pipeline_source_segments", false, "pipeline_event_segments", "started_monotonic_ns", "ended_monotonic_ns", 60_000)
+        ]
+        var rows: [ProducerHealthRow] = []
+        for (name, required, table, firstColumn, lastColumn, cadenceMS) in specs {
+            let count = try scalarInt("SELECT COUNT(*) FROM " + table)
+            let first = firstColumn.flatMap { try? scalarOptionalInt("SELECT MIN(" + $0 + ") FROM " + table) }
+            let last = lastColumn.flatMap { try? scalarOptionalInt("SELECT MAX(" + $0 + ") FROM " + table) }
+            var gaps: Int64 = 0
+            if let cadenceMS, count > 1, let first, let last, last > first {
+                // Count gaps from the actual ordered samples. This query is kept
+                // per producer so a zero-row table never masquerades as healthy.
+                let timestampColumn = firstColumn ?? lastColumn ?? "0"
+                let timestamps = try scalarIntArray("SELECT " + timestampColumn + " FROM " + table + " WHERE " + timestampColumn + " IS NOT NULL ORDER BY " + timestampColumn)
+                for index in 1..<timestamps.count where Double(timestamps[index] - timestamps[index - 1]) > cadenceMS * 1_000_000.0 * 2.0 {
+                    gaps += 1
+                }
+            }
+            var rowStatus: String
+            var reason: String
+            if name == "pipeline_source_segments" {
+                if ingest.invalidSegmentCount > 0 {
+                    rowStatus = "UNSEALED"
+                    reason = ingest.invalidReasons.joined(separator: ";")
+                } else if ingest.segmentCount > 0 {
+                    rowStatus = "HEALTHY"
+                    reason = "SEALED_HASH_CHAIN_VALIDATED"
+                } else {
+                    rowStatus = "UNKNOWN"
+                    reason = "DIAGNOSTIC_SOURCE_HOOK_NOT_ENABLED_OR_NO_SEGMENT_OBSERVED"
+                }
+            } else if count == 0 {
+                rowStatus = required ? "MISSING" : "UNKNOWN"
+                reason = required ? "NO_ROWS_OBSERVED" : "NO_ROWS_OBSERVED;PRODUCER_MAY_BE_IDLE"
+            } else if gaps > 0 {
+                rowStatus = "GAPPED"
+                reason = "CADENCE_GAP_EXCEEDS_TWO_EXPECTED_PERIODS"
+            } else {
+                rowStatus = "HEALTHY"
+                reason = "ROWS_OBSERVED_WITHIN_EXPECTED_CADENCE"
+            }
+            let loss: UInt64 = name == "pipeline_source_segments" ? ingest.lossCount + ingest.overwriteCount : 0
+            try execute(
+                "INSERT OR REPLACE INTO producer_health(session_id, producer_name, required, first_observed_monotonic_ns, last_observed_monotonic_ns, expected_cadence_ms, row_count, gap_count, loss_count, status, reason, evidence_path) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    .text(sessionIdentifier), .text(name), .integer(required ? 1 : 0),
+                    first.map(SQLiteValue.integer) ?? .null, last.map(SQLiteValue.integer) ?? .null,
+                    cadenceMS.map(SQLiteValue.real) ?? .null, .integer(count), .integer(gaps),
+                    .integer(Int64(bitPattern: loss)), .text(rowStatus), .text(reason),
+                    .text(name == "pipeline_source_segments" ? "pipeline-events/" : "TFTMAC_NATIVE_RUNTIME.sqlite")
+                ]
+            )
+            rows.append(ProducerHealthRow(producerName: name, required: required, status: rowStatus, rowCount: count, gapCount: gaps, lossCount: loss, reason: reason))
+        }
+        return rows
+    }
+
+    private func ingestPipelineSegments() throws -> PipelineIngestSummary {
+        var summary = PipelineIngestSummary()
+        let directory = captureDirectory.appendingPathComponent("pipeline-events", isDirectory: true)
+        try ingestPipelineSiteManifest()
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return summary
+        }
+        let files = entries.filter { $0.pathExtension == "bin" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for file in files {
+            do {
+                let data = try Data(contentsOf: file)
+                var offset = 0
+                var previous = String(repeating: "0", count: 64)
+                var previousOverwrite: UInt64 = 0
+                var previousLoss: UInt64 = 0
+                while offset < data.count {
+                    guard data.count - offset >= 152 else { throw TFTMACRuntimeError("PIPELINE_SEGMENT_HEADER_TRUNCATED") }
+                    let headerStart = offset
+                    let magic = String(decoding: data.subdata(in: offset..<(offset + 8)), as: UTF8.self)
+                    let schema = Self.readUInt16(data, offset + 8)
+                    let headerBytes = Self.readUInt16(data, offset + 10)
+                    let eventCount = Int(Self.readUInt32(data, offset + 12))
+                    let sequence = Self.readUInt64(data, offset + 16)
+                    let started = Self.readUInt64(data, offset + 24)
+                    let ended = Self.readUInt64(data, offset + 32)
+                    let overwrite = Self.readUInt64(data, offset + 40)
+                    let loss = Self.readUInt64(data, offset + 48)
+                    let previousBytes = data.subdata(in: (offset + 56)..<(offset + 88))
+                    let payloadDigestBytes = data.subdata(in: (offset + 88)..<(offset + 120))
+                    let segmentDigestBytes = data.subdata(in: (offset + 120)..<(offset + 152))
+                    guard magic == "TFTPIPE1", schema == 1, headerBytes == 152 else {
+                        throw TFTMACRuntimeError("PIPELINE_SEGMENT_HEADER_INVALID")
+                    }
+                    let payloadBytes = eventCount * PipelineEventV1.binaryByteCount
+                    guard eventCount >= 0, data.count - offset >= 152 + payloadBytes else {
+                        throw TFTMACRuntimeError("PIPELINE_SEGMENT_PAYLOAD_TRUNCATED")
+                    }
+                    let payload = data.subdata(in: (offset + 152)..<(offset + 152 + payloadBytes))
+                    let payloadDigest = SHA256.hash(data: payload)
+                    guard Data(payloadDigest) == payloadDigestBytes else { throw TFTMACRuntimeError("PIPELINE_SEGMENT_PAYLOAD_HASH_MISMATCH") }
+                    let previousDigest = Self.hex(previousBytes)
+                    guard previousDigest == previous else { throw TFTMACRuntimeError("PIPELINE_SEGMENT_CHAIN_MISMATCH") }
+                    var chain = Data()
+                    chain.append(previousBytes)
+                    chain.append(payloadDigestBytes)
+                    chain.append(Self.leBytes(sequence))
+                    chain.append(Self.leBytes(started))
+                    chain.append(Self.leBytes(ended))
+                    guard Data(SHA256.hash(data: chain)) == segmentDigestBytes else { throw TFTMACRuntimeError("PIPELINE_SEGMENT_HASH_MISMATCH") }
+
+                    let segmentID = "\(file.lastPathComponent)#\(sequence)"
+                    try execute(
+                        "INSERT OR REPLACE INTO pipeline_event_segments(segment_id, session_id, epoch_id, started_monotonic_ns, ended_monotonic_ns, segment_sequence, event_count, overwrite_count, loss_count, relative_path, byte_count, payload_sha256, previous_segment_sha256, segment_sha256, flush_state, validation_state, source_file_sha256, source_file_name) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SEALED', 'VALID', ?, ?)",
+                        [
+                            .text(segmentID), .text(sessionIdentifier), .text(automaticPipelineEpochID ?? "unknown"),
+                            .integer(Int64(bitPattern: started)), .integer(Int64(bitPattern: ended)),
+                            .integer(Int64(bitPattern: sequence)), .integer(Int64(eventCount)),
+                            .integer(Int64(bitPattern: overwrite)), .integer(Int64(bitPattern: loss)),
+                            .text("pipeline-events/\(file.lastPathComponent)"), .integer(Int64(data.count)),
+                            .text(Self.hex(payloadDigestBytes)), .text(previousDigest), .text(Self.hex(segmentDigestBytes)),
+                            .text(Self.fileSHA256(file) ?? "UNAVAILABLE"), .text(file.lastPathComponent)
+                        ]
+                    )
+                    for eventIndex in 0..<eventCount {
+                        let eventOffset = offset + 152 + eventIndex * PipelineEventV1.binaryByteCount
+                        let event = Self.decodePipelineEvent(data, offset: eventOffset)
+                        summary.events.append(event)
+                        try execute(
+                            "INSERT INTO pipeline_events(session_id, epoch_id, schema_version, observed_monotonic_ns, component, boundary, event_kind, transport_work_id, present_lineage_id, lineage_generation, source_site_id, queue_depth, queue_identity, duration_ns, payload_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                .text(sessionIdentifier), .text(automaticPipelineEpochID ?? "unknown"), .integer(Int64(event.schemaVersion)),
+                                .integer(Int64(bitPattern: event.timestampNS)), .text(Self.pipelineComponent(event.boundaryOrdinal)),
+                                .text(event.boundary), .text(event.eventKind), event.transportWorkID.map(SQLiteValue.text) ?? .null,
+                                event.presentLineageID.map(SQLiteValue.text) ?? .null, .integer(Int64(event.generation)),
+                                .integer(Int64(event.sourceSiteID)), .integer(Int64(event.queueDepth)), .null,
+                                .integer(Int64(bitPattern: event.durationNS)), .text(Self.json([
+                                    "process_id": event.processID, "thread_id": event.threadID,
+                                    "payload_sha256": event.payloadHash, "source_file": file.lastPathComponent,
+                                    "segment_sequence": sequence, "segment_offset": eventOffset
+                                ]))
+                            ]
+                        )
+                        summary.firstObservedNS = min(summary.firstObservedNS ?? event.timestampNS, event.timestampNS)
+                        summary.lastObservedNS = max(summary.lastObservedNS ?? event.timestampNS, event.timestampNS)
+                    }
+                    summary.segmentCount += 1
+                    summary.eventCount += eventCount
+                    // The producer writes cumulative counters into every
+                    // segment header.  Record only the delta so health does
+                    // not multiply one loss across all later segments.
+                    summary.overwriteCount += overwrite >= previousOverwrite ? overwrite - previousOverwrite : overwrite
+                    summary.lossCount += loss >= previousLoss ? loss - previousLoss : loss
+                    previousOverwrite = overwrite
+                    previousLoss = loss
+                    previous = Self.hex(segmentDigestBytes)
+                    offset = headerStart + 152 + payloadBytes
+                }
+            } catch {
+                summary.invalidSegmentCount += 1
+                summary.invalidReasons.append("\(file.lastPathComponent):\(error.localizedDescription)")
+            }
+        }
+        return summary
+    }
+
+    private func ingestPipelineSiteManifest() throws {
+        let manifestURL = captureDirectory.appendingPathComponent("pipeline-site-manifest.json")
+        if !FileManager.default.fileExists(atPath: manifestURL.path) {
+            let fallback: [String: Any] = [
+                "schema": 1,
+                "instrumentation_schema_version": 1,
+                "instrumentation_state": ProcessInfo.processInfo.environment["TFTMAC_PIPELINE_EVENT_V1"] == "1"
+                    ? "ENABLED_WITHOUT_SITE_MANIFEST"
+                    : "NOT_ENABLED_IN_NORMAL_RUNTIME",
+                "sites": []
+            ]
+            let data = try JSONSerialization.data(withJSONObject: fallback, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: manifestURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path)
+        }
+        guard let data = try? Data(contentsOf: manifestURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sites = object["sites"] as? [[String: Any]] else { return }
+        for site in sites {
+            guard let id = site["source_site_id"] as? NSNumber,
+                  let component = site["component"] as? String,
+                  let commit = site["source_commit"] as? String,
+                  let blob = site["source_blob_sha256"] as? String,
+                  let path = site["relative_path"] as? String,
+                  let function = site["function_name"] as? String else { continue }
+            try execute(
+                "INSERT OR REPLACE INTO pipeline_source_sites(source_site_id, component, source_commit, source_blob_sha256, relative_path, function_name, line_number, instrumentation_state, site_range_hash, loaded_binary_uuid, loaded_binary_sha256, instrumentation_schema_version) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    .integer(id.int64Value), .text(component), .text(commit), .text(blob), .text(path), .text(function),
+                    (site["line_number"] as? NSNumber).map { .integer($0.int64Value) } ?? .null,
+                    .text((site["instrumentation_state"] as? String) ?? (object["instrumentation_state"] as? String) ?? "UNKNOWN"),
+                    (site["site_range_hash"] as? String).map(SQLiteValue.text) ?? .null,
+                    (site["loaded_binary_uuid"] as? String).map(SQLiteValue.text) ?? .null,
+                    (site["loaded_binary_sha256"] as? String).map(SQLiteValue.text) ?? .null,
+                    .integer((site["instrumentation_schema_version"] as? NSNumber)?.int64Value ?? 1)
+                ]
+            )
+        }
+    }
+
+    private func recordPipelineLineageAndFinding(ingest: PipelineIngestSummary, endedUTC: String) throws {
+        let grouped = Dictionary(grouping: ingest.events.filter { $0.transportWorkID != nil }, by: { $0.transportWorkID! })
+        var firstLate: [String] = []
+        for (workID, events) in grouped {
+            let generation = events.first?.generation ?? 0
+            let lineageIDs = Set(events.compactMap(\.presentLineageID))
+            let hasLineage = lineageIDs.first
+            let unambiguous = lineageIDs.count == 1 && events.allSatisfy { $0.presentLineageID != nil }
+            let ambiguityReason: String? = unambiguous ? nil : (events.isEmpty ? "NO_EVENTS" : "PRESENT_LINEAGE_ID_MISSING_OR_AMBIGUOUS")
+            let ordered = events.sorted { $0.boundaryOrdinal < $1.boundaryOrdinal || ($0.boundaryOrdinal == $1.boundaryOrdinal && $0.timestampNS < $1.timestampNS) }
+            let late = unambiguous ? ordered.first(where: { $0.durationNS >= 16_666_667 }) : nil
+            if let late { firstLate.append(late.boundary) }
+            try execute(
+                "INSERT INTO pipeline_lineage(session_id, epoch_id, transport_work_id, present_lineage_id, generation, queue_identity, first_boundary, last_boundary, unambiguous, ambiguity_reason, event_count, eligible_frame_count, clock_uncertainty_ns, first_divergent_boundary, first_divergent_duration_ns) VALUES(?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                [
+                    .text(sessionIdentifier), .text(automaticPipelineEpochID ?? "unknown"), .text(workID),
+                    hasLineage.map(SQLiteValue.text) ?? .null, .integer(Int64(generation)),
+                    ordered.first.map { .text($0.boundary) } ?? .null, ordered.last.map { .text($0.boundary) } ?? .null,
+                    .integer(unambiguous ? 1 : 0), ambiguityReason.map(SQLiteValue.text) ?? .null,
+                    .integer(Int64(events.count)), .integer(0), late.map { .text($0.boundary) } ?? .null,
+                    late.map { .integer(Int64(bitPattern: $0.durationNS)) } ?? .null
+                ]
+            )
+            for event in events where event.durationNS > 0 {
+                let end = event.timestampNS &+ event.durationNS
+                let spanID = "span-\(workID)-\(event.boundaryOrdinal)-\(event.timestampNS)"
+                try execute(
+                    "INSERT OR REPLACE INTO pipeline_stage_spans(span_id, session_id, epoch_id, transport_work_id, present_lineage_id, lineage_generation, queue_identity, component, boundary, source_site_id, started_monotonic_ns, ended_monotonic_ns, duration_ns, clock_uncertainty_ns, state) VALUES(?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, 'OBSERVED')",
+                    [
+                        .text(spanID), .text(sessionIdentifier), .text(automaticPipelineEpochID ?? "unknown"), .text(workID),
+                        hasLineage.map(SQLiteValue.text) ?? .null, .integer(Int64(generation)), .text(Self.pipelineComponent(event.boundaryOrdinal)),
+                        .text(event.boundary), .integer(Int64(event.sourceSiteID)), .integer(Int64(bitPattern: event.timestampNS)),
+                        .integer(Int64(bitPattern: end)), .integer(Int64(bitPattern: event.durationNS))
+                    ]
+                )
+            }
+        }
+        let eligible = try scalarInt("SELECT COUNT(*) FROM game_frame_intervals WHERE session_id = ?", [.text(sessionIdentifier)])
+        let unambiguous = try scalarInt("SELECT COUNT(*) FROM pipeline_lineage WHERE session_id = ? AND unambiguous = 1", [.text(sessionIdentifier)])
+        let exactSurface = try scalarInt("SELECT CASE WHEN COUNT(*) > 0 AND COUNT(DISTINCT layer_name) = 1 THEN COUNT(*) ELSE 0 END FROM game_frame_windows WHERE session_id = ? AND status = 'AVAILABLE' AND layer_name IS NOT NULL", [.text(sessionIdentifier)])
+        let clockUncertain = try scalarInt("SELECT COUNT(*) FROM native_clock_samples WHERE session_id = ? AND uncertainty_ns > 10_000_000", [.text(sessionIdentifier)])
+        let state: String
+        var boundary: String?
+        var owner: String?
+        var confidence = 0.0
+        var unknowns: [String] = []
+        if ingest.invalidSegmentCount > 0 || ingest.lossCount > 0 || ingest.overwriteCount > 0 {
+            state = "UNKNOWN_STREAM_LOSS"
+            unknowns.append("PIPELINE_EVENT_SEGMENT_INVALID_OR_LOSS")
+        } else if exactSurface == 0 {
+            state = "UNKNOWN_SURFACE_IDENTITY"
+            unknowns.append("EXACT_TFT_SURFACE_GENERATION_MISSING")
+        } else if clockUncertain > 0 {
+            state = "UNKNOWN_CLOCK_UNCERTAINTY"
+            unknowns.append("CLOCK_UNCERTAINTY_EXCEEDS_10MS")
+        } else if eligible > 0 && Double(unambiguous) / Double(eligible) < 0.999 {
+            state = "UNKNOWN_PRESENT_LINEAGE_GAP"
+            unknowns.append("LINEAGE_COVERAGE_BELOW_99_9_PERCENT")
+        } else if ingest.events.isEmpty {
+            state = "UNREAL_OR_PRE_HOST_UNKNOWN"
+            unknowns.append("NO_DIAGNOSTIC_SOURCE_EVENTS")
+        } else if let winner = Dictionary(grouping: firstLate, by: { $0 }).max(by: { $0.value.count < $1.value.count }), winner.value.count >= 3,
+                  Double(winner.value.count) / Double(max(1, firstLate.count)) >= 0.8 {
+            state = "ROOT_NAMED"
+            boundary = winner.key
+            owner = Self.pipelineComponent(Self.pipelineBoundaryOrdinal(winner.key))
+            confidence = Double(winner.value.count) / Double(firstLate.count)
+        } else if let winner = Dictionary(grouping: firstLate, by: { $0 }).max(by: { $0.value.count < $1.value.count }), winner.value.count >= 2 {
+            state = "ROOT_CANDIDATE"
+            boundary = winner.key
+            owner = Self.pipelineComponent(Self.pipelineBoundaryOrdinal(winner.key))
+            confidence = Double(winner.value.count) / Double(max(1, firstLate.count))
+            unknowns.append("REPLICATION_THRESHOLD_NOT_MET")
+        } else {
+            state = "UNKNOWN_OWNER"
+            unknowns.append("NO_REPLICATED_FIRST_DIVERGENT_BOUNDARY")
+        }
+        let findingID = "finding-\(sessionIdentifier)-\(UUID().uuidString.lowercased())"
+        try execute(
+            "INSERT OR REPLACE INTO pipeline_findings(finding_id, session_id, epoch_id, created_utc, state, first_divergent_boundary, owner_component, confidence, supporting_lineage_count, explicit_unknowns_json, analyzer_version) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                .text(findingID), .text(sessionIdentifier), .text(automaticPipelineEpochID ?? "unknown"), .text(endedUTC), .text(state),
+                boundary.map(SQLiteValue.text) ?? .null, owner.map(SQLiteValue.text) ?? .null, .real(confidence),
+                .integer(Int64(firstLate.count)), .text(Self.jsonArray(unknowns)), .text("native-seal-v1")
+            ]
+        )
+        try execute(
+            "UPDATE pipeline_lineage SET eligible_frame_count = ?, clock_uncertainty_ns = CASE WHEN ? > 0 THEN 10000001 ELSE NULL END WHERE session_id = ?",
+            [.integer(eligible), .integer(clockUncertain), .text(sessionIdentifier)]
+        )
+    }
+
+    private func updateAutomaticPipelineEpoch(ingest: PipelineIngestSummary, endedUTC: String, endedMonotonicNS: UInt64) throws {
+        guard let epochID = automaticPipelineEpochID else { return }
+        let lineageCount = try scalarInt("SELECT COUNT(*) FROM pipeline_lineage WHERE session_id = ? AND unambiguous = 1", [.text(sessionIdentifier)])
+        let eligible = try scalarInt("SELECT COUNT(*) FROM game_frame_intervals")
+        let coverage = eligible > 0 ? Double(lineageCount) / Double(eligible) : 0
+        var unknownReasons: [String] = []
+        if ingest.events.isEmpty { unknownReasons.append("NO_DIAGNOSTIC_SOURCE_EVENTS") }
+        if ingest.invalidSegmentCount > 0 { unknownReasons.append("PIPELINE_EVENT_SEGMENT_INVALID") }
+        if ingest.lossCount > 0 || ingest.overwriteCount > 0 { unknownReasons.append("PIPELINE_EVENT_LOSS_OR_OVERWRITE") }
+        let unknowns = Self.jsonArray(unknownReasons)
+        try execute(
+            "UPDATE pipeline_diagnostic_epochs SET ended_utc = ?, ended_monotonic_ns = ?, status = 'SEALED', lineage_coverage = ?, observer_overhead_percent = NULL, overwrite_count = ?, explicit_unknowns_json = ? WHERE epoch_id = ?",
+            [.text(endedUTC), .integer(Int64(bitPattern: endedMonotonicNS)), .real(coverage),
+             .integer(Int64(bitPattern: ingest.overwriteCount + ingest.lossCount)), .text(unknowns), .text(epochID)]
+        )
+    }
+
+    private func scalarInt(_ sql: String, _ values: [SQLiteValue] = []) throws -> Int64 {
+        guard let database else { throw TFTMACRuntimeError("The telemetry database is closed.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw TFTMACRuntimeError("SQLite could not prepare a telemetry scalar.")
+        }
+        defer { sqlite3_finalize(statement) }
+        try bind(values, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw TFTMACRuntimeError("SQLite scalar returned no row.") }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    private func scalarOptionalInt(_ sql: String, _ values: [SQLiteValue] = []) throws -> Int64? {
+        guard let database else { throw TFTMACRuntimeError("The telemetry database is closed.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw TFTMACRuntimeError("SQLite could not prepare an optional scalar.")
+        }
+        defer { sqlite3_finalize(statement) }
+        try bind(values, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return sqlite3_column_type(statement, 0) == SQLITE_NULL ? nil : sqlite3_column_int64(statement, 0)
+    }
+
+    private func scalarIntArray(_ sql: String, _ values: [SQLiteValue] = []) throws -> [Int64] {
+        guard let database else { throw TFTMACRuntimeError("The telemetry database is closed.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw TFTMACRuntimeError("SQLite could not prepare an array query.")
+        }
+        defer { sqlite3_finalize(statement) }
+        try bind(values, to: statement)
+        var result: [Int64] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if sqlite3_column_type(statement, 0) != SQLITE_NULL {
+                result.append(sqlite3_column_int64(statement, 0))
+            }
+        }
+        return result
+    }
+
+    private func scalarString(_ sql: String, _ values: [SQLiteValue] = []) throws -> String? {
+        guard let database else { throw TFTMACRuntimeError("The telemetry database is closed.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw TFTMACRuntimeError("SQLite could not prepare a text scalar.")
+        }
+        defer { sqlite3_finalize(statement) }
+        try bind(values, to: statement)
+        guard sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0) else { return nil }
+        return String(cString: text)
+    }
+
+    private func bind(_ values: [SQLiteValue], to statement: OpaquePointer) throws {
+        for (offset, value) in values.enumerated() {
+            let index = Int32(offset + 1)
+            switch value {
+            case .integer(let value): sqlite3_bind_int64(statement, index, value)
+            case .real(let value): sqlite3_bind_double(statement, index, value)
+            case .text(let value): sqlite3_bind_text(statement, index, value, -1, transientDestructor)
+            case .null: sqlite3_bind_null(statement, index)
+            }
+        }
+    }
+
+    private static func readUInt16(_ data: Data, _ offset: Int) -> UInt16 {
+        UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+    }
+
+    private static func readUInt32(_ data: Data, _ offset: Int) -> UInt32 {
+        UInt32(data[offset]) | (UInt32(data[offset + 1]) << 8) | (UInt32(data[offset + 2]) << 16) | (UInt32(data[offset + 3]) << 24)
+    }
+
+    private static func readUInt64(_ data: Data, _ offset: Int) -> UInt64 {
+        var value: UInt64 = 0
+        for index in 0..<8 { value |= UInt64(data[offset + index]) << UInt64(index * 8) }
+        return value
+    }
+
+    private static func leBytes(_ value: UInt64) -> Data {
+        var result = Data(capacity: 8)
+        var little = value.littleEndian
+        withUnsafeBytes(of: &little) { result.append(contentsOf: $0) }
+        return result
+    }
+
+    private static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func fileSHA256(_ url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return hex(Data(SHA256.hash(data: data)))
+    }
+
+    private static func stringSHA256(_ value: String) -> String? {
+        hex(Data(SHA256.hash(data: Data(value.utf8))))
+    }
+
+    private static func decodePipelineEvent(_ data: Data, offset: Int) -> ParsedPipelineEvent {
+        let kind = readUInt16(data, offset + 2)
+        let boundaryOrdinal = readUInt16(data, offset + 4)
+        let transport = readUInt64(data, offset + 28)
+        let present = readUInt64(data, offset + 36)
+        return ParsedPipelineEvent(
+            schemaVersion: readUInt16(data, offset), eventKind: pipelineEventKind(kind),
+            boundary: pipelineBoundaryName(boundaryOrdinal), boundaryOrdinal: boundaryOrdinal,
+            processID: readUInt32(data, offset + 8), threadID: readUInt64(data, offset + 12),
+            timestampNS: readUInt64(data, offset + 20), transportWorkID: transport == 0 ? nil : String(transport),
+            presentLineageID: present == 0 ? nil : String(present), generation: readUInt32(data, offset + 44),
+            sourceSiteID: readUInt32(data, offset + 48), queueDepth: readUInt32(data, offset + 52),
+            durationNS: readUInt64(data, offset + 56), payloadHash: hex(data.subdata(in: (offset + 64)..<(offset + 96)))
+        )
+    }
+
+    private static func pipelineEventKind(_ value: UInt16) -> String {
+        switch value { case 1: "BEGIN"; case 2: "END"; case 3: "INSTANT"; case 4: "LOSS"; default: "UNKNOWN_(value)" }
+    }
+
+    private static func pipelineBoundaryName(_ value: UInt16) -> String {
+        [1: "guestProbeSubmit", 2: "asgHostReceive", 3: "gfxstreamDecode", 4: "hostVulkanQueueLock", 5: "hostVulkanSubmit", 6: "moltenVKPipelineLookup", 7: "moltenVKPipelineCreate", 8: "moltenVKEnqueue", 9: "metalCommit", 10: "metalScheduled", 11: "metalGpuStart", 12: "metalGpuComplete", 13: "colorBufferPublish", 14: "sourceFramePublish", 15: "surfaceFlingerPresent"][value] ?? "UNKNOWN_BOUNDARY_(value)"
+    }
+
+    private static func pipelineBoundaryOrdinal(_ value: String) -> UInt16 {
+        for ordinal in UInt16(1)...UInt16(15) where pipelineBoundaryName(ordinal) == value { return ordinal }
+        return 0
+    }
+
+    private static func pipelineComponent(_ boundary: UInt16) -> String {
+        switch boundary {
+        case 1: "OWNED_PROBE"
+        case 2: "ASG"
+        case 3, 4, 5: "GFXSTREAM"
+        case 6, 7, 8: "MOLTENVK"
+        case 9, 10, 11, 12: "METAL_INTERNAL_MOLTENVK"
+        case 13, 14: "EMULATOR_PRESENTATION"
+        case 15: "SURFACEFLINGER"
+        default: "UNKNOWN_OWNER"
         }
     }
 
@@ -2221,6 +3207,17 @@ private final class NativeFrameAdmissionState: @unchecked Sendable {
         try FrameContract.validate(width: width, height: height, byteCount: image.image.count)
 
         let receivedNS = DispatchTime.now().uptimeNanoseconds
+        let frame = EmulatorFrame(
+            pixels: image.image,
+            width: width,
+            height: height,
+            sequence: image.seq,
+            emulatorTimestampMicroseconds: image.timestampUs,
+            receivedMonotonicNanoseconds: receivedNS
+        )
+        // Publish to the Metal presenter mailbox immediately before any telemetry hashing or sorting
+        mailbox.publish(frame)
+
         let fingerprint = Self.sampledContentFingerprint(image.image)
         lock.lock()
         let sequenceDrops: UInt64
@@ -2295,20 +3292,12 @@ private final class NativeFrameAdmissionState: @unchecked Sendable {
         lock.unlock()
 
         let checkpoint = isFirstFrame || image.seq.isMultiple(of: 60)
-
-        let frame = EmulatorFrame(
-            pixels: image.image,
-            width: width,
-            height: height,
-            sequence: image.seq,
-            emulatorTimestampMicroseconds: image.timestampUs,
-            receivedMonotonicNanoseconds: receivedNS
-        )
-        mailbox.publish(frame)
         if let completedWindow { telemetry.recordFrameIntervalWindow(completedWindow) }
         if let completedFreshnessWindow { telemetry.recordStreamFreshness(completedFreshnessWindow) }
         guard checkpoint else { return isFirstFrame }
-        let visual = Self.sampleVisualContent(image.image, includeHash: true)
+        // Only run the full 8.3 MB SHA-256 on the first frame; use the fast 64-bit FNV-1a fingerprint on 1 Hz checkpoints
+        let visual = Self.sampleVisualContent(image.image, includeHash: isFirstFrame)
+        let contentHash = visual.contentSHA256 ?? String(format: "fnv1a64:%016llx", fingerprint.value)
         telemetry.recordFrameReceived(frame, transport: "raw_grpc_rgba8888", sequenceDropCount: sequenceDrops, visual: visual)
         let visualPayload: [String: Any] = [
             "visual_sample_count": visual.sampleCount,
@@ -2318,7 +3307,7 @@ private final class NativeFrameAdmissionState: @unchecked Sendable {
             "maximum_rgb": visual.maximumRGB,
             "minimum_alpha": visual.minimumAlpha,
             "maximum_alpha": visual.maximumAlpha,
-            "content_sha256": visual.contentSHA256 ?? NSNull()
+            "content_sha256": contentHash
         ]
         if isFirstFrame {
             var payload: [String: Any] = [
@@ -2469,6 +3458,7 @@ actor TFTMACRuntimeService {
     private var angleDriverVerifiedPID: Int32?
     private var angleDriverTransactionPending = false
     private var lastRiotANRProbeNS: UInt64 = 0
+    private var lastRiotSplashProbeNS: UInt64 = 0
     private var riotANRRecoveryAttempts = 0
     private var stopping = false
     private var highPerfOperationInProgress = false
@@ -2476,15 +3466,24 @@ actor TFTMACRuntimeService {
     private var highPerfRestoreConfirmed = true
     private var highPerfRestorationInProgress = false
     private var graphicsSnapshotInFlight = false
+    private var previousTaskTicksByTID: [Int32: UInt64] = [:]
+    private var previousTaskSampleNS: UInt64 = 0
+    private var previousGuestCPUTicks: [UInt64] = []
+    private var latestPipelineThreadTelemetry: [String: Any] = [:]
+    private var currentRHITID: Int32?
+    private var rhiProfileCaptureCount: Int = 0
+    private var lastRHIProfileSampleIndex: Int = 0
+    private var rhiProfileInProgress = false
 
     private var usesPrivateHighPerf: Bool {
         runtimeConfiguration.selection.mode == .advancedDiagnostics && runtimeConfiguration.workload == .officialTFT
     }
 
-    private static let highPerfHashes = [
+    static let highPerfHashes = [
         "debug-ramdisk.img": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
-        "DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
-        "profile-transaction.sh": "45649f06f1e4eef4711b7fec8e949120acab3bf30bfea9b664192cb907dc91ab"
+        "DeviceProfiles.ini": "5b46164caea56dd4f24caf6afac7650fe61ae7c8fc20f8ae7c0b0a95b13e4264",
+        "profile-transaction.sh": "280c2e2d2ab8953e74f4fe0137d34e92023563512b3e363035aa5a87abd5ced1",
+        "riot-defaults.sh": "0e787ecfaa39ee24b2b8898e1caf31bfc0a1ef125a76ec4baa19b045958b57bb"
     ]
 
     private func highPerfReceipt(_ base: RuntimeExperimentConfigurationReceipt) -> RuntimeExperimentConfigurationReceipt {
@@ -2929,13 +3928,12 @@ actor TFTMACRuntimeService {
     }
 
     func recordMarker(_ marker: String) {
-        let allowed = ["MATCH_ENTRY", "MATCH_END"]
+        let allowed = [
+            "MATCH_ENTRY", "CAROUSEL_START", "CAROUSEL_END",
+            "COMBAT_START", "COMBAT_END", "MATCH_END"
+        ]
         guard allowed.contains(marker) else { return }
-        telemetry?.recordEvent(marker, payload: [
-            "source": "native_menu",
-            "profile_id": profile.identifier,
-            "host_monotonic_timestamp": true
-        ])
+        telemetry?.recordSemanticMarker(marker, profileID: profile.identifier)
     }
 
     func recordSettingsChange(previous: TFTMACRuntimeProfile, next: TFTMACRuntimeProfile) {
@@ -3306,7 +4304,7 @@ actor TFTMACRuntimeService {
             ("launcher_method", paths.launchStrategy.rawValue, "runtime-mode authority", "DIRECT"),
             ("native_host_application", paths.hostApplication.path, "signed host authority", "DIRECT"),
             ("macos_game_mode_eligible", "true", "LSSupportsGameMode bundle contract", "DIRECT"),
-            ("host_qos_requested", profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default", "named launch experiment", "REQUESTED"),
+            ("host_qos_requested", (paths.mode == .advancedDiagnostics || profile.experimentPreset.requestsHostLatencyQoS) ? "user_interactive" : "default", "named launch experiment", "REQUESTED"),
             ("adb_server_port", "\(paths.adbServerPort)", "runtime-mode lease", "DIRECT"),
             ("emulator_console_port", "\(paths.consolePort)", "runtime-mode lease", "DIRECT"),
             ("adb_serial", paths.serial, "runtime-mode lease", "DIRECT"),
@@ -3343,23 +4341,46 @@ actor TFTMACRuntimeService {
         paths: TFTMACRuntimePaths,
         telemetry: TFTMACNativeTelemetry
     ) throws {
-        let result = try Self.runCommand(
+        _ = try? Self.runCommand(
             paths.adb,
-            ["-P", "\(paths.adbServerPort)", "start-server"],
+            ["-P", "\(paths.adbServerPort)", "kill-server"],
             environment: Self.adbEnvironment(paths: paths),
-            timeout: 30
+            timeout: 5
         )
-        guard result.status == 0 else {
-            throw TFTMACRuntimeError(
-                "ADB server \(paths.adbServerPort) could not start: \(result.output.suffix(1200))"
-            )
+        var lastOutput = ""
+        for attempt in 1...3 {
+            do {
+                let result = try Self.runCommand(
+                    paths.adb,
+                    ["-P", "\(paths.adbServerPort)", "start-server"],
+                    environment: Self.adbEnvironment(paths: paths),
+                    timeout: 10
+                )
+                if result.status == 0 {
+                    telemetry.recordEvent("ADB_SERVER_STARTED", payload: [
+                        "port": paths.adbServerPort,
+                        "serial": paths.serial,
+                        "adb_vendor_keys_policy": paths.adbVendorKeysPolicy,
+                        "output": result.output.suffix(2000).description,
+                        "attempt": attempt
+                    ])
+                    return
+                }
+                lastOutput = result.output
+            } catch {
+                lastOutput = error.localizedDescription
+                _ = try? Self.runCommand(
+                    paths.adb,
+                    ["-P", "\(paths.adbServerPort)", "kill-server"],
+                    environment: Self.adbEnvironment(paths: paths),
+                    timeout: 5
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.5)
         }
-        telemetry.recordEvent("ADB_SERVER_STARTED", payload: [
-            "port": paths.adbServerPort,
-            "serial": paths.serial,
-            "adb_vendor_keys_policy": paths.adbVendorKeysPolicy,
-            "output": result.output.suffix(2000).description
-        ])
+        throw TFTMACRuntimeError(
+            "ADB server \(paths.adbServerPort) could not start: \(lastOutput.suffix(1200))"
+        )
     }
 
     private func launchEmulatorHost(
@@ -3378,12 +4399,37 @@ actor TFTMACRuntimeService {
         for root in Self.controllerDiscoveryRoots(paths: paths) {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         }
+        // Zero-copy kernel page-cache read-ahead (F_RDADVISE) into reclaimable Unified Memory
+        Task.detached(priority: .utility) {
+            let prewarmSpecs: [(URL, Int32)] = [
+                (paths.avdDirectory.appendingPathComponent("encryptionkey.img.qcow2"), 16 * 1024 * 1024),
+                (paths.avdDirectory.appendingPathComponent("cache.img.qcow2"), 16 * 1024 * 1024),
+                (paths.gfxstreamBackend, 32 * 1024 * 1024),
+                (paths.sdkRoot.appendingPathComponent("system-images/android-36/google_apis_playstore/arm64-v8a/vendor.img"), 128 * 1024 * 1024),
+                (paths.sdkRoot.appendingPathComponent("system-images/android-36/google_apis_playstore/arm64-v8a/system.img"), 256 * 1024 * 1024),
+                (paths.avdDirectory.appendingPathComponent("userdata-qemu.img.qcow2"), 256 * 1024 * 1024)
+            ]
+            for (fileURL, maxBytes) in prewarmSpecs {
+                let fd = Darwin.open(fileURL.path, O_RDONLY)
+                guard fd >= 0 else { continue }
+                defer { _ = Darwin.close(fd) }
+                var st = stat()
+                guard fstat(fd, &st) == 0, st.st_size > 0 else { continue }
+                let length = Int32(min(Int64(maxBytes), Int64(st.st_size)))
+                var advisory = radvisory(ra_offset: 0, ra_count: length)
+                _ = withUnsafeMutablePointer(to: &advisory) { ptr in
+                    Darwin.fcntl(fd, F_RDADVISE, ptr)
+                }
+            }
+        }
         expectedSessionMarker = "androidboot.tftmac.session=\(telemetry.sessionIdentifier)"
+        let useInteractiveQoS = paths.mode == .advancedDiagnostics || profile.experimentPreset.requestsHostLatencyQoS
         var arguments = [
             "-n", "-W",
             "--env", "TFT_EMULATOR=\(paths.emulator.path)",
             "--env", "TFT_ADB_SERVER_PORT=\(paths.adbServerPort)",
             "--env", "ANDROID_ADB_SERVER_PORT=\(paths.adbServerPort)",
+            "--env", "ADB_MDNS=0",
             "--env", "ADB_MDNS_AUTO_CONNECT=",
             "--env", "ADB_SERVER_SOCKET=",
             "--env", "ANDROID_ADB_SERVER_ADDRESS=",
@@ -3395,9 +4441,18 @@ actor TFTMACRuntimeService {
             "--env", "MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0",
             "--env", "MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE=64",
             "--env", "MVK_CONFIG_FAST_MATH_ENABLED=1",
-            "--env", "TFT_HOST_LATENCY_QOS=\(profile.experimentPreset.requestsHostLatencyQoS ? "user_interactive" : "default")",
+            "--env", "TFT_HOST_LATENCY_QOS=\(useInteractiveQoS ? "user_interactive" : "default")",
             "--env", "TFT_HOST_STDOUT=\(stdout.path)",
             "--env", "TFT_HOST_STDERR=\(stderr.path)",
+            "--env", "QEMU_AUDIO_DRV=coreaudio",
+            "--env", "QEMU_AUDIO_DAC_FIXED_FREQ=48000",
+            "--env", "QEMU_AUDIO_DAC_FIXED_CHANNELS=2",
+            "--env", "QEMU_AUDIO_DAC_FIXED_FMT=S16",
+            "--env", "QEMU_AUDIO_ADC_FIXED_FREQ=48000",
+            "--env", "QEMU_COREAUDIO_BUFFER_SIZE=2048",
+            "--env", "QEMU_COREAUDIO_BUFFER_COUNT=16",
+            "--env", "QEMU_AUDIO_TIMER_PERIOD=200",
+            "--env", "QEMU_AUDIO_DAC_TRY_POLL=0",
             paths.hostApplication.path,
             "--args",
             "@\(paths.avdName)", "-id", paths.emulatorIdentifier, "-port", "\(paths.consolePort)",
@@ -3452,17 +4507,63 @@ actor TFTMACRuntimeService {
         if let zone = TimeZone.current.identifier.addingPercentEncoding(withAllowedCharacters: .alphanumerics), !zone.isEmpty {
             arguments += ["-timezone", TimeZone.current.identifier]
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment.removeValue(forKey: "ADB_VENDOR_KEYS")
-        process.environment = environment
+        if usesPrivateHighPerf {
+            for key in Array(environment.keys) where key.hasPrefix("MVK_CONFIG_") || key.hasPrefix("ANGLE_FEATURE_OVERRIDES_") {
+                environment.removeValue(forKey: key)
+            }
+        }
+        let process = Process()
+        let autonomousDirectHost = environment["TFTMAC_AUTONOMOUS_SILENT"] == "1" || (paths.mode == .advancedDiagnostics && environment["TFTMAC_DEV_DIRECT_HOST"] == "1")
+        if autonomousDirectHost {
+            let hostExecutable = paths.hostApplication
+                .appendingPathComponent("Contents/MacOS/TFTMACDiagnosticForwarder")
+            guard FileManager.default.isExecutableFile(atPath: hostExecutable.path) else {
+                throw TFTMACRuntimeModeError(
+                    message: "The autonomous diagnostic host executable is missing at \(hostExecutable.path)."
+                )
+            }
+            guard let hostIndex = arguments.firstIndex(of: paths.hostApplication.path),
+                  hostIndex + 1 < arguments.endIndex,
+                  arguments[hostIndex + 1] == "--args" else {
+                throw TFTMACRuntimeModeError(
+                    message: "The autonomous diagnostic host arguments are malformed."
+                )
+            }
+            var hostEnvironment = environment
+            var index = arguments.startIndex
+            while index < hostIndex {
+                if arguments[index] == "--env", arguments.index(after: index) < hostIndex {
+                    let assignment = arguments[arguments.index(after: index)]
+                    if let separator = assignment.firstIndex(of: "=") {
+                        hostEnvironment[String(assignment[..<separator])] =
+                            String(assignment[assignment.index(after: separator)...])
+                    }
+                    index = arguments.index(index, offsetBy: 2)
+                } else {
+                    index = arguments.index(after: index)
+                }
+            }
+            // The LaunchServices form uses empty values to prevent ambient
+            // ADB routing.  Direct execution must omit those keys entirely;
+            // an empty ADB_SERVER_SOCKET makes the emulator's own adb helper
+            // fail with “unknown socket specification”.
+            hostEnvironment.removeValue(forKey: "ADB_SERVER_SOCKET")
+            hostEnvironment.removeValue(forKey: "ANDROID_ADB_SERVER_ADDRESS")
+            process.executableURL = hostExecutable
+            process.arguments = Array(arguments[(hostIndex + 2)...])
+            process.environment = hostEnvironment
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = arguments
+            process.environment = environment
+        }
         try process.run()
         openProcess = process
         telemetry.recordEvent("EMULATOR_HOST_LAUNCHED", payload: [
-            "method": "/usr/bin/open",
-            "flags": ["-n", "-W", "--env", "--args"],
+            "method": autonomousDirectHost ? "direct_forwarder_executable" : "/usr/bin/open",
+            "flags": autonomousDirectHost ? ["direct_exec", "signed_forwarder"] : ["-n", "-W", "--env", "--args"],
             "mode": paths.mode.rawValue,
             "host_application": paths.hostApplication.path,
             "open_pid": process.processIdentifier,
@@ -3624,51 +4725,15 @@ actor TFTMACRuntimeService {
         }
         try await establishGuestGameplayPower(paths: paths, telemetry: telemetry)
         await establishGuestAudioSubsystem(paths: paths, telemetry: telemetry)
-        var automaticUnlockAttempted = false
-        var automaticUnlockAttempts = 0
-        var nextUnlockAttempt = Date.distantPast
-        while !stopping {
-            try Task.checkCancellation()
-            let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
-            if user.contains("RUNNING_UNLOCKED") { break }
-            guard let guestUnlockSecret else {
-                throw TFTMACRuntimeError("DEV Android still has a screen lock. Remove the Android lock before starting DEV.")
-            }
-            if Date() >= nextUnlockAttempt, automaticUnlockAttempts < 2 {
-                automaticUnlockAttempted = true
-                automaticUnlockAttempts += 1
-                telemetry.recordEvent("GUEST_SECURE_UNLOCK_REQUIRED", payload: [
-                    "user": 0,
-                    "pin_entry": "keychain_emulator_controller",
-                    "attempt": automaticUnlockAttempts,
-                    "credential_logged": false,
-                    "credential_in_process_arguments": false
-                ])
-                inputChannel.send(.secureUnlock(guestUnlockSecret))
-                nextUnlockAttempt = Date().addingTimeInterval(5)
-            } else if automaticUnlockAttempts >= 2, Date() >= nextUnlockAttempt {
-                throw TFTMACRuntimeError("Android rejected automatic secure unlock after two bounded attempts.")
-            }
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        try Task.checkCancellation()
-        telemetry.recordEvent("GUEST_UNLOCKED", payload: [
-            "user": 0,
-            "automatic_unlock_attempted": automaticUnlockAttempted,
-            "automatic_unlock_attempts": automaticUnlockAttempts,
-            "transport": automaticUnlockAttempted ? "EmulatorController.sendKey" : "already_unlocked",
-            "credential_logged": false
-        ])
+        try await ensureGuestUnlocked(paths: paths, telemetry: telemetry)
         if runtimeConfiguration.workload == .ownedVulkanProbe {
             try await launchAndMonitorOwnedVulkanProbe(paths: paths, telemetry: telemetry)
             return
         }
         let package = "com.riotgames.league.teamfighttactics"
-        let packageDump = try Self.adb(paths: paths, ["shell", "dumpsys", "package", package], timeout: 30).output
-        guard packageDump.contains("Package [\(package)]") || packageDump.contains("versionName=") else {
-            throw TFTMACRuntimeError("Official TFT is not installed. Open Google Play in Android and install Teamfight Tactics.")
-        }
-        let installer = try? Self.adb(paths: paths, ["shell", "cmd", "package", "get-install-source", package], timeout: 15).output
+        let packageAuthority = try await ensureGooglePlayCurrent(paths: paths, telemetry: telemetry, package: package)
+        let packageDump = packageAuthority.packageDump
+        let installer = packageAuthority.installerOutput
         tftPackageVersion = packageDump.split(whereSeparator: \.isNewline)
             .first(where: { $0.contains("versionName=") })
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -3683,11 +4748,13 @@ actor TFTMACRuntimeService {
             ?? "unknown"
         telemetry.recordReceipt(key: "official_tft_version", value: tftPackageVersion, source: "dumpsys package", confidence: "DIRECT")
         telemetry.recordReceipt(key: "official_tft_version_code", value: versionCodeLine, source: "dumpsys package", confidence: "DIRECT")
-        telemetry.recordReceipt(key: "official_tft_installer", value: installer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown", source: "cmd package get-install-source", confidence: "DIRECT")
+        telemetry.recordReceipt(key: "official_tft_installer", value: packageAuthority.installerPackage, source: "pm list packages -i", confidence: "DIRECT")
         telemetry.recordReceipt(key: "official_tft_signing_receipt", value: signingLine, source: "dumpsys package", confidence: signingLine == "unknown" ? "UNKNOWN" : "DIRECT")
         telemetry.recordEvent("OFFICIAL_TFT_PACKAGE_RECEIPT", payload: [
             "package": package,
-            "installer_output": installer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown",
+            "installer_output": installer.trimmingCharacters(in: .whitespacesAndNewlines),
+            "installer_package": packageAuthority.installerPackage,
+            "google_play_listing_state": GooglePlayListingState.current.rawValue,
             "version_line": tftPackageVersion,
             "version_code_line": versionCodeLine,
             "signing_line": signingLine
@@ -3711,6 +4778,7 @@ actor TFTMACRuntimeService {
             "pipeline_attribution_ready": false,
             "coverage_state": "PIPELINE_PRODUCERS_NOT_YET_VERIFIED"
         ])
+        trimGuestBackgroundProcesses(paths: paths, telemetry: telemetry)
         recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "before_tft_launch")
 
         let highPerfLaunchEpoch = usesPrivateHighPerf ? try Self.adb(paths: paths, ["shell", "date +%s"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines) : "0"
@@ -3732,9 +4800,9 @@ actor TFTMACRuntimeService {
 
         for _ in 0..<10 {
             if let pid = try? Self.readProcessID(paths: paths, packageName: package) {
-                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(pid)"], timeout: 10)
-                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(pid):-20", source: "renice", confidence: "DIRECT")
-                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: pid), "nice": -20])
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-10", "-p", "\(pid)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(pid):-10", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: pid), "nice": -10])
                 break
             }
             try await Task.sleep(for: .milliseconds(200))
@@ -3752,7 +4820,7 @@ actor TFTMACRuntimeService {
             "resolution": "\(profile.width)x\(profile.height)",
             "refresh_hz": profile.refreshHz,
             "audio_backend": profile.audioBackend,
-            "profile_id": profile.identifier
+            "profile_id": usesPrivateHighPerf ? "DEV-B8-WIN-01" : profile.identifier
         ])
         telemetry.markRunning()
         await status("", false)
@@ -3760,6 +4828,87 @@ actor TFTMACRuntimeService {
             try Task.checkCancellation()
             try await Task.sleep(for: .seconds(1))
         }
+    }
+
+    private func ensureGuestUnlocked(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry
+    ) async throws {
+        var automaticUnlockAttempted = false
+        var automaticUnlockAttempts = 0
+        var nextUnlockAttempt = Date.distantPast
+        while !stopping {
+            try Task.checkCancellation()
+            let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
+            if user.contains("RUNNING_UNLOCKED") { break }
+            guard let guestUnlockSecret else {
+                throw TFTMACRuntimeError("Android is still credential-locked and no local unlock secret is available.")
+            }
+            if Date() >= nextUnlockAttempt, automaticUnlockAttempts < 2 {
+                automaticUnlockAttempted = true
+                automaticUnlockAttempts += 1
+                telemetry.recordEvent("GUEST_SECURE_UNLOCK_REQUIRED", payload: [
+                    "user": 0,
+                    "pin_entry": paths.mode == .advancedDiagnostics ? "dev_keychain_emulator_controller" : "keychain_emulator_controller",
+                    "attempt": automaticUnlockAttempts,
+                    "credential_logged": false,
+                    "credential_in_process_arguments": false
+                ])
+                inputChannel.send(.secureUnlock(guestUnlockSecret))
+                nextUnlockAttempt = Date().addingTimeInterval(5)
+            } else if automaticUnlockAttempts >= 2, Date() >= nextUnlockAttempt {
+                throw TFTMACRuntimeError("Android rejected automatic secure unlock after two bounded attempts.")
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        try Task.checkCancellation()
+
+        // Keep the user-authorized DEV credential for subsequent cold starts.
+
+        telemetry.recordEvent("GUEST_UNLOCKED", payload: [
+            "user": 0,
+            "automatic_unlock_attempted": automaticUnlockAttempted,
+            "automatic_unlock_attempts": automaticUnlockAttempts,
+            "transport": automaticUnlockAttempted ? "EmulatorController.sendKey" : "already_unlocked",
+            "dev_pin_required": guestUnlockSecret != nil,
+            "credential_logged": false
+        ])
+    }
+
+    private func clearLegacyDevScreenCredential(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        secret: TFTMACGuestUnlockSecret
+    ) throws {
+        var command = Data("locksettings clear --old ".utf8)
+        let pin = try secret.transientPIN()
+        command.append(contentsOf: pin.utf8)
+        command.append(Data("\nexit\n".utf8))
+        defer { command.resetBytes(in: 0..<command.count) }
+
+        let result = try Self.runCommand(
+            paths.adb,
+            ["-P", "\(paths.adbServerPort)", "-s", paths.serial, "shell"],
+            environment: Self.adbEnvironment(paths: paths),
+            input: command,
+            timeout: 20
+        )
+        guard result.status == 0 else {
+            throw TFTMACRuntimeError("DEV could not retire the legacy Android screen credential. The legacy DEV Keychain item was preserved for safe retry.")
+        }
+        let user = try Self.adb(paths: paths, ["shell", "dumpsys", "user"], timeout: 15).output
+        guard user.contains("RUNNING_UNLOCKED") else {
+            throw TFTMACRuntimeError("DEV cleared the legacy screen credential but user 0 did not remain unlocked; the legacy DEV Keychain item was preserved for diagnosis.")
+        }
+        try TFTMACGuestUnlockSecretStore.deleteIfPresent(runtimeMode: .advancedDiagnostics)
+        _ = try? Self.adb(paths: paths, ["shell", "wm", "dismiss-keyguard"], timeout: 10)
+        telemetry.recordEvent("DEV_ANDROID_SCREEN_CREDENTIAL_RETIRED", payload: [
+            "user": 0,
+            "legacy_dev_keychain_item_deleted": true,
+            "control_keychain_touched": false,
+            "credential_logged": false,
+            "credential_in_process_arguments": false
+        ])
     }
 
     private func launchAndMonitorOwnedVulkanProbe(
@@ -3894,6 +5043,10 @@ actor TFTMACRuntimeService {
         case .virtualQueueOff: expected["VulkanVirtualQueue"] = "disabled"
         case .fenceContextsOff: expected["VirtioGpuFenceContexts"] = "disabled"
         case .control: break
+        case .psoWaitAll: break
+        case .psoPriorityEscalate: break
+        case .programLRUEvict20: break
+        case .deferTextureCreation1: break
         case .retiredCombatLatencyA, .retiredHomeRunA:
             throw TFTMACRuntimeError("A retired experiment reached the DEV feature gate.")
         }
@@ -3933,8 +5086,13 @@ actor TFTMACRuntimeService {
         _ = try Self.adb(paths: paths, ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], timeout: 10)
         _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "min_refresh_rate", "60.0"], timeout: 10)
         _ = try? Self.adb(paths: paths, ["shell", "settings", "put", "system", "peak_refresh_rate", "60.0"], timeout: 10)
+        if usesPrivateHighPerf {
+            _ = try Self.adb(paths: paths, ["shell", "settings", "put", "system", "accelerometer_rotation", "0"], timeout: 10)
+            _ = try Self.adb(paths: paths, ["shell", "settings", "put", "system", "user_rotation", "0"], timeout: 10)
+        }
         _ = try? Self.adb(paths: paths, ["shell", "setprop", "service.sf.present_timestamp", "1"], timeout: 10)
         _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.sf.showupdates", "0"], timeout: 10)
+        _ = try? Self.adb(paths: paths, ["shell", "setprop", "security.perf_harden", "0"], timeout: 5)
         _ = try? Self.adb(paths: paths, ["shell", "pm", "disable-user", "--user", "0", "com.google.android.apps.wellbeing"], timeout: 10)
 
         var lastState: GuestPowerState?
@@ -3976,6 +5134,17 @@ actor TFTMACRuntimeService {
         _ = try? Self.adb(paths: paths, ["shell", "setprop", "debug.stagefright.audio.sink", "1"], timeout: 5)
         _ = try? Self.adb(paths: paths, ["shell", "setprop", "af.fast_track_multiplier", "2"], timeout: 5)
         _ = try? Self.adb(paths: paths, ["shell", "setprop", "audio.deep_buffer.media", "1"], timeout: 5)
+        if paths.mode == .advancedDiagnostics {
+            do {
+                try await changeHighPerfADBD(paths: paths, root: true)
+                _ = try? Self.adb(paths: paths, ["shell", "setprop ctl.restart audioserver"], timeout: 5)
+                try? await Task.sleep(for: .milliseconds(500))
+                try await changeHighPerfADBD(paths: paths, root: false)
+                telemetry.recordEvent("GUEST_AUDIO_SERVER_PREWARMED", payload: ["status": "restarted_clean"])
+            } catch {
+                telemetry.recordEvent("GUEST_AUDIO_SERVER_PREWARM_FAILED", payload: ["error": error.localizedDescription])
+            }
+        }
         telemetry.recordEvent("GUEST_AUDIO_SUBSYSTEM_HARDENED", payload: [
             "deep_buffer": true,
             "fast_track_multiplier": 2,
@@ -4142,6 +5311,175 @@ actor TFTMACRuntimeService {
         telemetry?.recordEvent("ANGLE_DRIVER_RESTORED", payload: ["receipt": receipt])
     }
 
+
+    private func ensureGooglePlayCurrent(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        package: String
+    ) async throws -> (packageDump: String, installerOutput: String, installerPackage: String) {
+        let listingPath = "/sdcard/tftmac-google-play-listing.xml"
+
+        func listingXML() -> String {
+            _ = try? Self.adb(paths: paths, ["shell", "uiautomator", "dump", listingPath], timeout: 30)
+            return (try? Self.adb(paths: paths, ["shell", "cat", listingPath], timeout: 30).output) ?? ""
+        }
+
+        // Play can keep the visible hierarchy at a loading/UNRESOLVED state
+        // while Google Play Services has already rejected the store token.
+        // Use the local, session-scoped logcat evidence to expose the same
+        // official recovery surface instead of failing behind the startup
+        // curtain.  No token, account, or log contents are copied to the
+        // telemetry event; only the bounded reason is recorded.
+        var authEvidenceRecorded = false
+        func googlePlayAuthEvidence() -> String? {
+            guard let data = try? Data(contentsOf: telemetry.captureDirectory.appendingPathComponent("logcat.raw.txt")),
+                  let text = String(data: data.suffix(512 * 1024), encoding: .utf8) else { return nil }
+            let lower = text.lowercased()
+            if lower.contains("bad_authentication") || lower.contains("badauthentication") {
+                return "GOOGLE_PLAY_SERVICES_BAD_AUTHENTICATION"
+            }
+            if lower.contains("auth_token_invalid") || lower.contains("auth token invalid") {
+                return "GOOGLE_PLAY_SERVICES_AUTH_TOKEN_INVALID"
+            }
+            if lower.contains("user needs to (re)enter credentials") {
+                return "GOOGLE_PLAY_SERVICES_REENTER_CREDENTIALS"
+            }
+            return nil
+        }
+        func observeGooglePlayAuthEvidence() -> Bool {
+            guard let reason = googlePlayAuthEvidence() else { return false }
+            if !authEvidenceRecorded {
+                telemetry.recordEvent("GOOGLE_PLAY_TFT_AUTH_EVIDENCE_OBSERVED", payload: [
+                    "source": "logcat.raw.txt",
+                    "reason": reason,
+                    "raw_content_retained_local_only": true
+                ])
+                authEvidenceRecorded = true
+            }
+            return true
+        }
+
+        let pbe = try? Self.adb(paths: paths, ["shell", "pm", "path", "com.riotgames.league.teamfighttactics.pbe"], timeout: 10).output
+        if let pbe, pbe.contains("package:") {
+            throw TFTMACRuntimeError("PBE is installed in the DEV guest. Production TFT package authority is required before play.")
+        }
+
+        _ = try Self.adb(
+            paths: paths,
+            ["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", "market://details?id=\(package)"],
+            timeout: 45
+        )
+        try await Task.sleep(for: .seconds(3))
+
+        var xml = listingXML()
+        var state = RiotPackageAuthority.googlePlayListingState(from: xml)
+        if state == .unresolved, paths.mode == .advancedDiagnostics, observeGooglePlayAuthEvidence() {
+            state = .authRequired
+        }
+        telemetry.recordEvent("GOOGLE_PLAY_TFT_LISTING_CHECKED", payload: ["state": state.rawValue, "package": package])
+
+        // A cold diagnostic AVD can expose the Play hierarchy a few seconds
+        // after the market activity accepts the intent. Retry only the
+        // unresolved-read case, and only on DEV, so a transient UI dump does
+        // not block a working launcher while the official package gate stays
+        // fail-closed. Control keeps its existing timing and behavior.
+        if state == .unresolved, paths.mode == .advancedDiagnostics {
+            for attempt in 1...5 {
+                try await Task.sleep(for: .seconds(1))
+                xml = listingXML()
+                state = RiotPackageAuthority.googlePlayListingState(from: xml)
+                if state == .unresolved, observeGooglePlayAuthEvidence() {
+                    state = .authRequired
+                }
+                telemetry.recordEvent("GOOGLE_PLAY_TFT_LISTING_RECHECKED", payload: [
+                    "attempt": attempt,
+                    "state": state.rawValue,
+                    "package": package
+                ])
+                if state != .unresolved { break }
+            }
+        }
+
+        if state == .authRequired, paths.mode == .advancedDiagnostics {
+            // Keep the official Play surface alive while Google completes its
+            // own account recovery.  The launcher never handles credentials;
+            // it only observes the listing transition and resumes when Play
+            // proves the package state.  This avoids forcing a second DEV
+            // launch after a token refresh or account-consent flow.
+            let deadline = Date().addingTimeInterval(300)
+            await status("Google Play authentication is required. Complete sign-in in the official Play screen; DEV will continue automatically.", false)
+            telemetry.recordEvent("GOOGLE_PLAY_TFT_AUTH_RECOVERY_WAITING", payload: [
+                "package": package,
+                "timeout_seconds": 300,
+                "requires_official_ui": true,
+                "credentials_handled_by": "google_play"
+            ])
+            repeat {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .seconds(2))
+                xml = listingXML()
+                state = RiotPackageAuthority.googlePlayListingState(from: xml)
+                telemetry.recordEvent("GOOGLE_PLAY_TFT_AUTH_RECOVERY_RECHECKED", payload: [
+                    "package": package,
+                    "state": state.rawValue,
+                    "requires_official_ui": true
+                ])
+                if state == .current || state == .updateAvailable || state == .installAvailable { break }
+            } while Date() < deadline
+        }
+
+        if state == .authRequired {
+            throw TFTMACRuntimeError("Google Play authentication is required. Complete it in the official Google Play UI; DEV will resume automatically when Play reports the TFT listing as current.")
+        }
+
+        if state == .updateAvailable || state == .installAvailable {
+            let label = state == .updateAvailable ? "Update" : "Install"
+            guard let point = RiotPackageAuthority.actionCenter(in: xml, label: label) else {
+                throw TFTMACRuntimeError("Google Play reports \(label), but TFTMAC could not safely locate the official action control.")
+            }
+            telemetry.recordEvent("GOOGLE_PLAY_TFT_UPDATE_STARTED", payload: [
+                "action": label.uppercased(), "x": point.x, "y": point.y, "package": package
+            ])
+            _ = try Self.adb(paths: paths, ["shell", "input", "tap", "\(point.x)", "\(point.y)"], timeout: 15)
+
+            let deadline = Date().addingTimeInterval(600)
+            repeat {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .seconds(2))
+                xml = listingXML()
+                state = RiotPackageAuthority.googlePlayListingState(from: xml)
+                if state == .authRequired {
+                    throw TFTMACRuntimeError("Google Play requires account authentication to finish the official TFT update. Complete it in Google Play, then relaunch DEV.")
+                }
+                if state == .current { break }
+            } while Date() < deadline
+
+            guard state == .current else {
+                throw TFTMACRuntimeError("Google Play did not reach the current Open/Play state within the bounded update window.")
+            }
+        } else if state != .current {
+            throw TFTMACRuntimeError("Google Play could not prove whether the production TFT package is current. Play readiness is blocked rather than guessing.")
+        }
+
+        let packageDump = try Self.adb(paths: paths, ["shell", "dumpsys", "package", package], timeout: 30).output
+        guard packageDump.contains("Package [\(package)]") || packageDump.contains("versionName=") else {
+            throw TFTMACRuntimeError("Official production TFT is not installed after the Google Play currentness check.")
+        }
+        let installerOutput = try Self.adb(paths: paths, ["shell", "pm", "list", "packages", "-i", package], timeout: 15).output
+        guard let installerPackage = RiotPackageAuthority.installerPackageName(from: installerOutput), installerPackage == "com.android.vending" else {
+            telemetry.recordEvent("GOOGLE_PLAY_TFT_AUTHORITY_INVALID", payload: [
+                "installer_output": installerOutput.trimmingCharacters(in: .whitespacesAndNewlines),
+                "required_installer": "com.android.vending"
+            ])
+            throw TFTMACRuntimeError("TFT is not owned by Google Play. Official Google Play ownership must be restored before matchmaking or performance testing.")
+        }
+        telemetry.recordEvent("GOOGLE_PLAY_TFT_CURRENT_VERIFIED", payload: [
+            "installer": installerPackage,
+            "listing_state": GooglePlayListingState.current.rawValue
+        ])
+        return (packageDump, installerOutput, installerPackage)
+    }
+
     private func ensurePrivateHighPerfParent(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
         let package = "com.riotgames.league.teamfighttactics"
         let parent = "/data/user/0/\(package)/files/UnrealGame/TFT/TFT/Saved/Config/Android"
@@ -4202,15 +5540,104 @@ actor TFTMACRuntimeService {
         telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_PARENT_READY", payload: ["bootstrap_required": true, "path": parent])
     }
 
-    private func provisionPrivateHighPerf(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
-        guard tftPackageVersion == "versionName=18.1-5423749", let session = expectedSessionMarker?.split(separator: "=").last else {
-            throw TFTMACRuntimeError("DEV HighPerf requires the validated official TFT version and native session identity.")
+    private func provisionRiotDefaults(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        guard let session = expectedSessionMarker?.split(separator: "=").last,
+              tftPackageVersion.hasPrefix("versionName="),
+              ProcessInfo.processInfo.environment["TFTMAC_ANGLE_DRIVER_MANIFEST"] == nil,
+              profile.experimentPreset == .control else {
+            throw TFTMACRuntimeError("The Riot-default baseline requires the official game and the normal DEV runtime without driver experiments.")
         }
+        let assets = try highPerfAssets()
+        highPerfOperationInProgress = true
+        defer { highPerfOperationInProgress = false }
+        _ = try Self.adb(paths: paths, ["shell", "am", "force-stop", activeWorkloadPackage], timeout: 15)
+        guard stopLogcatCapture() else { throw TFTMACRuntimeError("The boot recorder did not stop before the Riot settings reset.") }
+        for name in ["logcat.raw.txt", "logcat.stderr.log"] {
+            let source = telemetry.captureDirectory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.moveItem(at: source, to: telemetry.captureDirectory.appendingPathComponent("boot-" + name))
+            }
+        }
+        do {
+            try await changeHighPerfADBD(paths: paths, root: true)
+            // Recover only the existing, hash-bound HighPerf transaction. An unknown
+            // mount/journal must fail closed before any stock-settings reset.
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("profile-transaction.sh").path, "/data/local/tmp/tftmac-native-profile.sh"], timeout: 15)
+            _ = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh rollback \(session)"], timeout: 30)
+            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("riot-defaults.sh").path, "/data/local/tmp/tftmac-riot-defaults.sh"], timeout: 15)
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-riot-defaults.sh apply \(session)"], timeout: 30).output
+            guard receipt.contains("RIOT_DEFAULTS_INITIALIZED") || receipt.contains("RIOT_DEFAULTS_ALREADY_INITIALIZED") else {
+                throw TFTMACRuntimeError("The Riot-default settings reset was not verified.")
+            }
+            try receipt.write(to: telemetry.captureDirectory.appendingPathComponent("riot-defaults-reset.txt"), atomically: true, encoding: .utf8)
+            telemetry.recordEvent("DEV_RIOT_DEFAULTS_CONFIG_READY", payload: [
+                "receipt": receipt, "profile": "riot_defaults_v1", "injected_cvars": 0,
+                "accounts_and_downloads_preserved": true, "reset_helper_sha256": Self.highPerfHashes["riot-defaults.sh"]!,
+                "es32_exposure": "REQUIRED_COMPATIBILITY", "gameplay_verified": false
+            ])
+            try await changeHighPerfADBD(paths: paths, root: false)
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            try startLogcatCapture(paths: paths, telemetry: telemetry)
+        } catch {
+            try? await changeHighPerfADBD(paths: paths, root: false)
+            throw error
+        }
+    }
+
+    private func verifyRiotDefaultConsumption(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, launchEpoch: String) async throws {
+        let remote = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Logs/TFT.log"
+        for _ in 0..<60 {
+            try Task.checkCancellation()
+            guard !stopping else { throw CancellationError() }
+            if let pid = try? Self.readProcessID(paths: paths, packageName: activeWorkloadPackage),
+               let modified = try? Self.adb(paths: paths, ["shell", "stat -c %Y \(remote)"], timeout: 10).output,
+               let time = Int64(modified.trimmingCharacters(in: .whitespacesAndNewlines)),
+               time >= (Int64(launchEpoch) ?? Int64.max),
+               let log = try? Self.adb(paths: paths, ["shell", "cat \(remote)"], timeout: 10).output,
+               log.contains("LogInit: Display: Game Engine Initialized."),
+               !log.contains("Fatal error:"),
+               let currentPID = try? Self.readProcessID(paths: paths, packageName: activeWorkloadPackage), currentPID == pid {
+                let renderer = log.contains("LogRHI: Initializing OpenGL RHI") ? "OPENGL_ES_ANGLE"
+                    : (log.contains("Creating Vulkan Device") ? "VULKAN" : "UNKNOWN")
+                guard renderer != "UNKNOWN" else { throw TFTMACRuntimeError("Riot initialized without an identifiable graphics API; baseline evidence is incomplete.") }
+                try log.write(to: telemetry.captureDirectory.appendingPathComponent("riot-defaults-engine-boot.log"), atomically: true, encoding: .utf8)
+                telemetry.recordEvent("DEV_RIOT_DEFAULTS_ENGINE_BOOT_VERIFIED", payload: [
+                    "pid": pid, "renderer": renderer, "source_is_fresh": true,
+                    "profile": "riot_defaults_v1", "injected_cvars": 0,
+                    "game_settings_owner": "RIOT", "reference_table_match": "REQUIRES_COMPARISON",
+                    "gameplay_performance": "UNMEASURED"
+                ])
+                return
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+        throw TFTMACRuntimeError("Riot did not complete a fresh engine boot with default settings; no baseline result was accepted.")
+    }
+
+    private func provisionPrivateHighPerf(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) async throws {
+        guard tftPackageVersion.hasPrefix("versionName="), tftPackageVersion != "versionName=unknown",
+              let session = expectedSessionMarker?.split(separator: "=").last else {
+            throw TFTMACRuntimeError("DEV HighPerf requires an observed official Google Play TFT version and native session identity.")
+        }
+        guard profile.experimentPreset == .control else { throw TFTMACRuntimeError("The personal Ranked profile requires the control runtime preset.") }
         let assets = try highPerfAssets()
         try prepareANGLEDriverOverride(paths: paths, telemetry: telemetry)
         highPerfOperationInProgress = true
         defer { highPerfOperationInProgress = false }
         _ = try Self.adb(paths: paths, ["shell", "am force-stop com.riotgames.league.teamfighttactics"], timeout: 15)
+        let cacheProperties = [
+            "debug.egl.blobcache.multifile": "true",
+            "debug.angle.feature_overrides_enabled": "exposeNonConformant*:exposeES32ForTesting",
+            "debug.angle.feature_overrides_disabled": "preferSubmitAtFBOBoundary"
+        ]
+        for (key, value) in cacheProperties.sorted(by: { $0.key < $1.key }) {
+            _ = try Self.adb(paths: paths, ["shell", "setprop", key, value], timeout: 10)
+            let effective = try Self.adb(paths: paths, ["shell", "getprop", key], timeout: 10).output
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard effective == value else { throw TFTMACRuntimeError("DEV could not restore verified cache property \(key).") }
+        }
+        telemetry.recordEvent("DEV_WIN01_CACHE_VERIFIED", payload: cacheProperties)
         _ = try Self.adb(paths: paths, ["shell", "setprop debug.hwui.renderer skiagl"], timeout: 10)
         let hwui = try Self.adb(paths: paths, ["shell", "getprop debug.hwui.renderer"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard hwui == "skiagl" else { throw TFTMACRuntimeError("DEV could not establish the validated Android login renderer.") }
@@ -4231,15 +5658,82 @@ actor TFTMACRuntimeService {
             try await ensurePrivateHighPerfParent(paths: paths, telemetry: telemetry)
             let identity = try Self.adb(paths: paths, ["shell", "getprop ro.boot.tftmac.session"], timeout: 10).output.trimmingCharacters(in: .whitespacesAndNewlines)
             guard identity == String(session) else { throw TFTMACRuntimeError("DEV HighPerf guest session mismatch.") }
-            _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("DeviceProfiles.ini").path, "/data/local/tmp/tftmac-native-profile.ini"], timeout: 15)
+            let profileAsset = assets.appendingPathComponent("DeviceProfiles.ini")
+            let profileText = try String(contentsOf: profileAsset, encoding: .utf8)
+            let effectiveProfileText: String
+            if profile.experimentPreset == .psoWaitAll || profile.experimentPreset == .psoPriorityEscalate || profile.experimentPreset == .programLRUEvict20 || profile.experimentPreset == .deferTextureCreation1 {
+                let control: String
+                let candidate: String
+                switch profile.experimentPreset {
+                case .psoWaitAll:
+                    control = "CVars=r.PSOPrecaching.WaitForHighPriorityRequestsOnly=1"
+                    candidate = "CVars=r.PSOPrecaching.WaitForHighPriorityRequestsOnly=0"
+                case .psoPriorityEscalate:
+                    control = "CVars=r.PSOPrecaching.PermitPriorityEscalation=0"
+                    candidate = "CVars=r.PSOPrecaching.PermitPriorityEscalation=1"
+                case .programLRUEvict20:
+                    control = "CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=0"
+                    candidate = "CVars=r.OpenGL.ProgramLRUEvictTimeSeconds=20"
+                case .deferTextureCreation1:
+                    control = "CVars=r.OpenGL.DeferTextureCreation=0"
+                    candidate = "CVars=r.OpenGL.DeferTextureCreation=1"
+                default:
+                    throw TFTMACRuntimeError("Unexpected HighPerf candidate preset in profile staging.")
+                }
+                let replaced = profileText.replacingOccurrences(of: control, with: candidate)
+                guard replaced != profileText, replaced.contains(candidate) else {
+                    throw TFTMACRuntimeError("DEV PSO wait-policy candidate could not be applied to the verified profile asset.")
+                }
+                effectiveProfileText = replaced
+                let cvar: String
+                let controlValue: String
+                let candidateValue: String
+                switch profile.experimentPreset {
+                case .psoWaitAll:
+                    cvar = "r.PSOPrecaching.WaitForHighPriorityRequestsOnly"; controlValue = "1"; candidateValue = "0"
+                case .psoPriorityEscalate:
+                    cvar = "r.PSOPrecaching.PermitPriorityEscalation"; controlValue = "0"; candidateValue = "1"
+                case .programLRUEvict20:
+                    cvar = "r.OpenGL.ProgramLRUEvictTimeSeconds"; controlValue = "0"; candidateValue = "20"
+                case .deferTextureCreation1:
+                    cvar = "r.OpenGL.DeferTextureCreation"; controlValue = "0"; candidateValue = "1"
+                default:
+                    throw TFTMACRuntimeError("Unexpected HighPerf candidate preset in telemetry staging.")
+                }
+                telemetry.recordEvent("DEV_HIGHPERF_CVAR_OVERRIDE_STAGED", payload: [
+                    "cvar": cvar,
+                    "control": controlValue,
+                    "candidate": candidateValue,
+                    "source_asset": profileAsset.lastPathComponent,
+                    "source_asset_sha256": Self.highPerfHashes["DeviceProfiles.ini"] ?? "UNKNOWN"
+                ])
+            } else {
+                effectiveProfileText = profileText
+            }
+            let stagedProfile = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tftmac-native-profile-\(UUID().uuidString).ini")
+            try effectiveProfileText.write(to: stagedProfile, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: stagedProfile) }
+            _ = try Self.adb(paths: paths, ["push", stagedProfile.path, "/data/local/tmp/tftmac-native-profile.ini"], timeout: 15)
             _ = try Self.adb(paths: paths, ["push", assets.appendingPathComponent("profile-transaction.sh").path, "/data/local/tmp/tftmac-native-profile.sh"], timeout: 15)
             highPerfTransactionPending = true
             highPerfRestoreConfirmed = false
-            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh apply \(session)"], timeout: 30).output
+            let profileArgument: String
+            switch profile.experimentPreset {
+            case .psoWaitAll: profileArgument = " pso_wait_all"
+            case .psoPriorityEscalate: profileArgument = " pso_priority_escalate"
+            case .programLRUEvict20: profileArgument = " program_lru_evict20"
+            case .deferTextureCreation1: profileArgument = " defer_texture_creation1"
+            default: profileArgument = ""
+            }
+            let receipt = try Self.adb(paths: paths, ["shell", "sh /data/local/tmp/tftmac-native-profile.sh apply \(session)\(profileArgument)"], timeout: 30).output
             guard receipt.contains("MOUNT_VERIFIED") else { throw TFTMACRuntimeError("DEV profile mount was not verified.") }
             telemetry.recordEvent("DEV_PRIVATE_HIGHPERF_MOUNT_VERIFIED", payload: ["receipt": receipt, "sha256": Self.highPerfHashes])
             try receipt.write(to: telemetry.captureDirectory.appendingPathComponent("highperf-mount.txt"), atomically: true, encoding: .utf8)
             try applyANGLEDriverOverride(paths: paths, telemetry: telemetry, session: String(session))
+            // Pre-warm the 283 MB OpenGL ProgramBinaryCache, Unreal Paks .utoc, and StreamingInstalls .utoc/en_US containers into guest & host RAM page cache
+            _ = try? Self.adb(paths: paths, ["shell", "cat /data/user/0/com.riotgames.league.teamfighttactics/cache/ProgramBinaryCache/* /data/media/0/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Content/Paks/*.utoc /data/media/0/Android/data/com.riotgames.league.teamfighttactics/files/StreamingInstalls/Content/*.utoc /data/media/0/Android/data/com.riotgames.league.teamfighttactics/files/StreamingInstalls/Content/pakchunk1-en_US-Android_ASTCClient.pak >/dev/null 2>&1 || true"], timeout: 20)
+            _ = try? Self.adb(paths: paths, ["shell", "setprop security.perf_harden 0; echo 0 > /proc/sys/kernel/perf_event_paranoid 2>/dev/null || true"], timeout: 5)
             try await changeHighPerfADBD(paths: paths, root: false)
             try Task.checkCancellation()
             guard !stopping else { throw CancellationError() }
@@ -4283,8 +5777,24 @@ actor TFTMACRuntimeService {
             let pair = line.dropFirst(6).split(separator: "=", maxSplits: 1).map(String.init)
             if pair.count == 2 { expected[pair[0]] = pair[1] }
         }
+        if profile.experimentPreset == .psoWaitAll {
+            expected["r.PSOPrecaching.WaitForHighPriorityRequestsOnly"] = "0"
+        } else if profile.experimentPreset == .psoPriorityEscalate {
+            expected["r.PSOPrecaching.PermitPriorityEscalation"] = "1"
+        } else if profile.experimentPreset == .programLRUEvict20 {
+            expected["r.OpenGL.ProgramLRUEvictTimeSeconds"] = "20"
+        } else if profile.experimentPreset == .deferTextureCreation1 {
+            expected["r.OpenGL.DeferTextureCreation"] = "1"
+        }
         let remote = "/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Logs/TFT.log"
         let regex = try NSRegularExpression(pattern: #"Pushing Device Profile CVar: \[\[([^:]+):.*? -> ([^\]]+)\]\]"#)
+        let unregRegex = try NSRegularExpression(pattern: #"Creating unregistered Device Profile CVar: \[\[([^:]+):([^\]]+)\]\]"#)
+        func cvarValuesMatch(_ lhs: String?, _ rhs: String) -> Bool {
+            guard let lhs else { return false }
+            if lhs == rhs { return true }
+            if let lNum = Double(lhs), let rNum = Double(rhs), abs(lNum - rNum) < 1e-6 { return true }
+            return false
+        }
         for _ in 0..<60 {
             try Task.checkCancellation()
             guard !stopping else { throw CancellationError() }
@@ -4297,13 +5807,23 @@ actor TFTMACRuntimeService {
                         actual[String(log[key])] = String(log[value])
                     }
                 }
+                for match in unregRegex.matches(in: log, range: NSRange(log.startIndex..., in: log)) {
+                    if let key = Range(match.range(at: 1), in: log), let value = Range(match.range(at: 2), in: log) {
+                        actual[String(log[key])] = String(log[value])
+                    }
+                }
                 let rendererPreserved = log.contains("LogRHI: Initializing OpenGL RHI") && !log.contains("Creating Vulkan Device")
-                if rendererPreserved && !expected.isEmpty && expected.allSatisfy({ actual[$0.key] == $0.value }) {
+                if rendererPreserved && !expected.isEmpty && expected.allSatisfy({ cvarValuesMatch(actual[$0.key], $0.value) }) {
                     let output = telemetry.captureDirectory.appendingPathComponent("highperf-engine-boot.log")
                     try log.write(to: output, atomically: true, encoding: .utf8)
                     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
                     telemetry.recordEvent("DEV_HIGHPERF_ENGINE_TARGETS_ACCEPTED", payload: ["targets": expected, "target_count": expected.count,
-                        "source": output.lastPathComponent, "source_is_fresh": true, "game_rhi": "OpenGL through ANGLE", "baseline_non_target_values_preserved": true, "sustained_gameplay_60fps": "UNPROVEN"])
+                        "source": output.lastPathComponent, "source_is_fresh": true, "game_rhi": "OpenGL through ANGLE", "baseline_non_target_values_preserved": true,
+                        "pso_wait_policy": profile.experimentPreset == .psoWaitAll ? "candidate_0" : "control_1",
+                        "pso_priority_escalation": profile.experimentPreset == .psoPriorityEscalate ? "candidate_1" : "control_0",
+                        "program_lru_eviction": profile.experimentPreset == .programLRUEvict20 ? "candidate_20" : "control_0",
+                        "defer_texture_creation": profile.experimentPreset == .deferTextureCreation1 ? "candidate_1" : "control_0",
+                        "sustained_gameplay_60fps": "UNPROVEN"])
                     return
                 }
             }
@@ -4427,8 +5947,77 @@ actor TFTMACRuntimeService {
         }
     }
 
+    private func recoverGuestPCMOutput(
+        paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, attempt: Int
+    ) async {
+        guard paths.mode == .advancedDiagnostics, paths.serial == "emulator-5586",
+              paths.adbServerPort == 5041, !stopping, !highPerfOperationInProgress,
+              currentExactLayerName == nil,
+              let ownedPID = discovery?.processIdentifier,
+              Self.processMatchesLaunchedIdentity(ownedPID, paths: paths, sessionMarker: expectedSessionMarker),
+              let session = expectedSessionMarker?.split(separator: "=").last else { return }
+        highPerfOperationInProgress = true
+        defer { highPerfOperationInProgress = false }
+        var selector: String?
+        var archived = false
+        var rootRequested = false
+        do {
+            let bootSession = try Self.adb(paths: paths, ["shell", "getprop ro.boot.tftmac.session"], timeout: 5).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard bootSession == String(session),
+                  let gameBefore = try Self.readProcessID(paths: paths, packageName: "com.riotgames.league.teamfighttactics") else {
+                throw TFTMACRuntimeError("Audio recovery runtime identity changed.")
+            }
+            selector = try Self.adb(paths: paths, ["shell", "date '+%m-%d %H:%M:%S.%3N'"], timeout: 5).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard stopLogcatCapture() else { throw TFTMACRuntimeError("Audio recovery could not pause the recorder.") }
+            for name in ["logcat.raw.txt", "logcat.stderr.log"] {
+                let source = telemetry.captureDirectory.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: source.path) {
+                    try FileManager.default.moveItem(at: source, to: telemetry.captureDirectory.appendingPathComponent("audio-recovery-\(attempt)-" + name))
+                }
+            }
+            archived = true
+            telemetry.recordEvent("DEV_PCM_AUDIO_RECOVERY_STARTED", payload: [
+                "attempt": attempt, "game_pid": gameBefore,
+                "archive_prefix": "audio-recovery-\(attempt)-", "telemetry_gap_expected": true
+            ])
+            rootRequested = true
+            try await changeHighPerfADBD(paths: paths, root: true)
+            guard !stopping else { throw CancellationError() }
+            let before = try Self.adb(paths: paths, ["shell", "pidof audioserver"], timeout: 5).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try Self.adb(paths: paths, ["shell", "setprop ctl.restart audioserver"], timeout: 5)
+            var after = ""
+            for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(200))
+                after = (try? Self.adb(paths: paths, ["shell", "pidof audioserver"], timeout: 5).output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+                if !after.isEmpty && after != before { break }
+            }
+            guard !after.isEmpty, after != before,
+                  try Self.readProcessID(paths: paths, packageName: "com.riotgames.league.teamfighttactics") == gameBefore else {
+                throw TFTMACRuntimeError("Audio service restart or preserved TFT process was not verified.")
+            }
+            telemetry.recordEvent("DEV_PCM_AUDIO_SERVICE_RESTART_VERIFIED", payload: [
+                "attempt": attempt, "old_audio_pid": before, "new_audio_pid": after,
+                "game_pid": gameBefore, "audible_recovery_verified": false
+            ])
+        } catch {
+            telemetry.recordEvent("DEV_PCM_AUDIO_RECOVERY_FAILED", payload: ["attempt": attempt, "error": error.localizedDescription])
+        }
+        if rootRequested {
+            do { try await changeHighPerfADBD(paths: paths, root: false) }
+            catch { telemetry.recordEvent("DEV_PCM_AUDIO_UNROOT_FAILED", payload: ["error": error.localizedDescription]) }
+        }
+        if archived && !stopping {
+            do { try startLogcatCapture(paths: paths, telemetry: telemetry, fromSelector: selector) }
+            catch { telemetry.recordEvent("DEV_PCM_AUDIO_RECORDER_RESUME_FAILED", payload: ["error": error.localizedDescription]) }
+        }
+        if attempt == 3 {
+            telemetry.recordEvent("DEV_PCM_AUDIO_RECOVERY_LIMIT_REACHED", payload: ["maximum_attempts": 3])
+        }
+    }
+
     private func sampleRuntime(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry, emulatorPID: Int32) async throws {
         var sampleIndex = 0
+        var audioRecovery = PCMAudioRecoveryPolicy()
         while !stopping {
             try Task.checkCancellation()
             let ps = try? Self.runCommand(
@@ -4455,10 +6044,15 @@ actor TFTMACRuntimeService {
                     "error": error.localizedDescription
                 ])
             }
-            let activity = try? Self.adb(paths: paths, ["shell", "dumpsys", "activity", "activities"], timeout: 15).output
-                .split(whereSeparator: \.isNewline)
-                .first(where: { $0.contains("mResumedActivity") || $0.contains("topResumedActivity") })
-                .map(String.init) ?? "unknown"
+            let activity: String?
+            if gamePID != nil, currentExactLayerName != nil {
+                activity = "com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity"
+            } else {
+                activity = try? Self.adb(paths: paths, ["shell", "dumpsys", "activity", "activities"], timeout: 15).output
+                    .split(whereSeparator: \.isNewline)
+                    .first(where: { $0.contains("mResumedActivity") || $0.contains("topResumedActivity") })
+                    .map(String.init) ?? "unknown"
+            }
             telemetry.recordResourceSample(
                 emulatorPID: emulatorPID,
                 emulatorCPU: cpu,
@@ -4466,14 +6060,74 @@ actor TFTMACRuntimeService {
                 gamePID: gamePID,
                 topActivity: activity ?? "unknown"
             )
-            if let memoryOutput = try? Self.adb(paths: paths, ["shell", "cat", "/proc/meminfo"], timeout: 10).output,
-               let memory = Self.parseGuestMemory(memoryOutput) {
-                telemetry.recordGuestMemory(memory)
+            let combinedGuestProbe = try? Self.adb(
+                paths: paths,
+                [
+                    "shell",
+                    "cat /proc/meminfo 2>/dev/null; echo ===TFTMAC_CPUSTAT===; head -n 1 /proc/stat 2>/dev/null; echo ===TFTMAC_TASKS===; " +
+                    (gamePID.map { "cat /proc/\($0)/task/*/stat 2>/dev/null || true" } ?? "true")
+                ],
+                timeout: 10
+            ).output
+            if let combinedGuestProbe {
+                let cpuSplit = combinedGuestProbe.components(separatedBy: "===TFTMAC_CPUSTAT===")
+                let memOutput = cpuSplit.first ?? ""
+                if let memory = Self.parseGuestMemory(memOutput) {
+                    telemetry.recordGuestMemory(memory)
+                }
+                if cpuSplit.count > 1 {
+                    let taskSplit = cpuSplit[1].components(separatedBy: "===TFTMAC_TASKS===")
+                    let cpuStatLine = taskSplit.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let taskStatLines = taskSplit.count > 1 ? taskSplit[1] : ""
+                    if let gamePID {
+                        sampleTFTPipelineThreads(
+                            gamePID: gamePID,
+                            cpuStatLine: cpuStatLine,
+                            taskStatOutput: taskStatLines,
+                            hostEmulatorCPU: cpu,
+                            hostEmulatorRSSKiB: rss,
+                            telemetry: telemetry
+                        )
+                    } else {
+                        previousTaskTicksByTID.removeAll()
+                        previousTaskSampleNS = 0
+                        latestPipelineThreadTelemetry.removeAll()
+                    }
+                }
+            }
+            let rhiThreadBusy = (latestPipelineThreadTelemetry["rhi_thread_cpu_pct"] as? Double ?? 0.0) >= 70.0
+            let intervalOk = sampleIndex - lastRHIProfileSampleIndex >= 36
+            let shouldProfile = rhiProfileCaptureCount < 3 && !rhiProfileInProgress && !stopping && (
+                (rhiProfileCaptureCount == 0 && sampleIndex >= 18) ||
+                (rhiProfileCaptureCount > 0 && intervalOk && rhiThreadBusy)
+            )
+            if let gamePID, let tid = currentRHITID,
+               paths.mode == .advancedDiagnostics,
+               runtimeConfiguration.workload == .officialTFT,
+               shouldProfile {
+                lastRHIProfileSampleIndex = sampleIndex
+                rhiProfileCaptureCount += 1
+                triggerRHICallStackProfile(
+                    paths: paths,
+                    telemetry: telemetry,
+                    tid: tid,
+                    gamePID: gamePID,
+                    emulatorPID: emulatorPID,
+                    captureIndex: rhiProfileCaptureCount
+                )
             }
             telemetry.recordHostResource(Self.collectHostResourceSample())
             let logcatURL = telemetry.captureDirectory.appendingPathComponent("logcat.raw.txt")
             if let aggregate = Self.readLogcatAggregate(url: logcatURL, from: &logcatReadOffset) {
                 telemetry.recordLogcatAggregate(aggregate)
+                // Bounded: recoverGuestPCMOutput allowed only during early startup before active game surface rendering
+                let audioRecoveryEligible = sampleIndex < 36 && currentExactLayerName == nil
+                if audioRecovery.observe(errors: aggregate.pcmIOErrorCount,
+                                         nowNS: DispatchTime.now().uptimeNanoseconds,
+                                         eligible: audioRecoveryEligible) {
+                    await recoverGuestPCMOutput(paths: paths, telemetry: telemetry,
+                                                attempt: audioRecovery.attempts)
+                }
                 if aggregate.anrCount > 0 || aggregate.inputTimeoutCount > 0
                     || aggregate.fatalCount > 0 || aggregate.memoryKillCount > 0
                     || aggregate.angleWarningCount > 0 || aggregate.vulkanWarningCount > 0
@@ -4533,10 +6187,14 @@ actor TFTMACRuntimeService {
                     ])
                 }
             }
-            if sampleIndex.isMultiple(of: 6) {
+            if sampleIndex == 0 {
                 recordClockSync(paths: paths, telemetry: telemetry)
                 recordThirtySecondRuntimeReceipt(paths: paths, telemetry: telemetry)
-                if gamePID != nil, runtimeConfiguration.workload == .officialTFT {
+            } else if sampleIndex.isMultiple(of: 6) {
+                if activeCombatBenchmark != nil {
+                    recordClockSync(paths: paths, telemetry: telemetry)
+                }
+                if gamePID != nil, runtimeConfiguration.workload == .officialTFT, activeCombatBenchmark != nil {
                     recordDiagnosticSnapshot(paths: paths, telemetry: telemetry, label: "gameplay_periodic")
                     recordGraphicsPipelineSnapshot(paths: paths, telemetry: telemetry, label: "gameplay_periodic")
                 }
@@ -4544,6 +6202,295 @@ actor TFTMACRuntimeService {
             sampleIndex += 1
             try await Task.sleep(for: .seconds(5))
         }
+    }
+
+    private func sampleTFTPipelineThreads(
+        gamePID: Int32,
+        cpuStatLine: String,
+        taskStatOutput: String,
+        hostEmulatorCPU: Double?,
+        hostEmulatorRSSKiB: Int64?,
+        telemetry: TFTMACNativeTelemetry
+    ) {
+        let nowNS = DispatchTime.now().uptimeNanoseconds
+        let elapsedSeconds = previousTaskSampleNS > 0 && nowNS > previousTaskSampleNS
+            ? Double(nowNS - previousTaskSampleNS) / 1_000_000_000.0
+            : 0.0
+
+        var guestCPUBreakdown: [String: Double] = [:]
+        let cpuTokens = cpuStatLine.split(whereSeparator: \.isWhitespace)
+        if cpuTokens.first == "cpu", cpuTokens.count >= 9 {
+            let values = cpuTokens.dropFirst().prefix(8).compactMap { UInt64($0) }
+            if values.count == 8 {
+                if previousGuestCPUTicks.count == 8 {
+                    let deltas = zip(values, previousGuestCPUTicks).map { $0 >= $1 ? $0 - $1 : 0 }
+                    let totalDelta = Double(deltas.reduce(0, +))
+                    if totalDelta > 0 {
+                        guestCPUBreakdown["user_pct"] = Double(deltas[0] + deltas[1]) / totalDelta * 100.0
+                        guestCPUBreakdown["system_pct"] = Double(deltas[2]) / totalDelta * 100.0
+                        guestCPUBreakdown["idle_pct"] = Double(deltas[3]) / totalDelta * 100.0
+                        guestCPUBreakdown["iowait_pct"] = Double(deltas[4]) / totalDelta * 100.0
+                        guestCPUBreakdown["irq_pct"] = Double(deltas[5] + deltas[6]) / totalDelta * 100.0
+                        guestCPUBreakdown["steal_pct"] = Double(deltas[7]) / totalDelta * 100.0
+                    }
+                }
+                previousGuestCPUTicks = values
+            }
+        }
+
+        var currentTicksByTID: [Int32: UInt64] = [:]
+        var totalProcessTicksDelta: UInt64 = 0
+
+        var gameThreadCPU = 0.0
+        var gameThreadNice: Int = 0
+        var gameThreadCore: Int = -1
+        var gameThreadState = "?"
+
+        var renderThreadCPU = 0.0
+        var renderThreadNice: Int = 0
+        var renderThreadCore: Int = -1
+        var renderThreadState = "?"
+
+        var rhiThreadCPU = 0.0
+        var rhiThreadNice: Int = 0
+        var rhiThreadCore: Int = -1
+        var rhiThreadState = "?"
+
+        var swappyCPU = 0.0
+        var fgWorkerCPU = 0.0
+        var bgWorkerCPU = 0.0
+        var audioCPU = 0.0
+        var angleGCCPU = 0.0
+
+        for rawLine in taskStatOutput.split(whereSeparator: \.isNewline) {
+            let line = String(rawLine)
+            guard let openParen = line.firstIndex(of: "("),
+                  let closeParen = line.lastIndex(of: ")"),
+                  openParen < closeParen else { continue }
+            let tidString = line[..<openParen].trimmingCharacters(in: .whitespaces)
+            guard let tid = Int32(tidString) else { continue }
+            let comm = String(line[line.index(after: openParen)..<closeParen])
+            let afterParen = line[line.index(after: closeParen)...].split(whereSeparator: \.isWhitespace)
+            guard afterParen.count >= 37,
+                  let utime = UInt64(afterParen[11]),
+                  let stime = UInt64(afterParen[12]) else { continue }
+            let nice = Int(afterParen[16]) ?? 0
+            let core = Int(afterParen[36]) ?? -1
+            let state = String(afterParen[0])
+            let totalTicks = utime &+ stime
+            currentTicksByTID[tid] = totalTicks
+
+            let deltaTicks: UInt64
+            if let prev = previousTaskTicksByTID[tid], totalTicks >= prev {
+                deltaTicks = totalTicks - prev
+            } else {
+                deltaTicks = 0
+            }
+            totalProcessTicksDelta &+= deltaTicks
+            let threadCPUPct = elapsedSeconds > 0 ? (Double(deltaTicks) / elapsedSeconds) : 0.0
+
+            if comm == "GameThread" {
+                gameThreadCPU += threadCPUPct
+                gameThreadNice = nice
+                gameThreadCore = core
+                gameThreadState = state
+            } else if comm.hasPrefix("RenderThread") {
+                renderThreadCPU += threadCPUPct
+                renderThreadNice = nice
+                renderThreadCore = core
+                renderThreadState = state
+            } else if comm.hasPrefix("RHIThread") {
+                rhiThreadCPU += threadCPUPct
+                rhiThreadNice = nice
+                rhiThreadCore = core
+                rhiThreadState = state
+                currentRHITID = tid
+            } else if comm.hasPrefix("SwappyThread") {
+                swappyCPU += threadCPUPct
+            } else if comm.hasPrefix("Foreground Work") || comm.hasPrefix("TaskGraphThread") {
+                fgWorkerCPU += threadCPUPct
+            } else if comm.hasPrefix("Background Work") || comm.hasPrefix("Backgro-Pool") {
+                bgWorkerCPU += threadCPUPct
+            } else if comm.hasPrefix("Audio") {
+                audioCPU += threadCPUPct
+            } else if comm.hasPrefix("ANGLE-GC") {
+                angleGCCPU += threadCPUPct
+            }
+        }
+
+        previousTaskTicksByTID = currentTicksByTID
+        previousTaskSampleNS = nowNS
+
+        guard elapsedSeconds > 0, !currentTicksByTID.isEmpty else { return }
+        let totalTFTCPUPct = Double(totalProcessTicksDelta) / elapsedSeconds
+
+        var dominantBottleneck = "NONE_WITHIN_60FPS_BUDGET"
+        let maxThreadCPU = max(gameThreadCPU, renderThreadCPU, rhiThreadCPU)
+        if maxThreadCPU >= 70.0 {
+            if rhiThreadCPU >= gameThreadCPU && rhiThreadCPU >= renderThreadCPU {
+                dominantBottleneck = "UNREAL_RHI_THREAD_ANGLE_VULKAN_SUBMIT"
+            } else if gameThreadCPU >= renderThreadCPU {
+                dominantBottleneck = "UNREAL_GAME_THREAD_SIMULATION_OR_ANIMATION"
+            } else {
+                dominantBottleneck = "UNREAL_RENDER_THREAD_DRAW_DISPATCH"
+            }
+        } else if (guestCPUBreakdown["iowait_pct"] ?? 0) >= 15.0 {
+            dominantBottleneck = "GUEST_DISK_IOWAIT"
+        } else if (hostEmulatorCPU ?? 0) >= 550.0 {
+            dominantBottleneck = "HOST_QEMU_OR_GFXSTREAM_SATURATION"
+        }
+
+        let payload: [String: Any] = [
+            "game_pid": gamePID,
+            "sample_window_s": (elapsedSeconds * 100).rounded() / 100,
+            "total_tft_cpu_pct": (totalTFTCPUPct * 10).rounded() / 10,
+            "game_thread_cpu_pct": (gameThreadCPU * 10).rounded() / 10,
+            "game_thread_nice": gameThreadNice,
+            "game_thread_core": gameThreadCore,
+            "game_thread_state": gameThreadState,
+            "render_thread_cpu_pct": (renderThreadCPU * 10).rounded() / 10,
+            "render_thread_nice": renderThreadNice,
+            "render_thread_core": renderThreadCore,
+            "render_thread_state": renderThreadState,
+            "rhi_thread_cpu_pct": (rhiThreadCPU * 10).rounded() / 10,
+            "rhi_thread_nice": rhiThreadNice,
+            "rhi_thread_core": rhiThreadCore,
+            "rhi_thread_state": rhiThreadState,
+            "swappy_cpu_pct": (swappyCPU * 10).rounded() / 10,
+            "fg_worker_cpu_pct": (fgWorkerCPU * 10).rounded() / 10,
+            "bg_worker_cpu_pct": (bgWorkerCPU * 10).rounded() / 10,
+            "audio_cpu_pct": (audioCPU * 10).rounded() / 10,
+            "angle_gc_cpu_pct": (angleGCCPU * 10).rounded() / 10,
+            "guest_cpu_user_pct": ((guestCPUBreakdown["user_pct"] ?? 0) * 10).rounded() / 10,
+            "guest_cpu_system_pct": ((guestCPUBreakdown["system_pct"] ?? 0) * 10).rounded() / 10,
+            "guest_cpu_iowait_pct": ((guestCPUBreakdown["iowait_pct"] ?? 0) * 10).rounded() / 10,
+            "guest_cpu_steal_pct": ((guestCPUBreakdown["steal_pct"] ?? 0) * 10).rounded() / 10,
+            "host_emulator_cpu_pct": hostEmulatorCPU ?? NSNull(),
+            "host_emulator_rss_mib": hostEmulatorRSSKiB.map { $0 / 1024 } ?? NSNull(),
+            "dominant_bottleneck_candidate": dominantBottleneck
+        ]
+        latestPipelineThreadTelemetry = payload
+        telemetry.recordEvent("TFT_PIPELINE_THREAD_TELEMETRY", payload: payload)
+    }
+
+    private func triggerRHICallStackProfile(
+        paths: TFTMACRuntimePaths,
+        telemetry: TFTMACNativeTelemetry,
+        tid: Int32,
+        gamePID: Int32,
+        emulatorPID: Int32,
+        captureIndex: Int
+    ) {
+        guard !rhiProfileInProgress, !stopping else { return }
+        rhiProfileInProgress = true
+        telemetry.recordEvent("RHI_PROFILE_CAPTURE_STARTED", payload: [
+            "tid": tid,
+            "game_pid": gamePID,
+            "emulator_pid": emulatorPID,
+            "capture_index": captureIndex,
+            "duration_seconds": 5,
+            "frequency_hz": 100,
+            "mechanism": "dual_host_guest_sampler"
+        ])
+        Task.detached(priority: .utility) { [weak self, paths, telemetry] in
+            defer {
+                Task { [weak self] in
+                    await self?.finishRHIProfile()
+                }
+            }
+            let remoteData = "/data/local/tmp/tftmac-rhi-\(tid)-\(captureIndex).data"
+            let remoteReport = "/data/local/tmp/tftmac-rhi-\(tid)-\(captureIndex).txt"
+            let remoteStderr = "/data/local/tmp/tftmac-rhi-\(tid)-\(captureIndex).err"
+            let localDataURL = telemetry.captureDirectory.appendingPathComponent("rhi-callstack-\(captureIndex).data")
+            let localReportURL = telemetry.captureDirectory.appendingPathComponent("rhi-callstack-report-\(captureIndex).txt")
+            let localStderrURL = telemetry.captureDirectory.appendingPathComponent("rhi-simpleperf-stderr-\(captureIndex).txt")
+            let localHostSampleURL = telemetry.captureDirectory.appendingPathComponent("qemu-host-sample-\(captureIndex).txt")
+
+            let hostSampleProcess = Process()
+            hostSampleProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+            hostSampleProcess.arguments = ["\(emulatorPID)", "5", "-file", localHostSampleURL.path]
+            try? hostSampleProcess.run()
+
+            let wchan = (try? Self.adb(paths: paths, ["shell", "cat /proc/\(gamePID)/task/\(tid)/wchan 2>/dev/null || true"], timeout: 5).output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? "unknown"
+
+            let recordCmd = "simpleperf record -e cpu-clock -t \(tid) -g -f 100 --duration 5 -o \(remoteData) 2>\(remoteStderr)"
+            _ = try? Self.adb(paths: paths, ["shell", recordCmd], timeout: 20)
+
+            let reportCmd = "simpleperf report --sort dso,symbol -i \(remoteData) -o \(remoteReport) 2>>\(remoteStderr)"
+            _ = try? Self.adb(paths: paths, ["shell", reportCmd], timeout: 15)
+
+            _ = try? Self.adb(paths: paths, ["pull", remoteData, localDataURL.path], timeout: 15)
+            _ = try? Self.adb(paths: paths, ["pull", remoteReport, localReportURL.path], timeout: 15)
+            _ = try? Self.adb(paths: paths, ["pull", remoteStderr, localStderrURL.path], timeout: 10)
+
+            _ = try? Self.adb(paths: paths, ["shell", "rm -f \(remoteData) \(remoteReport) \(remoteStderr)"], timeout: 5)
+
+            hostSampleProcess.waitUntilExit()
+
+            let reportText = (try? String(contentsOf: localReportURL, encoding: .utf8)) ?? ""
+            let summary = Self.parseSimpleperfReport(reportText)
+            let stderrText = (try? String(contentsOf: localStderrURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            telemetry.recordEvent("RHI_PROFILE_CAPTURE_COMPLETED", payload: [
+                "tid": tid,
+                "game_pid": gamePID,
+                "capture_index": captureIndex,
+                "wchan": wchan,
+                "dso_breakdown": summary.dsoPercentages,
+                "top_symbols": summary.topSymbols.map { ["percent": $0.percent, "dso": $0.dso, "symbol": $0.symbol] },
+                "raw_report_file": localReportURL.lastPathComponent,
+                "host_sample_file": localHostSampleURL.lastPathComponent,
+                "has_valid_samples": summary.sampleCount > 0,
+                "sample_count": summary.sampleCount,
+                "stderr_snippet": String(stderrText.prefix(300))
+            ])
+        }
+    }
+
+    private func finishRHIProfile() {
+        rhiProfileInProgress = false
+    }
+
+    nonisolated static func parseSimpleperfReport(_ text: String) -> SimpleperfReportSummary {
+        var dsoPercentages: [String: Double] = [:]
+        var topSymbols: [SimpleperfSymbolEntry] = []
+        var sampleCount = 0
+
+        for line in text.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty,
+                  !trimmed.hasPrefix("Cmdline"),
+                  !trimmed.hasPrefix("Arch"),
+                  !trimmed.hasPrefix("Event"),
+                  !trimmed.hasPrefix("Sample"),
+                  !trimmed.hasPrefix("Overhead"),
+                  !trimmed.hasPrefix("Total") else { continue }
+            let tokens = trimmed.split(whereSeparator: \.isWhitespace)
+            guard tokens.count >= 2, tokens[0].contains("%") else { continue }
+            let pctStr = tokens[0].replacingOccurrences(of: "%", with: "")
+            guard let pct = Double(pctStr) else { continue }
+            sampleCount += 1
+            let dsoIndex: Int
+            if tokens.count > 2 && tokens[1].contains("%") {
+                dsoIndex = 2
+            } else {
+                dsoIndex = 1
+            }
+            guard tokens.count > dsoIndex else { continue }
+            let dso = String(tokens[dsoIndex])
+            let symbolTokens = tokens.dropFirst(dsoIndex + 1)
+            let symbol = symbolTokens.isEmpty ? "unknown" : symbolTokens.joined(separator: " ")
+
+            dsoPercentages[dso] = (dsoPercentages[dso] ?? 0.0) + pct
+            if topSymbols.count < 15 {
+                topSymbols.append(SimpleperfSymbolEntry(percent: pct, dso: dso, symbol: symbol))
+            }
+        }
+        var roundedDSO: [String: Double] = [:]
+        for (k, v) in dsoPercentages {
+            roundedDSO[k] = (v * 10).rounded() / 10
+        }
+        return SimpleperfReportSummary(sampleCount: sampleCount, dsoPercentages: roundedDSO, topSymbols: topSymbols)
     }
 
     private func observeGameProcess(
@@ -4575,6 +6522,10 @@ actor TFTMACRuntimeService {
             ])
             currentGamePID = nil
             currentExactLayerName = nil
+            currentRHITID = nil
+            rhiProfileCaptureCount = 0
+            lastRHIProfileSampleIndex = 0
+            rhiProfileInProgress = false
             consecutiveBadGraphicsWindows = 0
             riotProcessStartedNS = 0
             riotLoginSplashTapAttempted = false
@@ -4612,9 +6563,9 @@ actor TFTMACRuntimeService {
                 "target_fps": profile.refreshHz
             ])
             if runtimeConfiguration.workload == .officialTFT {
-                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-20", "-p", "\(observedGamePID)"], timeout: 10)
-                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(observedGamePID):-20", source: "renice", confidence: "DIRECT")
-                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: observedGamePID), "nice": -20])
+                _ = try? Self.adb(paths: paths, ["shell", "renice", "-n", "-10", "-p", "\(observedGamePID)"], timeout: 10)
+                telemetry.recordReceipt(key: "tft_process_reniced", value: "\(observedGamePID):-10", source: "renice", confidence: "DIRECT")
+                telemetry.recordEvent("TFT_PROCESS_PRIORITY_BOOSTED", payload: ["pid": NSNumber(value: observedGamePID), "nice": -10])
                 recordGraphicsPipelineSnapshot(
                     paths: paths,
                     telemetry: telemetry,
@@ -4860,7 +6811,7 @@ actor TFTMACRuntimeService {
             return brownButton(buttonBody.0, buttonBody.1, buttonBody.2)
                 && brownButton(buttonUpper.0, buttonUpper.1, buttonUpper.2)
                 && darkCreateButton(createBody.0, createBody.1, createBody.2)
-                && background.2 > background.0 + 60
+                && Int(background.2) > Int(background.0) + 60
         } catch {
             return false
         }
@@ -4933,10 +6884,18 @@ actor TFTMACRuntimeService {
         telemetry: TFTMACNativeTelemetry
     ) async {
         guard runtimeConfiguration.selection.mode == .advancedDiagnostics,
-              runtimeConfiguration.workload == .officialTFT else { return }
+              runtimeConfiguration.workload == .officialTFT,
+              currentGamePID != nil else { return }
 
         let nowNS = DispatchTime.now().uptimeNanoseconds
-        if lastRiotANRProbeNS != 0, nowNS - lastRiotANRProbeNS < 750_000_000 { return }
+        let inStartupLoginWindow = riotProcessStartedNS != 0 && (nowNS &- riotProcessStartedNS) < 120_000_000_000
+        if !inStartupLoginWindow && !riotLoginManuallyRequested && currentExactLayerName != nil {
+            return
+        }
+        let probeIntervalNS: UInt64 = (inStartupLoginWindow || riotLoginManuallyRequested)
+            ? 2_000_000_000
+            : 30_000_000_000
+        if lastRiotANRProbeNS != 0, (nowNS &- lastRiotANRProbeNS) < probeIntervalNS { return }
         lastRiotANRProbeNS = nowNS
 
         guard let windows = try? Self.adb(
@@ -4967,30 +6926,32 @@ actor TFTMACRuntimeService {
             ])
         }
 
-        let splashDetected = await Task.detached(priority: .utility) {
-            Self.riotSignInSplashDetected(paths: paths)
-        }.value
         if !loginFocused,
            !riotLoginSplashTapAttempted,
            currentGamePID != nil,
-           riotProcessStartedNS != 0,
-           nowNS - riotProcessStartedNS < 120_000_000_000,
-           splashDetected {
-            let x = profile.width / 2
-            let y = Int((Double(profile.height) * 0.6574).rounded())
-            let result = try? Self.adb(
-                paths: paths,
-                ["shell", "input", "tap", "\(x)", "\(y)"],
-                timeout: 10
-            )
-            riotLoginSplashTapAttempted = true
-            telemetry.recordEvent("RIOT_LOGIN_SPLASH_SIGN_IN_TAPPED", payload: [
-                "x": x,
-                "y": y,
-                "command_status": result?.status ?? -1,
-                "credential_data_observed": false,
-                "mechanism": "UNREAL_SIGN_IN_SPLASH_TO_WEBVIEW"
-            ])
+           inStartupLoginWindow,
+           (lastRiotSplashProbeNS == 0 || (nowNS &- lastRiotSplashProbeNS) >= 5_000_000_000) {
+            lastRiotSplashProbeNS = nowNS
+            let splashDetected = await Task.detached(priority: .utility) {
+                Self.riotSignInSplashDetected(paths: paths)
+            }.value
+            if splashDetected {
+                let x = profile.width / 2
+                let y = Int((Double(profile.height) * 0.6574).rounded())
+                let result = try? Self.adb(
+                    paths: paths,
+                    ["shell", "input", "tap", "\(x)", "\(y)"],
+                    timeout: 10
+                )
+                riotLoginSplashTapAttempted = true
+                telemetry.recordEvent("RIOT_LOGIN_SPLASH_SIGN_IN_TAPPED", payload: [
+                    "x": x,
+                    "y": y,
+                    "command_status": result?.status ?? -1,
+                    "credential_data_observed": false,
+                    "mechanism": "UNREAL_SIGN_IN_SPLASH_TO_WEBVIEW"
+                ])
+            }
         }
 
         if !loginFocused {
@@ -5019,6 +6980,16 @@ actor TFTMACRuntimeService {
         var lastBoundaryNS = DispatchTime.now().uptimeNanoseconds
         var lastCollectorErrorEventNS: UInt64 = 0
         var previousExactLayerName: String?
+        var consecutiveZeroFrameWindows = 0
+        let diagnosticFramePollDeadline = runtimeConfiguration.selection.mode == .advancedDiagnostics
+            && ProcessInfo.processInfo.environment["TFTMAC_DEV_FRAME_POLL_DEADLINE"] == "1"
+        if diagnosticFramePollDeadline {
+            telemetry.recordEvent("DEV_DIAGNOSTIC_FRAME_POLL_DEADLINE_ACTIVE", payload: [
+                "target_period_ms": 1000,
+                "minimum_overrun_sleep_ms": 1,
+                "coverage_requires_actual_history_verification": true
+            ])
+        }
 
         while !stopping {
             try Task.checkCancellation()
@@ -5035,7 +7006,9 @@ actor TFTMACRuntimeService {
                 }
                 await maintainRiotLoginReliability(paths: paths, telemetry: telemetry)
                 let layerStatus: GameFrameTelemetryStatus
-                if sampler.selectedLayer == nil {
+                if currentGamePID == nil {
+                    layerStatus = sampler.selectedLayer == nil ? .unavailable(.noTFTSurfaceView) : sampler.updateLayerList("")
+                } else if sampler.selectedLayer == nil {
                     let layers = try Self.adb(
                         paths: paths,
                         ["shell", "dumpsys", "SurfaceFlinger", "--list"],
@@ -5117,14 +7090,20 @@ actor TFTMACRuntimeService {
                     refreshPeriodNS: update.refreshPeriodNS
                 )
                 if let window = update.window {
+                    if window.frameCount == 0 {
+                        consecutiveZeroFrameWindows += 1
+                    } else {
+                        consecutiveZeroFrameWindows = 0
+                    }
                     if window.frameCount == 0, runtimeConfiguration.workload == .officialTFT {
-                        let layers = try? Self.adb(
-                            paths: paths,
-                            ["shell", "dumpsys", "SurfaceFlinger", "--list"],
-                            timeout: 10
-                        ).output
-                        if let layers {
-                            let newStatus = sampler.updateLayerList(layers)
+                        if consecutiveZeroFrameWindows % 5 == 0 {
+                            let layers = try? Self.adb(
+                                paths: paths,
+                                ["shell", "dumpsys", "SurfaceFlinger", "--list"],
+                                timeout: 10
+                            ).output
+                            if let layers {
+                                let newStatus = sampler.updateLayerList(layers)
                             if case .unavailable(let reason) = newStatus {
                                 consecutiveBadGraphicsWindows = 0
                                 if let lostLayer = currentExactLayerName {
@@ -5153,7 +7132,8 @@ actor TFTMACRuntimeService {
                             }
                         }
                     }
-                    await gameFrame(window)
+                }
+                await gameFrame(window)
                     latestGameFrameWindow = window
                     ingestCombatFrameUpdate(update, window: window)
                     lastBoundaryNS = window.endedMonotonicNS
@@ -5182,6 +7162,8 @@ actor TFTMACRuntimeService {
                             )
                             : nil
                         consecutiveBadGraphicsWindows = 0
+                        let dominantCandidate = (latestPipelineThreadTelemetry["dominant_bottleneck_candidate"] as? String)
+                            ?? "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE"
                         telemetry.recordEvent("GAME_FRAME_DEGRADATION", payload: [
                             "evidence_level": "SURFACEFLINGER_ACTUAL_PRESENT",
                             "effective_fps": window.effectiveFPS,
@@ -5193,7 +7175,8 @@ actor TFTMACRuntimeService {
                             "missed_vsync_equivalents": window.missedVsyncEquivalents,
                             "trace_sequence": traceSequence.map { NSNumber(value: $0) } ?? NSNull(),
                             "first_observed_divergent_boundary": "TFT_SURFACE_ACTUAL_PRESENT",
-                            "cause": "UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE"
+                            "cause": dominantCandidate,
+                            "latest_thread_telemetry": latestPipelineThreadTelemetry
                         ])
                         recordGraphicsPipelineIncident(
                             trigger: "AUTO_GAME_FRAME_DEGRADATION",
@@ -5268,7 +7251,13 @@ actor TFTMACRuntimeService {
             // DEV must poll within SurfaceFlinger's 127-frame retention at 60Hz.
             let pollSeconds = runtimeConfiguration.selection.mode == .advancedDiagnostics
                 || sampler.selectedLayer == nil ? 1 : 2
-            try await Task.sleep(for: .seconds(pollSeconds))
+            if diagnosticFramePollDeadline {
+                let nowNS = DispatchTime.now().uptimeNanoseconds
+                let deadlineNS = observedNS + 1_000_000_000
+                try await Task.sleep(nanoseconds: nowNS < deadlineNS ? deadlineNS - nowNS : 1_000_000)
+            } else {
+                try await Task.sleep(for: .seconds(pollSeconds))
+            }
         }
     }
 
@@ -5862,6 +7851,26 @@ actor TFTMACRuntimeService {
         }
     }
 
+    private func trimGuestBackgroundProcesses(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) {
+        let backgroundPackages = [
+            "com.google.android.apps.photos",
+            "com.android.camera2",
+            "com.google.android.deskclock",
+            "com.android.printspooler",
+            "com.google.android.projection.gearhead",
+            "com.google.android.onetimeinitializer",
+            "com.android.managedprovisioning",
+            "com.android.imsserviceentitlement",
+            "com.android.devicediagnostics"
+        ]
+        let stopCommands = backgroundPackages.map { "am force-stop \($0) 2>/dev/null || true" }.joined(separator: "; ")
+        let fullCmd = "\(stopCommands); am kill-all 2>/dev/null || true"
+        _ = try? Self.adb(paths: paths, ["shell", fullCmd], timeout: 10)
+        telemetry.recordEvent("GUEST_BACKGROUND_APPS_TRIMMED", payload: [
+            "packages_stopped": backgroundPackages.count
+        ])
+    }
+
     private func recordThirtySecondRuntimeReceipt(paths: TFTMACRuntimePaths, telemetry: TFTMACNativeTelemetry) {
         let geometry = try? Self.adb(
             paths: paths,
@@ -5934,6 +7943,13 @@ actor TFTMACRuntimeService {
         )
         let emulatorText = stdout + "\n" + stderr
         let lower = emulatorText.lowercased()
+        let engineLog = [
+            "highperf-engine-boot.log",
+            "riot-defaults-engine-boot.log"
+        ].map { telemetry.captureDirectory.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .map { Self.readTailText($0, maximumBytes: 16 * 1024 * 1024) }
+            .joined(separator: "\n")
         let layerOutput = try? Self.adb(
             paths: paths,
             ["shell", "dumpsys", "SurfaceFlinger", "--list"],
@@ -5965,8 +7981,9 @@ actor TFTMACRuntimeService {
             "(?i)Created VkInstance:[^\\n]*application:'TFT'[^\\n]*engine:'(UnrealEngine[^']*)'",
             in: emulatorText
         )
-        let gameGraphicsAPI = unrealEngine == nil ? "UNKNOWN" : "UNREAL_ENGINE_VULKAN"
-        let gameGraphicsAPIConfidence = unrealEngine == nil ? "UNKNOWN" : "DIRECT_VKINSTANCE_RUNTIME_LOG"
+        let selectedRHI = TFTSelectedGameRHIParser.parse(engineLog)
+        let gameGraphicsAPI = selectedRHI.rawValue
+        let gameGraphicsAPIConfidence = selectedRHI.confidence
         let emulatorVersion = Self.firstRegexText(
             "(?i)Android emulator version\\s+([^\\s]+)",
             in: emulatorText
@@ -6032,7 +8049,8 @@ actor TFTMACRuntimeService {
             ? "PACKAGE_PROCESS_ANGLE_INSTANCE_OBSERVED"
             : "NOT_OBSERVED"
         let moltenVKConfiguration = "{\"MVK_CONFIG_FAST_MATH_ENABLED\":\"1\",\"MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE\":\"64\",\"MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS\":\"0\",\"confidence\":\"REQUESTED_LAUNCH_ENVIRONMENT\"}"
-        let completeDirectPath = unrealEngine != nil
+        let completeDirectPath = selectedRHI != .unknown
+            && unrealEngine != nil
             && exactLayerName != nil
             && gfxstreamActive
             && moltenVKActive
@@ -6041,7 +8059,9 @@ actor TFTMACRuntimeService {
             && nativeSwapchain == true
             && metalDevice != nil
         let pipelinePath = completeDirectPath
-            ? "RUN_OBSERVED_COMPONENT_CHAIN:UNREAL_VULKAN->GFXSTREAM->HOST_VULKAN_MOLTENVK->METAL;OUTPUT:EMULATOR_IMAGE_STREAM->TFTMAC_METAL_PRESENTER;NOT_FRAME_CORRELATED"
+            ? (selectedRHI == .openGLESAngle
+                ? "RUN_OBSERVED_COMPONENT_CHAIN:UNREAL_OPENGL_ES->ANGLE_VULKAN->GFXSTREAM->HOST_VULKAN_MOLTENVK->METAL;OUTPUT:EMULATOR_IMAGE_STREAM->TFTMAC_METAL_PRESENTER;NOT_FRAME_CORRELATED"
+                : "RUN_OBSERVED_COMPONENT_CHAIN:UNREAL_VULKAN->GFXSTREAM->HOST_VULKAN_MOLTENVK->METAL;OUTPUT:EMULATOR_IMAGE_STREAM->TFTMAC_METAL_PRESENTER;NOT_FRAME_CORRELATED")
             : "UNKNOWN_INCOMPLETE_RUNTIME_RECEIPT"
         let receipt = GraphicsStackReceipt(fields: [
             "tft_package_version": GraphicsStackReceiptField(
@@ -6061,8 +8081,13 @@ actor TFTMACRuntimeService {
             ),
             "game_graphics_api": GraphicsStackReceiptField(
                 value: gameGraphicsAPI,
-                source: "emulator VkInstance runtime log for application TFT",
+                source: "fresh TFT engine boot log RHI selection",
                 confidence: gameGraphicsAPIConfidence
+            ),
+            "selected_game_rhi": GraphicsStackReceiptField(
+                value: selectedRHI.rawValue,
+                source: "fresh TFT engine boot log RHI selection",
+                confidence: selectedRHI.confidence
             ),
             "angle": GraphicsStackReceiptField(
                 value: angleState,
@@ -6337,6 +8362,7 @@ actor TFTMACRuntimeService {
             var angleWarning = 0
             var vulkanWarning = 0
             var audioError = 0
+            var pcmIOError = 0
             for rawLine in lines {
                 let line = String(rawLine)
                 let lower = line.lowercased()
@@ -6352,13 +8378,14 @@ actor TFTMACRuntimeService {
                 if lower.contains("angle") && warningOrError { angleWarning += 1 }
                 if lower.contains("vulkan") && warningOrError { vulkanWarning += 1 }
                 if lower.contains("pcm_writei") && (warningOrError || lower.contains("underrun")) { audioError += 1 }
+                if PCMAudioRecoveryPolicy.isPCMIOFailure(line) { pcmIOError += 1 }
             }
             return LogcatAggregate(
                 byteStart: actualStart, byteEnd: end, skippedBytes: skipped, lineCount: lines.count,
                 anrCount: anr, inputTimeoutCount: inputTimeout, fatalCount: fatal,
                 memoryKillCount: memoryKill, choreographerSkipCount: choreographer,
                 angleWarningCount: angleWarning, vulkanWarningCount: vulkanWarning,
-                audioErrorCount: audioError
+                audioErrorCount: audioError, pcmIOErrorCount: pcmIOError
             )
         } catch {
             return nil
@@ -6661,6 +8688,7 @@ actor TFTMACRuntimeService {
         environment["ANDROID_SDK_ROOT"] = paths.sdkRoot.path
         environment["ANDROID_AVD_HOME"] = paths.avdHome.path
         environment["ANDROID_ADB_SERVER_PORT"] = "\(paths.adbServerPort)"
+        environment["ADB_MDNS"] = "0"
         environment["ADB_MDNS_AUTO_CONNECT"] = ""
         return environment
     }

@@ -34,7 +34,7 @@
     },
     "dev_driver_startup_transaction": "IMPLEMENTED_PENDING_LIVE_VALIDATION"
   },
-  "exchange_directory": "/Volumes/MAC MINI M4/TFTMAC/DriverBuildExchange",
+  "exchange_directory": "/Volumes/MAC MINI M4/TFTDEV-SSOT/evidence/historical/driver-build-exchange",
   "acceptance_scope": "Historical original reuse/capture builds; does not apply conformance or replay results to the later instrumented candidate.",
   "latest_candidate": {
     "variant": "observed-reuse-cache-r14",
@@ -45,5 +45,6 @@
     "gameplay_optimization_exercised": false,
     "continuous_60_fps_proven": false,
     "receipt": "../../docs/receipts/2026-09-06-dev-r17/sha256-receipts.json"
-  }
+  },
+  "retirement_state": "HISTORICAL_CURATED_COPY; original DriverBuildExchange runtime data retired 2026-09-27"
 }

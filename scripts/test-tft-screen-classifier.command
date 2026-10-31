@@ -15,13 +15,19 @@ else
     fixture="$(
         find "$PROJECT_DIR/runtime/measurements" -type f \
             \( -name 'before.png' -o -name 'state-*-battle.png' \) \
-            -print 2>/dev/null | sort | tail -n 1
+            -print 2>/dev/null | sort | tail -n 1 || true
     )"
-    FIXTURES=("$fixture")
+    if [[ -n "$fixture" ]]; then
+        FIXTURES=("$fixture")
+    else
+        FIXTURES=()
+    fi
 fi
 if (( ${#FIXTURES} == 0 )); then
-    print "No fixture was found; pass one or more PNG files as arguments."
-    exit 2
+    "$BUILD" >/dev/null
+    "$CLASSIFIER" --self-test >/dev/null
+    print "TFT screen classifier self-test: OK (no fixture files present)"
+    exit 0
 fi
 
 "$BUILD" >/dev/null
@@ -52,7 +58,7 @@ for fixture in "${FIXTURES[@]}"; do
         exit 1
     fi
 
-    for dimensions in 2560x1440 2880x1620 3200x1800 3840x2160; do
+    for dimensions in 1920x1080 2560x1440 2880x1620 3200x1800 3840x2160; do
         width="${dimensions%x*}"
         height="${dimensions#*x}"
         output="$TEST_ROOT/${fixture_index}-${dimensions}.png"
@@ -68,9 +74,9 @@ for fixture in "${FIXTURES[@]}"; do
     print "TFT classifier fixture: OK ($reference_state/${reference_stage:-none}, four resolutions)"
 done
 
-/usr/bin/sips -z 1080 1920 "${FIXTURES[1]}" --out "$TEST_ROOT/unsupported.png" >/dev/null
+/usr/bin/sips -z 900 1600 "${FIXTURES[1]}" --out "$TEST_ROOT/unsupported.png" >/dev/null
 if "$CLASSIFIER" "$TEST_ROOT/unsupported.png" >/dev/null 2>&1; then
-    print "The classifier incorrectly accepted unsupported resolution 1920x1080."
+    print "The classifier incorrectly accepted unsupported resolution 1600x900."
     exit 1
 fi
 

@@ -9,8 +9,8 @@ authority:
   ssot_version: "4.0-build8-reconciliation"
   documentation_authority: "facts.md > project.md > CHANGELOG.md > benchmark.md + dev.md + supporting references"
   authority_inputs: "ssot/AUTHORITY_INPUTS.sha256"
-  runtime_authority_sha256: "3607fef47c7ca0b7ebd3ced416e0b3eb9e7dd37143624b97da2670ee283c7169"
-  authority_inputs_sha256: "2479c324e137d92e6cecff1a4a13e346f86efe696e054f480a7b4529f39685a8"
+  runtime_authority_sha256: "1bf8d19b03aea2400dde9ba62c33c561f0bb18f1ff9b046188807cc8a84139f2"
+  authority_inputs_sha256: "d6bbc217a5915d723341f4b5a684c5d762fdab767b4cab9604689d62c2d5cc5d"
   zengate_version: "2.3"
   zengate_score: 95.8
   zengate_result: "PASS"
@@ -124,7 +124,7 @@ current_dev_working:
   gpu: "host"
   audio: "coreaudio"
   selected_game_rhi: "OPENGL_ES_ANGLE"
-  official_tft_version: "18.1-5423749"
+  official_tft_version: "18.3-5530794"
   official_tft_version_code: 8423749
   cache_multifile: true
   angle_enabled: "exposeNonConformant*:exposeES32ForTesting"
@@ -188,7 +188,7 @@ diagnostic_runtime:
   commit: "c8aa26ebaa5b977965eb165ad8aac5c98408469f"
   status: "isolated_non_comparable_diagnostic_eligibility_only"
   normal_play_authority: "stock_build8"
-  mode_registry_sha256: "b2a8080248900c27efdaac7fe3825ccb919188d43072af7a870bfc49c3e0e96f"
+  mode_registry_sha256: "f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369"
   latest_capture: "2026-09-02T07-46-40.998Z-8260f517-a8a4-4d5e-918f-723b81de32f4"
   adb_acceptance: "PASS_DEVICE_USER_DEFAULT_KEY"
   automatic_capture_start: PASS

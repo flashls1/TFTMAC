@@ -3,6 +3,84 @@ import CryptoKit
 import XCTest
 
 final class TFTMACGate1Tests: XCTestCase {
+    func testPCMAudioRecoveryRejectsHealthySporadicAndStaleSamples() {
+        var policy = PCMAudioRecoveryPolicy()
+        XCTAssertFalse(policy.observe(errors: 0, nowNS: 0, eligible: true))
+        XCTAssertFalse(policy.observe(errors: 50, nowNS: 5_000_000_000, eligible: true))
+        XCTAssertFalse(policy.observe(errors: 1, nowNS: 10_000_000_000, eligible: true))
+        XCTAssertFalse(policy.observe(errors: 50, nowNS: 15_000_000_000, eligible: true))
+        XCTAssertFalse(policy.observe(errors: 50, nowNS: 40_000_000_000, eligible: true))
+        XCTAssertEqual(policy.attempts, 0)
+    }
+
+    func testPCMAudioRecoveryRequiresEligibilityAndSustainedErrors() {
+        var policy = PCMAudioRecoveryPolicy()
+        XCTAssertFalse(policy.observe(errors: 100, nowNS: 0, eligible: false))
+        XCTAssertFalse(policy.observe(errors: 100, nowNS: 5_000_000_000, eligible: true))
+        XCTAssertTrue(policy.observe(errors: 100, nowNS: 10_000_000_000, eligible: true))
+        XCTAssertEqual(policy.attempts, 1)
+    }
+
+    func testPCMAudioRecoveryHasCooldownAndSessionLimit() {
+        var policy = PCMAudioRecoveryPolicy()
+        var recoverySeconds: [Int] = []
+        for seconds in stride(from: 0, through: 600, by: 5) {
+            if policy.observe(errors: 50, nowNS: UInt64(seconds) * 1_000_000_000, eligible: true) {
+                recoverySeconds.append(seconds)
+            }
+        }
+        XCTAssertEqual(recoverySeconds, [5, 65, 125])
+        XCTAssertEqual(policy.attempts, 3)
+    }
+
+    func testPCMAudioRecoveryMatchesObservedHALFailureOnly() {
+        let real = "09-20 16:46:37.175 527 3650 W android.hardware.audio@7.1-impl.ranchu: pcmWrite:259 pcm_writei failed with 'cannot read/write stream data: I/O error' (-1)"
+        XCTAssertTrue(PCMAudioRecoveryPolicy.isPCMIOFailure(real))
+        XCTAssertFalse(PCMAudioRecoveryPolicy.isPCMIOFailure("AudioTrack: underrun"))
+        XCTAssertFalse(PCMAudioRecoveryPolicy.isPCMIOFailure(real.replacingOccurrences(of: "I/O error", with: "Broken pipe")))
+        XCTAssertFalse(PCMAudioRecoveryPolicy.isPCMIOFailure(real.replacingOccurrences(of: "android.hardware.audio@7.1-impl.ranchu:", with: "OtherTag:")))
+    }
+
+    func testRiotInstallerAuthorityParsesGooglePlayAndRejectsNull() {
+        XCTAssertEqual(
+            RiotPackageAuthority.installerPackageName(from: "installerPackageName=com.android.vending\ninitiatingPackageName=com.android.vending"),
+            "com.android.vending"
+        )
+        XCTAssertNil(RiotPackageAuthority.installerPackageName(from: "installerPackageName=null\ninitiatingPackageName=com.android.shell"))
+        XCTAssertEqual(
+            RiotPackageAuthority.installerPackageName(from: "package:com.riotgames.league.teamfighttactics  installer=com.android.vending"),
+            "com.android.vending"
+        )
+    }
+
+    func testGooglePlayListingStateDetectsUpdateAndCurrent() {
+        XCTAssertEqual(RiotPackageAuthority.googlePlayListingState(from: #"<node text="Update" bounds="[10,20][110,80]"/>"#), .updateAvailable)
+        XCTAssertEqual(RiotPackageAuthority.googlePlayListingState(from: #"<node text="Open" bounds="[10,20][110,80]"/>"#), .current)
+    }
+
+    func testGooglePlayListingStatePrioritizesAuthentication() {
+        let xml = #"<node text="Sign in" bounds="[0,0][10,10]"/><node text="Update" bounds="[10,20][110,80]"/>"#
+        XCTAssertEqual(RiotPackageAuthority.googlePlayListingState(from: xml), .authRequired)
+    }
+
+    func testGooglePlayListingStateRecognizesAuthenticationRequiredMessage() {
+        let xml = #"<node text="Authentication is required. You need to sign in to your Google Account." bounds="[0,0][500,80]"/>"#
+        XCTAssertEqual(RiotPackageAuthority.googlePlayListingState(from: xml), .authRequired)
+    }
+
+    func testGooglePlayListingStateKeepsAuthenticationDistinctFromCurrent() {
+        let xml = #"<node text="Authentication is required. You need to sign in to your Google Account."/><node text="Try again"/>"#
+        XCTAssertNotEqual(RiotPackageAuthority.googlePlayListingState(from: xml), .current)
+        XCTAssertEqual(RiotPackageAuthority.googlePlayListingState(from: xml), .authRequired)
+    }
+
+    func testGooglePlayActionCenterUsesExactUpdateBounds() {
+        let xml = #"<node text="Update" content-desc="" bounds="[10,20][110,80]"/>"#
+        let point = RiotPackageAuthority.actionCenter(in: xml, label: "Update")
+        XCTAssertEqual(point?.x, 60)
+        XCTAssertEqual(point?.y, 50)
+    }
+
     func testInterruptedAVDRecoveryRestoresAndAllowsIdempotentNextLaunch() throws {
         try withInterruptedAVD { config, state, captures, original, _ in
             let hash = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
@@ -106,6 +184,54 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(contact?.pressure, 1)
         XCTAssertEqual(release?.pressure, 0)
         XCTAssertNil(sequence.release(at: nil))
+    }
+
+    func testDEV1440pGeometryPreservesControlAndRejectsScaledOrIncompleteFrames() throws {
+        let dev = FrameContract.display(forRuntimeMode: "advanced_diagnostics")
+        XCTAssertEqual(dev.width, 2560)
+        XCTAssertEqual(dev.height, 1440)
+        XCTAssertEqual(dev.densityDPI, 416)
+        for mode in [nil, "control", "candidate", "unknown"] as [String?] {
+            let control = FrameContract.display(forRuntimeMode: mode)
+            XCTAssertEqual(control.width, 1920)
+            XCTAssertEqual(control.height, 1080)
+            XCTAssertEqual(control.densityDPI, 320)
+        }
+        XCTAssertNoThrow(try FrameContract.validate(width: 2560, height: 1440, byteCount: 14_745_600, runtimeMode: "advanced_diagnostics"))
+        XCTAssertThrowsError(try FrameContract.validate(width: 2560, height: 1440, byteCount: 14_745_599, runtimeMode: "advanced_diagnostics"))
+        XCTAssertThrowsError(try FrameContract.validate(width: 1600, height: 900, byteCount: 5_760_000, runtimeMode: "advanced_diagnostics"))
+        XCTAssertThrowsError(try FrameContract.validate(width: 2560, height: 1440, byteCount: 14_745_600, runtimeMode: "control"))
+    }
+
+    func testDEVAdvancedDiagnosticsAcceptsExplicit1080pOverrideAtFixedDensity() throws {
+        let display = try FrameContract.validatedDisplay(
+            forRuntimeMode: "advanced_diagnostics",
+            requestedOverride: "1920x1080"
+        )
+        XCTAssertEqual(display.width, 1920)
+        XCTAssertEqual(display.height, 1080)
+        XCTAssertEqual(display.densityDPI, 416)
+        XCTAssertNoThrow(try FrameContract.validate(
+            width: 1920,
+            height: 1080,
+            byteCount: 1920 * 1080 * 4,
+            runtimeMode: "advanced_diagnostics",
+            requestedOverride: "1920x1080"
+        ))
+    }
+
+    func testDEVAdvancedDiagnosticsRejectsUnsupportedDisplayOverride() {
+        XCTAssertThrowsError(try FrameContract.validatedDisplay(
+            forRuntimeMode: "advanced_diagnostics",
+            requestedOverride: "1600x900"
+        )) { error in
+            XCTAssertEqual(error as? FrameContractError, .invalidDisplayOverride("1600x900"))
+        }
+    }
+
+    func testDEVRuntimeSupportsExplicitTenVCPUWithoutSilentClamping() {
+        XCTAssertFalse(TFTMACRuntimeProfile.supportedVCPU.contains(10))
+        XCTAssertTrue(TFTMACRuntimeProfile.supportedAdvancedDiagnosticsVCPU.contains(10))
     }
 
     func testNativeRGBAFrameContractAcceptsExact1080pFrame() throws {
@@ -339,6 +465,46 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertNil(finding.boundary)
     }
 
+    func testCausalAnalyzerClassifiesLineageCoverageGapBeforeOwnership() {
+        let finding = PipelineCausalAnalyzer.analyze(
+            events: [makePipelineEvent(workID: 1, boundary: .gfxstreamDecode, durationNS: 22_000_000)],
+            eligibleFrameCount: 1_000,
+            unambiguousLineageCount: 998,
+            overwriteCount: 0,
+            observerOverheadPercent: 1,
+            officialTFT: false
+        )
+        XCTAssertEqual(finding.state, .unknownPresentLineageGap)
+        XCTAssertNil(finding.boundary)
+    }
+
+    func testCausalAnalyzerClassifiesLossBeforeOwnership() {
+        let finding = PipelineCausalAnalyzer.analyze(
+            events: [makePipelineEvent(workID: 1, boundary: .gfxstreamDecode, durationNS: 22_000_000)],
+            eligibleFrameCount: 1,
+            unambiguousLineageCount: 1,
+            overwriteCount: 1,
+            observerOverheadPercent: 1,
+            officialTFT: false
+        )
+        XCTAssertEqual(finding.state, .unknownStreamLoss)
+        XCTAssertNil(finding.boundary)
+    }
+
+    func testCausalAnalyzerClassifiesMissingSurfaceIdentityBeforeOwnership() {
+        let finding = PipelineCausalAnalyzer.analyze(
+            events: [makePipelineEvent(workID: 1, boundary: .gfxstreamDecode, durationNS: 22_000_000)],
+            eligibleFrameCount: 1,
+            unambiguousLineageCount: 1,
+            overwriteCount: 0,
+            observerOverheadPercent: 1,
+            officialTFT: false,
+            exactSurfaceIdentity: false
+        )
+        XCTAssertEqual(finding.state, .unknownSurfaceIdentity)
+        XCTAssertNil(finding.boundary)
+    }
+
     private func makePipelineEvent(
         workID: UInt64,
         boundary: PipelineBoundary,
@@ -488,9 +654,9 @@ final class TFTMACGate1Tests: XCTestCase {
         )
     }
 
-    func testGuestUnlockKeychainNamespacesKeepControlFrozenAndDEVSeparate() {
+    func testGuestUnlockKeychainNamespacesKeepControlFrozenAndDEVMigrationSeparate() {
         XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .control), "com.flashls1.tftmac.android-unlock.v2")
-        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics), "com.flashls1.tftmac.dev.android-unlock.v1")
+        XCTAssertEqual(TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics), "com.flashls1.tftmac.dev.android-unlock.v2")
         XCTAssertNotEqual(TFTMACGuestUnlockSecretStore.service(for: .control), TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics))
     }
 
@@ -557,11 +723,11 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual(diagnostics.definition.serial, "emulator-5586")
         XCTAssertEqual(
             diagnostics.definition.sdkRoot,
-            "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK"
+            "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK"
         )
         XCTAssertEqual(
             diagnostics.definition.adbPath,
-            "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb"
+            "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/platform-tools/adb"
         )
         XCTAssertTrue(diagnostics.definition.requiresControlStopped)
         let authority = try TFTMACRuntimeModeAuthority(data: runtimeModeRegistryData())
@@ -639,5 +805,45 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertEqual((object["controller_port"] as? NSNumber)?.intValue, 8554)
         XCTAssertEqual(object["serial"] as? String, "emulator-5582")
         XCTAssertThrowsError(try TFTMACRuntimeLease.acquire(stateRoot: stateRoot, identity: identity))
+    }
+
+    func testDEVHighPerfAssetsMatchRuntimeReceiptsAndTransactionAuthority() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let highPerfDir = repositoryRoot.appendingPathComponent("tftmac/Assets/DEVHighPerf", isDirectory: true)
+
+        let expectedFiles = [
+            "debug-ramdisk.img",
+            "DeviceProfiles.ini",
+            "profile-transaction.sh",
+            "riot-defaults.sh"
+        ]
+
+        let runtimeSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("tftmac/Runtime/TFTMACRuntime.swift"),
+            encoding: .utf8
+        )
+
+        for name in expectedFiles {
+            let fileURL = highPerfDir.appendingPathComponent(name)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path), "Missing DEVHighPerf asset: \(name)")
+            let data = try Data(contentsOf: fileURL)
+            let actualHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+
+            let expectedPattern = "\"\(name)\": \"\(actualHash)\""
+            XCTAssertTrue(runtimeSource.contains(expectedPattern),
+                          "TFTMACRuntime.swift highPerfHashes is missing or drifted for \(name): expected \(actualHash)")
+        }
+
+        let deviceProfilesData = try Data(contentsOf: highPerfDir.appendingPathComponent("DeviceProfiles.ini"))
+        let deviceProfilesHash = SHA256.hash(data: deviceProfilesData).map { String(format: "%02x", $0) }.joined()
+        let profileTxContent = try String(
+            contentsOf: highPerfDir.appendingPathComponent("profile-transaction.sh"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(profileTxContent.contains("control_expected=\(deviceProfilesHash)"),
+                      "profile-transaction.sh control_expected must match DeviceProfiles.ini hash: \(deviceProfilesHash)")
     }
 }

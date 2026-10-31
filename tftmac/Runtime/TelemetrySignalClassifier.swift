@@ -77,6 +77,12 @@ enum PipelineFindingState: String, Codable, Sendable {
     case rootCandidate = "ROOT_CANDIDATE"
     case unknown = "UNKNOWN"
     case unrealOrPreHostUnknown = "UNREAL_OR_PRE_HOST_UNKNOWN"
+    case unknownPresentLineageGap = "UNKNOWN_PRESENT_LINEAGE_GAP"
+    case unknownClockUncertainty = "UNKNOWN_CLOCK_UNCERTAINTY"
+    case unknownStreamLoss = "UNKNOWN_STREAM_LOSS"
+    case unknownRendererPath = "UNKNOWN_RENDERER_PATH"
+    case unknownSurfaceIdentity = "UNKNOWN_SURFACE_IDENTITY"
+    case unknownOwner = "UNKNOWN_OWNER"
 }
 
 enum PipelineBoundary: UInt16, Codable, CaseIterable, Sendable {
@@ -102,7 +108,10 @@ enum PipelineBoundary: UInt16, Codable, CaseIterable, Sendable {
         case .asgHostReceive: "ASG"
         case .gfxstreamDecode, .hostVulkanQueueLock, .hostVulkanSubmit: "GFXSTREAM"
         case .moltenVKPipelineLookup, .moltenVKPipelineCreate, .moltenVKEnqueue: "MOLTENVK"
-        case .metalCommit, .metalScheduled, .metalGPUStart, .metalGPUComplete: "METAL"
+        // MoltenVK's internal Metal work is a separate ownership domain from
+        // TFTMAC's native presenter.  Do not collapse either into a generic
+        // "METAL" label that could promote the presenter as the game root.
+        case .metalCommit, .metalScheduled, .metalGPUStart, .metalGPUComplete: "METAL_INTERNAL_MOLTENVK"
         case .colorBufferPublish, .sourceFramePublish: "EMULATOR_PRESENTATION"
         case .surfaceFlingerPresent: "SURFACEFLINGER"
         }
@@ -218,17 +227,27 @@ enum PipelineCausalAnalyzer {
         overwriteCount: UInt64,
         observerOverheadPercent: Double,
         officialTFT: Bool,
+        exactSurfaceIdentity: Bool = true,
+        maxClockUncertaintyNS: UInt64 = 0,
         lateBoundaryThresholdNS: UInt64 = 16_666_667
     ) -> PipelineDiagnosticFinding {
         if observerOverheadPercent > 5 {
-            return unknown("OBSERVER_OVERHEAD_INVALID")
+            return classifiedUnknown(.unknownOwner, "OBSERVER_OVERHEAD_INVALID")
         }
         guard eligibleFrameCount > 0 else { return unknown("NO_ELIGIBLE_FRAMES") }
         let lineageCoverage = Double(unambiguousLineageCount) / Double(eligibleFrameCount)
-        guard lineageCoverage >= 0.999 else { return unknown("LINEAGE_COVERAGE_BELOW_99_9_PERCENT") }
-        guard overwriteCount == 0 else { return unknown("PIPELINE_EVENT_LOSS") }
+        guard lineageCoverage >= 0.999 else {
+            return classifiedUnknown(.unknownPresentLineageGap, "LINEAGE_COVERAGE_BELOW_99_9_PERCENT")
+        }
+        guard overwriteCount == 0 else { return classifiedUnknown(.unknownStreamLoss, "PIPELINE_EVENT_LOSS") }
+        guard maxClockUncertaintyNS <= 10_000_000 else {
+            return classifiedUnknown(.unknownClockUncertainty, "CLOCK_UNCERTAINTY_EXCEEDS_10MS")
+        }
+        guard exactSurfaceIdentity else {
+            return classifiedUnknown(.unknownSurfaceIdentity, "EXACT_SURFACE_IDENTITY_MISSING")
+        }
 
-        let identified = events.filter { $0.transportWorkID != nil }
+        let identified = events.filter { $0.transportWorkID != nil && $0.presentLineageID != nil }
         if identified.isEmpty {
             return officialTFT
                 ? PipelineDiagnosticFinding(
@@ -251,10 +270,10 @@ enum PipelineCausalAnalyzer {
                 }?
                 .boundary
         }
-        guard firstLate.count >= 2 else { return unknown("INSUFFICIENT_REPLICATED_LATE_LINEAGES") }
+        guard firstLate.count >= 2 else { return classifiedUnknown(.unknownOwner, "INSUFFICIENT_REPLICATED_LATE_LINEAGES") }
         let counts = Dictionary(grouping: firstLate, by: { $0 }).mapValues(\.count)
         guard let winner = counts.max(by: { $0.value < $1.value }) else {
-            return unknown("NO_FIRST_DIVERGENT_BOUNDARY")
+            return classifiedUnknown(.unknownOwner, "NO_FIRST_DIVERGENT_BOUNDARY")
         }
         let confidence = Double(winner.value) / Double(firstLate.count)
         if winner.value >= 3, confidence >= 0.8 {
@@ -275,12 +294,16 @@ enum PipelineCausalAnalyzer {
                 explicitUnknowns: ["REPLICATION_THRESHOLD_NOT_MET"]
             )
         }
-        return unknown("NO_REPLICATED_FIRST_BOUNDARY")
+        return classifiedUnknown(.unknownOwner, "NO_REPLICATED_FIRST_BOUNDARY")
     }
 
     private static func unknown(_ reason: String) -> PipelineDiagnosticFinding {
+        classifiedUnknown(.unknown, reason)
+    }
+
+    private static func classifiedUnknown(_ state: PipelineFindingState, _ reason: String) -> PipelineDiagnosticFinding {
         PipelineDiagnosticFinding(
-            state: .unknown,
+            state: state,
             boundary: nil,
             owner: nil,
             confidence: 0,
@@ -298,4 +321,33 @@ private extension Data {
 
 private extension SHA256Digest {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
+}
+
+// A single transient underrun must never interrupt a healthy game.
+struct PCMAudioRecoveryPolicy {
+    private(set) var attempts = 0
+    private var consecutive = 0
+    private var previousNS: UInt64?
+    private var lastRecoveryNS: UInt64?
+
+    mutating func observe(errors: Int, nowNS: UInt64, eligible: Bool) -> Bool {
+        if !eligible || errors < 20
+            || previousNS.map({ nowNS < $0 || nowNS - $0 > 15_000_000_000 }) == true {
+            consecutive = 0
+        }
+        previousNS = nowNS
+        guard eligible, errors >= 20 else { return false }
+        consecutive += 1
+        guard consecutive >= 2, attempts < 3,
+              lastRecoveryNS.map({ nowNS >= $0 && nowNS - $0 >= 60_000_000_000 }) ?? true else { return false }
+        consecutive = 0
+        lastRecoveryNS = nowNS
+        attempts += 1
+        return true
+    }
+
+    static func isPCMIOFailure(_ line: String) -> Bool {
+        line.contains("android.hardware.audio@7.1-impl.ranchu:")
+            && line.contains("pcm_writei failed with 'cannot read/write stream data: I/O error'")
+    }
 }

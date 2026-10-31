@@ -517,7 +517,7 @@ CREATE TABLE IF NOT EXISTS version_catalog (
     source_kind TEXT NOT NULL,
     source_ref TEXT NOT NULL,
     evidence_class TEXT NOT NULL CHECK (evidence_class IN ('DIRECT_OBSERVED','PROJECT_ATTESTED','OFFICIAL_DOCUMENTED','HISTORICAL_PROJECT','CROSS_PROJECT_CLAIM','INFERRED','UNVERIFIED')),
-    lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('CURRENT_AUTHORITY','CURRENT_CONTROL','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
+    lifecycle_state TEXT NOT NULL CHECK (lifecycle_state IN ('PROMOTED','CURRENT_CONTROL','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
     compatibility_state TEXT NOT NULL CHECK (compatibility_state IN ('PROVEN','CLAIMED','PARTIAL','CONDITIONAL','INCOMPATIBLE','UNKNOWN')),
     last_verified_at TEXT,
     exact_claim TEXT NOT NULL,
@@ -558,7 +558,7 @@ CREATE TABLE IF NOT EXISTS stack_profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     purpose TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('CURRENT_AUTHORITY','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
+    status TEXT NOT NULL CHECK (status IN ('PROMOTED','KNOWN_GOOD_DONOR','HISTORICAL','CANDIDATE','REJECTED','UNKNOWN')),
     confidence TEXT NOT NULL CHECK (confidence IN ('DIRECT','STRONG','INFERRED','HYPOTHESIS')),
     environment_id TEXT REFERENCES environment_snapshots(id),
     workload TEXT,
@@ -616,9 +616,9 @@ SELECT product, version_label, lifecycle_state, compatibility_state,
        deployment_target_min, deployment_target_max,
        evidence_class, exact_claim, limitations, candidate_role
 FROM version_catalog
-WHERE lifecycle_state IN ('CURRENT_AUTHORITY','CURRENT_CONTROL','KNOWN_GOOD_DONOR','CANDIDATE')
+WHERE lifecycle_state IN ('PROMOTED','CURRENT_CONTROL','KNOWN_GOOD_DONOR','CANDIDATE')
 ORDER BY CASE lifecycle_state
-           WHEN 'CURRENT_AUTHORITY' THEN 0
+           WHEN 'PROMOTED' THEN 0
            WHEN 'CURRENT_CONTROL' THEN 1
            WHEN 'KNOWN_GOOD_DONOR' THEN 2
            ELSE 3
@@ -669,7 +669,7 @@ INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,st
 ('ev_legacy_target12','2026-08-27T01:46:26.991Z','source_build_contract','historical:removed-build-script','21932700a90aecf88a80e4d68fe0cdc748050aa39c0571bf2673a91228ff9c74','Retired donor production Swift and emulator-host binaries explicitly targeted arm64-apple-macosx12.0; historical launcher metadata also declared minimum macOS 12.0.','DIRECT','This is strong project-local evidence that 12.0 is a real compatibility target, not an invented number.'),
 ('ev_phase1_target1014_fail','2026-08-28T05:10:20.931Z','compiler_failure','/Volumes/MAC MINI M4/TFTMAC/Build/logs/phase1-build.stderr.log',NULL,'Phase 1 advanced through Ninja step 885/9854 and failed because AEMU host tooling set macOS deployment target 10.14 while source uses std::filesystem APIs marked available from macOS 10.15.','DIRECT','The current build worker is FAILED, not RUNNING. The failure is host build-contract compatibility, not a graphics capability failure.'),
 ('ev_aemu_legacy_target1014','2026-08-28T05:19:00Z','source_audit','external/qemu/android/scripts/unix/gen-android-sdk-toolchain.sh',NULL,'Locked AEMU helper carries OSX_DEPLOYMENT_TARGET=10.14 / OSX_REQUIRED=10.14 despite current upstream macOS development guidance requiring SDK 10.15 or later.','DIRECT','Treat this helper value as stale upstream build plumbing.'),
-('ev_legacy_stack','2026-08-27T01:46:26.986Z','release_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','Retired donor release evidence pins Platform Tools 36.0.2, Android Emulator 37.1.11 build 15917651, Android 36 Google APIs ARM64 system image r07, and TFT PBE 18.1-5212127.','DIRECT','Exact archived donor component set.'),
+('ev_legacy_stack','2026-08-27T01:46:26.986Z','release_manifest','launcher/Resources/release-manifest.json','ec5b31e1d0fc6c05de087ea6bcd6dc4c9acfebb575b2d4fdcfe45d8a98de892c','Retired donor release evidence pins Platform Tools 36.0.2, Android Emulator 37.1.11 build 15917651, Android 36 Google APIs ARM64 system image r07, and TFT PBE pre-18.3 historical client.','DIRECT','Exact archived donor component set.'),
 ('ev_benchmark_m1max_stack','2026-08-27T01:46:26.981Z','benchmark_document','docs/benchmarks.md','526507229e293e92155fc3ba588bc48d6a149cc7c164d24e5d10ac33755d7965','Historical benchmark environment used M1 Max, macOS 26.6 build 25G72, Emulator 37.1.11 build 15917651, Android 36 ARM64 Google APIs userdebug, with ANGLE->Vulkan->gfxstream/MoltenVK->Metal.','DIRECT','This proves a specific older guest/runtime family ran extensively on macOS 26.x, but not on this exact M4 host.'),
 ('ev_native_gles_main_dev','2026-08-27T01:46:26.982Z','historical_source_build','docs/native-gles-transport-experiment.md','9b92313317a5eebd1900f5008c9db7018f467b20b6a6029dfc33523f240c650c','A historical emu-main-dev gfxstream host backend at revision a9184fd built successfully on the Mac after two AppleClang warning-compatibility adjustments; standalone backend was not a production drop-in.','DIRECT','Useful donor evidence only; do not mix branch authority.'),
 ('ev_live_tft_native','2026-08-27T01:46:35.222Z','package_architecture','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','06b7f5bf6ed6a84e7be2f3f296563a0fa9b436ec462eca0700d5bd8483490c59','Live TFT 16.16.8042660 base APK SHA 9ed691... launches RiotNativeActivity, contains libleagueoflegends.so, and showed no Unreal runtime markers.','DIRECT','Current workload engine evidence; separate from legacy PBE Unreal experiments.');
@@ -702,8 +702,8 @@ INSERT OR REPLACE INTO source_documents(id,path,sha256,role,authority_rank,tempo
 ('doc_research_log','docs/research-log.md','e24b935ebcb6235db53130357121a26e724da0eec9186cbc90b6a0a1a6967dce','historical experiment chronology',50,'HISTORICAL','Compatibility/performance/rejected experiments','2026-08-28T05:19:03.867Z',0,'Useful for avoiding repeated failed experiments.');
 
 INSERT OR REPLACE INTO version_catalog(id,component_id,product,version_label,release_date,channel,architecture,host_os_min,host_os_max,guest_api_min,guest_api_max,bundled_sdk_version,deployment_target_min,deployment_target_max,source_kind,source_ref,evidence_class,lifecycle_state,compatibility_state,last_verified_at,exact_claim,limitations,candidate_role) VALUES
-('vc_macos_current','macos','macOS','26.6.2 / 25G83',NULL,'stable','arm64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'project evidence','ssot/host-preflight.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T04:07:47.479Z','Current M4 host OS.','Host version is not a deployment target or SDK version.','Current host'),
-('vc_xcode266','xcode','Xcode','26.6 / 17F113',NULL,'stable','arm64','26.2','26.x',NULL,NULL,'26.5','11','26.5','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CURRENT_AUTHORITY','PROVEN','2026-08-28T05:20:00Z','Installed and selected on current host; Apple supports it on Tahoe 26.2+ and documents macOS deployment targets 11-26.5.','Locked AEMU helper does not natively understand SDK 26.5.','Current compiler'),
+('vc_macos_current','macos','macOS','26.6.2 / 25G83',NULL,'stable','arm64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'project evidence','ssot/host-preflight.json','DIRECT_OBSERVED','PROMOTED','PROVEN','2026-08-28T04:07:47.479Z','Current M4 host OS.','Host version is not a deployment target or SDK version.','Current host'),
+('vc_xcode266','xcode','Xcode','26.6 / 17F113',NULL,'stable','arm64','26.2','26.x',NULL,NULL,'26.5','11','26.5','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','PROMOTED','PROVEN','2026-08-28T05:20:00Z','Installed and selected on current host; Apple supports it on Tahoe 26.2+ and documents macOS deployment targets 11-26.5.','Locked AEMU helper does not natively understand SDK 26.5.','Current compiler'),
 ('vc_xcode263','xcode','Xcode','26.3',NULL,'stable','arm64','15.6','26.x',NULL,NULL,'26.2','11','26.2','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','CONDITIONAL','2026-08-28T05:20:00Z','Officially supports Tahoe 26.x and ships SDK 26.2.','Still outside locked AEMU helper SDK allowlist; would require compatibility adapter and is not currently installed.','Older current-host-compatible compiler candidate'),
 ('vc_xcode262','xcode','Xcode','26.2',NULL,'stable','arm64','15.6','26.x',NULL,NULL,'26.2','11','26.2','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','CONDITIONAL','2026-08-28T05:20:00Z','Officially supports Tahoe 26.x and ships SDK 26.2.','Still outside locked AEMU helper SDK allowlist; would require adapter and is not currently installed.','Older current-host-compatible compiler candidate'),
 ('vc_xcode164','xcode','Xcode','16.4',NULL,'stable','arm64','15.3','26.1.x',NULL,NULL,'15.5','10.13','15','Apple support matrix','ext_apple_xcode_matrix','OFFICIAL_DOCUMENTED','CANDIDATE','INCOMPATIBLE','2026-08-28T05:20:00Z','Ships SDK 15.5 and has older deployment range.','Apple support matrix stops host support at Tahoe 26.1.x; current host is 26.6.2. SDK 15.5 also exceeds locked helper allowlist ending at 15.2.','Rejected on current host unless isolated older build environment'),
@@ -715,12 +715,12 @@ INSERT OR REPLACE INTO version_catalog(id,component_id,product,version_label,rel
 ('vc_emulator3649','aemu','Android Emulator','36.4.9','2026-02-10','stable','darwin-aarch64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'Google release notes','ext_emulator_releases','OFFICIAL_DOCUMENTED','CANDIDATE','CLAIMED','2026-08-28T05:35:30Z','Updates the bundled Vulkan loader, fixes Vulkan backend invalid-use cases, adds SkiaVk graphics-queue-emulation support and VulkanNativeSwapchain composition support; release notes describe macOS Vulkan support as experimental.','Older than API37-specific 36.6/37.1 changes; must be tested with the exact current guest and workload before any promotion.','Older Vulkan-focused emulator candidate'),
 ('vc_platformtools3602','android36_guest','Android Platform Tools','36.0.2',NULL,'stable','darwin',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'retired-donor manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Exact retired-donor platform-tools pin.','Not current v2 control revision.','Legacy donor'),
 ('vc_android36_r07','android36_guest','Android system image','Android 36 Google APIs ARM64 r07',NULL,'stable','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'retired-donor manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Exact retired-donor system-image archive pin.','No Google Play in this exact manifest entry; rootable/Google Play variants were separate.','Legacy guest candidate'),
-('vc_android37_r6','android_guest','Android system image','Android 17 / API37 Google Play ps16k ARM64 rev6',NULL,'stable','arm64',NULL,NULL,37,37,NULL,NULL,NULL,'STACK.lock','ssot/STACK.lock.yaml','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T04:32:56.368Z','Current frozen production guest image.','Runtime graphics acceptance not yet completed.','Current guest'),
+('vc_android37_r6','android_guest','Android system image','Android 17 / API37 Google Play ps16k ARM64 rev6',NULL,'stable','arm64',NULL,NULL,37,37,NULL,NULL,NULL,'STACK.lock','ssot/STACK.lock.yaml','DIRECT_OBSERVED','PROMOTED','PROVEN','2026-08-28T04:32:56.368Z','Current frozen production guest image.','Runtime graphics acceptance not yet completed.','Current guest'),
 ('vc_legacy_launcher104','legacy_launcher_donor','Retired donor launcher','1.0.4 build 40',NULL,'release','arm64','12.0',NULL,36,36,NULL,'12.0',NULL,'project source','README.md + launcher/Info.plist','PROJECT_ATTESTED','KNOWN_GOOD_DONOR','PROVEN','2026-08-27T01:46:26.986Z','Legacy Apple-Silicon launcher/runtime with minimum macOS 12.0 and exact Emulator37.1.11/Android36 pins.','Experimental/best-effort; PBE workload; historical nonconformant ES3.2 exposure was used and cannot satisfy v2 graphics truth.','Native shell/build/runtime donor'),
 ('vc_tft_live1616','tft_android','TFT Android live','16.16.8042660',NULL,'Google Play','arm64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'package inspection','docs/TFTMAC_GRAPHICS_ARCHITECTURE.md','PROJECT_ATTESTED','CURRENT_CONTROL','PROVEN','2026-08-27T01:46:35.222Z','Current inspected live package uses RiotNativeActivity/libleagueoflegends.so with no Unreal markers.','Compatibility with v2 API37 source-built runtime still requires vertical-slice proof.','Current workload'),
-('vc_pbe1815212127','tft_android','TFT PBE','18.1-5212127',NULL,'PBE','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'retired-donor manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','HISTORICAL','PROVEN','2026-08-27T01:46:26.986Z','Exact historical PBE workload used for retired-donor benchmarks.','Not the current live production client.','Historical graphics/workload donor'),
+('vc_pbe1815212127','tft_android','TFT PBE','pre-18.3 historical client',NULL,'PBE','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'retired-donor manifest','launcher/Resources/release-manifest.json','PROJECT_ATTESTED','HISTORICAL','PROVEN','2026-08-27T01:46:26.986Z','Exact historical PBE workload used for retired-donor benchmarks.','Not the current live production client.','Historical graphics/workload donor'),
 ('vc_gfx_main_a9184fd','gfxstream_main_dev_donor','gfxstream host backend','emu-main-dev a9184fd',NULL,'development','darwin-aarch64',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'historical project source build','docs/native-gles-transport-experiment.md','HISTORICAL_PROJECT','KNOWN_GOOD_DONOR','PARTIAL','2026-08-27T01:46:26.982Z','Standalone gfxstream_backend built successfully after two AppleClang warning allowances.','Export surface was not production drop-in; branch is not current authority.','Source-build donor'),
-('vc_aemu_locked','aemu','AEMU/QEMU source','emu-master-dev qemu ae9d18d2',NULL,'development','darwin-aarch64',NULL,NULL,37,37,NULL,'10.14',NULL,'resolved manifest + source','ssot/STACK.lock.yaml','DIRECT_OBSERVED','CURRENT_AUTHORITY','PARTIAL','2026-08-28T05:19:03.867Z','Locked source configured fully and compiled through Ninja step 885/9854 with TFTMAC host adapters.','Upstream helper deployment target 10.14 is stale/incompatible with current source+Xcode; build not complete.','Current source authority');
+('vc_aemu_locked','aemu','AEMU/QEMU source','emu-master-dev qemu ae9d18d2',NULL,'development','darwin-aarch64',NULL,NULL,37,37,NULL,'10.14',NULL,'resolved manifest + source','ssot/STACK.lock.yaml','DIRECT_OBSERVED','PROMOTED','PARTIAL','2026-08-28T05:19:03.867Z','Locked source configured fully and compiled through Ninja step 885/9854 with TFTMAC host adapters.','Upstream helper deployment target 10.14 is stale/incompatible with current source+Xcode; build not complete.','Current source authority');
 
 INSERT OR REPLACE INTO compatibility_claims(id,version_id,environment_id,subject,predicate,object,claim_kind,result,evidence_id,external_source_id,source_document_id,observed_at,last_revalidated_at,stale_after,notes) VALUES
 ('cc_current_host','vc_xcode266','env_current_m4','Xcode 26.6','runs on','macOS 26.6.2','OBSERVED','SUPPORTS','ev_host_26_6_2','ext_apple_xcode_matrix','doc_stack','2026-08-28T04:07:47.479Z','2026-08-28T05:20:00Z',NULL,'Installed and selected successfully.'),
@@ -745,8 +745,8 @@ INSERT OR REPLACE INTO deployment_target_candidates(target_version,candidate_sta
 ('26.5','CONDITIONAL',1,1,0,45,'Apple Xcode26.6 SDK/deployment matrix','Would minimize availability ambiguity but would restrict produced binaries to the newest OS family and discard useful Apple-Silicon compatibility for no current evidence-based benefit.');
 
 INSERT OR REPLACE INTO stack_profiles(id,name,purpose,status,confidence,environment_id,workload,exact_result,limitations,next_use) VALUES
-('stack_v2_current','TFTMAC v2 frozen API37 source stack','Current architecture authority','CURRENT_AUTHORITY','DIRECT','env_current_m4','Current live TFT','Phase0 PASS; locked AEMU fully configures and compiles to step 885/9854 before host deployment-target mismatch.','Phase1 build not complete; graphics/runtime probes not yet complete.','Test deployment target 12.0 through existing detached build harness; then resume smallest Phase1 proof.'),
-('stack_legacy_launcher104','Retired donor Android36 / Emulator37.1.11','Legacy known-good donor','KNOWN_GOOD_DONOR','DIRECT',NULL,'TFT PBE 18.1-5212127','Native SwiftUI launcher, exact pinned SDK/emulator/system image, extensive game/runtime experiments.','Historical PBE and nonconformant ES32 workaround; not v2 conformance.','Harvest packaging, macOS12 target, runtime state machine, Emulator37.1.11 control behavior.'),
+('stack_v2_current','TFTMAC v2 frozen API37 source stack','Current architecture authority','PROMOTED','DIRECT','env_current_m4','Current live TFT','Phase0 PASS; locked AEMU fully configures and compiles to step 885/9854 before host deployment-target mismatch.','Phase1 build not complete; graphics/runtime probes not yet complete.','Test deployment target 12.0 through existing detached build harness; then resume smallest Phase1 proof.'),
+('stack_legacy_launcher104','Retired donor Android36 / Emulator37.1.11','Legacy known-good donor','KNOWN_GOOD_DONOR','DIRECT',NULL,'TFT PBE pre-18.3 historical client','Native SwiftUI launcher, exact pinned SDK/emulator/system image, extensive game/runtime experiments.','Historical PBE and nonconformant ES32 workaround; not v2 conformance.','Harvest packaging, macOS12 target, runtime state machine, Emulator37.1.11 control behavior.'),
 ('stack_m1max_benchmark','M1 Max Android36 userdebug performance stack','Historical performance donor','HISTORICAL','DIRECT','env_benchmark_m1max','TFT PBE','Extensive fixed-stage benchmark evidence on Emulator37.1.11 / Android36 / ANGLE-Vulkan-gfxstream-MoltenVK-Metal.','Different hardware and PBE workload; many results are scene-specific.','Use only for causal/relative graphics insights and older-version compatibility candidates.'),
 ('stack_stock37111_api37','Stock Emulator37.1.11 + current API37 Play image','Low-maintenance control candidate','CANDIDATE','STRONG','env_current_m4','Current live TFT','Official release explicitly adds Vulkan extensions required for API37; current guest is already frozen.','Genuine ES3.2/GuestAngle capability on current M4 not yet measured.','Run permanent host/guest Vulkan and GLES probes before source-patching AEMU graphics.'),
 ('stack_stock36611_api37','Stock Emulator36.6.11 + API37','Older stable control candidate','CANDIDATE','STRONG','env_current_m4','Capability probes first','Official API37 memory behavior; macOS26.3 Hypervisor fix indicates active macOS26 support work.','May lack Vulkan additions explicitly delivered in 37.1.11.','Only test if 37.1.11 behavior regresses or source build remains disproportionately costly.'),
@@ -928,7 +928,7 @@ CREATE TABLE IF NOT EXISTS artifact_registry (
     artifact_kind TEXT NOT NULL,
     layer TEXT NOT NULL,
     role TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('CURRENT_AUTHORITY','CURRENT_IMPLEMENTATION','DONOR','HISTORICAL','EXPERIMENTAL','REJECTED','STALE')),
+    status TEXT NOT NULL CHECK (status IN ('PROMOTED','CURRENT_IMPLEMENTATION','DONOR','HISTORICAL','EXPERIMENTAL','REJECTED','STALE')),
     mutation_policy TEXT NOT NULL,
     source_document_id TEXT REFERENCES source_documents(id),
     notes TEXT
@@ -1012,10 +1012,10 @@ INSERT OR REPLACE INTO benchmark_findings(id,classification,environment_id,stack
 ('bf_webview_skiagl','CONFIRMED','env_benchmark_m1max','stack_m1max_benchmark','Riot login WebView','Skia OpenGL HWUI avoided verified WebView Vulkan deadlock while TFT ANGLE Vulkan remained enabled','UI renderer and TFT renderer can be separated; Vulkan need not be globally disabled.','Repeated operational fix','doc_research_log','Useful future UI/runtime isolation pattern.',NULL);
 
 INSERT OR REPLACE INTO artifact_registry(id,path,artifact_kind,layer,role,status,mutation_policy,source_document_id,notes) VALUES
-('ar_stack','ssot/STACK.lock.yaml','machine_lock','authority','Exact machine/source/version lock','CURRENT_AUTHORITY','Mutate only through deterministic preflight/freeze tooling','doc_stack',NULL),
-('ar_ssot','TFTMAC_GPU_RUNTIME_SSOT.md','authority_document','authority','Architecture/product acceptance authority','CURRENT_AUTHORITY','Revise together with implementation plan','doc_ssot',NULL),
-('ar_plan','TFTMAC_FULL_IMPLEMENTATION_PLAN.md','authority_document','authority','Execution/phase authority','CURRENT_AUTHORITY','Revise together with SSOT','doc_plan',NULL),
-('ar_map','ssot/TFTMAC_ENGINEERING_MAP.sql','knowledge_graph','reasoning','Persistent dependency/version/evidence map','CURRENT_AUTHORITY','Update before architecture-changing action','doc_map',NULL),
+('ar_stack','ssot/STACK.lock.yaml','machine_lock','authority','Exact machine/source/version lock','PROMOTED','Mutate only through deterministic preflight/freeze tooling','doc_stack',NULL),
+('ar_ssot','TFTMAC_GPU_RUNTIME_SSOT.md','authority_document','authority','Architecture/product acceptance authority','PROMOTED','Revise together with implementation plan','doc_ssot',NULL),
+('ar_plan','TFTMAC_FULL_IMPLEMENTATION_PLAN.md','authority_document','authority','Execution/phase authority','PROMOTED','Revise together with SSOT','doc_plan',NULL),
+('ar_map','ssot/TFTMAC_ENGINEERING_MAP.sql','knowledge_graph','reasoning','Persistent dependency/version/evidence map','PROMOTED','Update before architecture-changing action','doc_map',NULL),
 ('ar_v2tool','tools/tftmac-v2.mjs','orchestration_code','host_build','Phase0/Phase1/external storage/build compatibility/map validation','CURRENT_IMPLEMENTATION','Changes require validation and map evidence','doc_v2_tool',NULL),
 ('ar_tftmac_shell','tftmac/Sources/TFTMACApp.swift','native_app_source','presentation','Pre-v2 native TFTMAC UI/runtime controller','DONOR','Do not promote unchanged; remove old storage and spoof assumptions first','doc_tftmac_app',NULL),
 ('ar_legacy_build','historical:removed-build-script','build_script','donor','Proven macOS12 native build/sign/package path','DONOR','Harvest compatibility patterns only','doc_legacy_build',NULL),
@@ -1095,7 +1095,7 @@ INSERT OR REPLACE INTO map_meta(key,value) VALUES
 ('last_truth_audit_at','2026-08-28T18:30:59Z'),
 ('current_phase','Playable official TFT baseline -> measured performance optimization'),
 ('current_runtime','Google Emulator 37.1.11 / Android16 API36 Google Play ARM64 / TFT_Ultra_Tablet'),
-('current_workload','Official TFT 18.1-5392842 versionCode 8392842 via com.android.vending'),
+('current_workload','Official TFT 18.3-5530794 versionCode 8530794 via com.android.vending; post-cleanup receipt'),
 ('current_renderer','Unreal GameActivity -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal'),
 ('current_result','First full measured gameplay session completed in 1st place'),
 ('current_game_settings','Graphics=Medium; FPS cap=60; Performance Mode (Beta)=UNKNOWN. Available graphics presets: Low, Medium, High, Ultra High. Available FPS caps: 30, 60, None.'),
@@ -1108,21 +1108,21 @@ INSERT OR REPLACE INTO map_meta(key,value) VALUES
 
 INSERT OR REPLACE INTO components(id,name,kind,layer,ownership,status,purpose,notes) VALUES
 ('android_guest','Android 16 API36 Google Play ARM64 guest','guest_os','guest','GOOGLE','PROVEN','Official package-authority and gameplay guest','Current playable authority is API36 Play ARM64, not the earlier API37 planning guest.'),
-('tft_android','Teamfight Tactics Android client 18.1','workload','application','RIOT','PROVEN','Primary production workload','Current package com.riotgames.league.teamfighttactics launched Unreal SplashActivity/GameActivity and completed a full first-place match.'),
+('tft_android','Teamfight Tactics Android client 18.3-5530794','workload','application','RIOT','PROVEN','Primary production workload','Current package com.riotgames.league.teamfighttactics 18.3-5530794 / 8530794 launched Unreal SplashActivity/GameActivity; post-cleanup receipt reached the official home/play surface. Complete-match performance remains unmeasured in the current receipt.'),
 ('aemu','Google Android Emulator 37.1.11','hypervisor_runtime','virtualization','UPSTREAM','PROVEN','Current production machine/runtime host','Stock released emulator is now the playable authority; source-built AEMU is not required for the current product path.'),
 ('perfetto_trace','Android native frame tracing','telemetry','measurement','GOOGLE','AVAILABLE','Capture native Unreal/Vulkan frame pacing and causal graphics timing','Required because gfxinfo produced zero gameplay frames for the native Unreal/Vulkan path.');
 
 INSERT OR REPLACE INTO component_versions(id,component_id,version,commit_sha,artifact_sha256,source_authority,frozen,notes) VALUES
 ('ver_android_guest','android_guest','Android16 / API36 Play ARM64 rev>=7',NULL,NULL,'direct runtime observation',1,'system-images;android-36;google_apis_playstore;arm64-v8a.'),
 ('ver_android_emulator_control','aemu','37.1.11 / build 15917651',NULL,NULL,'direct runtime observation',1,'First full official TFT match completed on this released emulator.'),
-('ver_tft_current','tft_android','18.1-5392842 / 8392842',NULL,NULL,'Google Play-installed package observation',1,'Installer com.android.vending; signer digest still unresolved.');
+('ver_tft_current','tft_android','18.3-5530794 / 8530794',NULL,NULL,'post-cleanup launch receipt',1,'Installer com.android.vending; current home/playability acceptance; no complete-match benchmark.');
 
 INSERT OR REPLACE INTO capabilities(id,name,layer,description,acceptance_rule) VALUES
 ('cap_full_match_playability','Official TFT full-match playability','application','Official Google Play TFT completes a real match under the TFTMAC runtime.','Full match reaches result screen without device-compatibility rejection or process crash.'),
 ('cap_native_frame_timing','Native Unreal/Vulkan frame timing','measurement','TFTMAC records real gameplay presentation intervals and correlates stalls to renderer/system boundaries.','Perfetto/SurfaceFlinger/FrameTimeline or equivalent yields continuous native gameplay frame timing aligned to host telemetry.');
 
 INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
-('ev_first_win_playable','2026-08-28T18:25:16.276Z','gameplay_result','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/markers.jsonl',NULL,'Official TFT 18.1-5392842 completed a 2152.69-second full match on the current runtime and the user placed 1st.','DIRECT','Functional vertical slice is proven end-to-end.'),
+('ev_first_win_playable','2026-08-28T18:25:16.276Z','gameplay_result','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/markers.jsonl',NULL,'Official TFT pre-18.3 historical client completed a 2152.69-second full match on the current runtime and the user placed 1st.','DIRECT','Functional vertical slice is proven end-to-end.'),
 ('ev_first_win_renderer','2026-08-28T18:30:59Z','runtime_renderer','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'Current runtime is Android16 API36, ro.hardware.egl=angle, ro.hardware.vulkan=ranchu, ro.opengles.version=196610, virtio-gpu-asg/gfxstream host graphics with TFT-specific ANGLE VkInstance creation and MoltenVK/Metal host path.','DIRECT','ES3.2 exposure is an explicit compatibility adapter; this evidence proves workload compatibility, not GLES conformance.'),
 ('ev_first_win_resources','2026-08-28T18:30:59Z','gameplay_telemetry','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'Across 1044-1046 in-match samples, emulator CPU mean=253.87%, p95=330.5%, max=363.2%; RSS mean=5155 MiB, p95=6126 MiB, max=6846 MiB; host compressed memory mean=4.15 GiB and pageouts increased by 12876.','DIRECT','Supports memory pressure as a candidate cause. CPU saturation is not demonstrated by this capture.'),
 ('ev_native_frame_blindspot','2026-08-28T18:30:59Z','measurement_gap','~/Library/Application Support/TFTMAC/Captures/2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2/gameplay-analysis.json',NULL,'gfxinfo produced zero match-window frame samples because the current workload presents through native Unreal/Vulkan rather than Android ViewRoot frame accounting.','DIRECT','Native frame tracing is now blocking before graphics tuning.'),
@@ -1195,31 +1195,31 @@ INSERT OR REPLACE INTO invention_opportunities(id,title,problem,tftmac_owned_sol
 ('inv_memory_ab','Adaptive Guest Memory Profile','Current 6 GiB guest coincides with high host compression/pageouts on a 16 GiB unified-memory host.','Test and, if confirmed, promote a 5 GiB guest profile with automatic rollback when guest memory/instability gates fail.','Fixed donor RAM allocation','Could reduce host compression/swap and improve responsiveness with zero graphics-code changes.','Too little guest RAM may induce Android LMK/OOM or asset churn; requires measured A/B.','RECOMMENDED');
 
 INSERT OR REPLACE INTO version_catalog(id,component_id,product,version_label,release_date,channel,architecture,host_os_min,host_os_max,guest_api_min,guest_api_max,bundled_sdk_version,deployment_target_min,deployment_target_max,source_kind,source_ref,evidence_class,lifecycle_state,compatibility_state,last_verified_at,exact_claim,limitations,candidate_role) VALUES
-('vc_android36_play_current','android_guest','Android system image','Android16 API36 Google Play ARM64 rev>=7',NULL,'stable','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'direct runtime observation','gameplay-analysis.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T18:30:59Z','Official Play guest installed and executed current TFT through a full match.','Compatibility path uses explicit ANGLE ES3.2 exposure.','Current guest'),
-('vc_tft_current181','tft_android','TFT Android live','18.1-5392842 / 8392842',NULL,'Google Play','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'direct package observation','gameplay-analysis.json','DIRECT_OBSERVED','CURRENT_AUTHORITY','PROVEN','2026-08-28T18:30:59Z','Installer com.android.vending; Unreal GameActivity; full first-place match completed.','Signer SHA-256 still unresolved.','Current workload');
+('vc_android36_play_current','android_guest','Android system image','Android16 API36 Google Play ARM64 rev>=7',NULL,'stable','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'direct runtime observation','gameplay-analysis.json','DIRECT_OBSERVED','PROMOTED','PROVEN','2026-08-28T18:30:59Z','Official Play guest installed and executed current TFT through a full match.','Compatibility path uses explicit ANGLE ES3.2 exposure.','Current guest'),
+('vc_tft_current183','tft_android','TFT Android live','18.3-5530794 / 8530794',NULL,'Google Play','arm64',NULL,NULL,36,36,NULL,NULL,NULL,'post-cleanup launch receipt','TFTDEV-SSOT/receipts/post-cleanup-launch-2026-09-27.txt','DIRECT_OBSERVED','PROMOTED','PROVEN','2026-09-27T15:44:00Z','Historical post-cleanup launch receipt at 2560x1440; superseded by sealed full-Trial evidence and the promoted 1920x1080 default on 2026-10-02.','Signer SHA-256 not promoted.','Current workload');
 
 UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Superseded guest planning baseline' WHERE id='vc_android37_r6';
 UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Superseded workload inspection' WHERE id='vc_tft_live1616';
 UPDATE version_catalog SET lifecycle_state='HISTORICAL', candidate_role='Source authority retained only for future blocker research' WHERE id='vc_aemu_locked';
 
 INSERT OR REPLACE INTO stack_profiles(id,name,purpose,status,confidence,environment_id,workload,exact_result,limitations,next_use) VALUES
-('stack_first_win','Playable official TFT baseline: API36 + Emulator37.1.11','Current product/performance baseline','CURRENT_AUTHORITY','DIRECT','env_current_m4','TFT 18.1-5392842','Official Google Play package completed a 2152.69s full match in 1st place; ANGLE/Vulkan/gfxstream/MoltenVK/Metal path directly observed.','Performance poor by user observation; gfxinfo has no native Unreal frame samples; signer digest unresolved.','Add native frame tracing, then run RAM 4 GiB one-factor A/B.');
+('stack_first_win','Playable official TFT baseline: API36 + Emulator37.1.11','Current product/playability baseline','PROMOTED','DIRECT','env_current_m4','TFT 18.3-5530794','Historical post-cleanup home/playability snapshot at 2560x1440; superseded by sealed full-Trial evidence and the promoted 1920x1080 default on 2026-10-02.','Performance poor by user observation; gfxinfo has no native Unreal frame samples; signer digest unresolved.','Add native frame tracing, then run RAM 4 GiB one-factor A/B.');
 
 INSERT OR REPLACE INTO stack_profile_members(stack_id,version_id,role,required) VALUES
 ('stack_first_win','vc_macos_current','host OS',1),
 ('stack_first_win','vc_emulator37111','stock emulator',1),
 ('stack_first_win','vc_android36_play_current','official Play guest',1),
-('stack_first_win','vc_tft_current181','official workload',1);
+('stack_first_win','vc_tft_current183','official workload',1);
 
 INSERT OR REPLACE INTO runtime_variants(id,entrypoint,classification,runtime_family,graphics_path,display_profile,resource_profile,exact_result,promotion_state,source_document_id,current_relevance,notes) VALUES
-('rv_current_first_win','TFTMAC start-donor-control','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play','TFT -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal','1920x1080 / 320 DPI / 60Hz target','6 vCPU / 6144 MB','Official TFT 18.1 completed a full first-place match.','PROMOTED',NULL,'Current product baseline','Compatibility ES3.2 exposure is explicit and nonconformant; performance requires optimization.');
+('rv_current_first_win','TFTMAC start-donor-control','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play','TFT -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal','1920x1080 / 320 DPI / 60Hz target','6 vCPU / 6144 MB','Historical pre-18.3 client completed a full first-place match.','RETAINED',NULL,'Historical control; superseded by the verified 18.3 DEV route','Retained for provenance only. It is not a current launcher or optimization baseline.');
 
 INSERT OR REPLACE INTO benchmark_findings(id,classification,environment_id,stack_id,workload,metric_summary,causal_interpretation,reproducibility,source_document_id,current_relevance,notes) VALUES
 ('bf_first_win_resources','PROVISIONAL','env_current_m4','stack_first_win','Full first-place TFT match','2152.69s; emulator CPU mean253.87%/p95 330.5%; RSS mean5155MiB/max6846MiB; host compressed mean4.15GiB; pageouts +12876; native gfxinfo frames=0; post-match SF cumulative missed=2709/GPU=2163/HWC=546','Memory pressure is a high-value match-scoped candidate; cumulative SurfaceFlinger counters separately nominate GPU-side frame misses for TFT-specific tracing; aggregate emulator CPU saturation is not demonstrated.','One full match only; SurfaceFlinger counters are since boot; requires controlled A/B and native frametimeline capture.',NULL,'Primary current optimization baseline','User reported laggy/low graphics/performance.');
 
 INSERT INTO update_log(observed_at,subject,change_summary,evidence_id) VALUES
 ('2026-08-28T18:30:59Z','Playable runtime authority','Promoted released Emulator37.1.11 + API36 Play + explicit TFT compatibility adapter to current product baseline; source-AEMU path moved to research-only.','ev_first_win_playable'),
-('2026-08-28T18:30:59Z','Current workload truth','Corrected stale non-Unreal workload claim: current TFT18.1 launches Unreal GameActivity and uses ANGLE/Vulkan path.','ev_first_win_renderer'),
+('2026-08-28T18:30:59Z','Historical workload truth','Recorded that the pre-18.3 client launched Unreal GameActivity and used the ANGLE/Vulkan path. Retained as historical provenance; current workload identity is 18.3-5530794.','ev_first_win_renderer'),
 ('2026-08-28T18:30:59Z','Performance baseline','Recorded first full-match resource envelope and user-reported poor performance without falsely inventing native frame metrics.','ev_first_win_resources'),
 ('2026-08-28T18:30:59Z','Optimization order','Made native frame tracing the blocking measurement and guest-RAM 4GiB A/B the first reversible performance intervention.','ev_native_frame_blindspot'),
 ('2026-08-28T18:42:01Z','Trace capability','Proved current guest exposes SurfaceFlinger frame/frametimeline/layers, GPU memory and Linux tracing data sources; native telemetry no longer requires guessing or external instrumentation.','ev_trace_capabilities'),
@@ -1388,10 +1388,10 @@ SET current_relevance='Historical first-win control receipt; superseded as curre
 WHERE id='rv_current_first_win';
 
 INSERT OR REPLACE INTO runtime_variants(id,entrypoint,classification,runtime_family,graphics_path,display_profile,resource_profile,exact_result,promotion_state,source_document_id,current_relevance,notes) VALUES
-('rv_current_native_5gb','TFTMAC.app','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play through packaged macOS app host','TFT Unreal -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> host Vulkan -> MoltenVK -> Metal -> raw gRPC RGBA -> AppKit Metal','1920x1080 / 320 DPI / 60Hz target / native full screen','6 vCPU / 5120 MB','Authenticated controller, ADB5038/emulator-5582 device, official TFT18.1 SplashActivity -> Unreal GameActivity, correctly oriented native frames and input all passed in one live session.','PROMOTED',NULL,'Current native product/runtime authority','Source/presentation FPS are transport metrics, not Unreal FPS. CoreAudio software path passed; user audible confirmation and a full native match remain acceptance gaps.');
+('rv_current_native_5gb','TFTMAC.app','RECOMMENDED','Released Emulator37.1.11 / Android16 API36 Play through packaged macOS app host','TFT Unreal -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> host Vulkan -> MoltenVK -> Metal -> raw gRPC RGBA -> AppKit Metal','1920x1080 / 320 DPI / 60Hz target / native full screen','6 vCPU / 5120 MB','Historical pre-18.3 native lobby acceptance: authenticated controller, ADB5038/emulator-5582 device, correctly oriented native frames and input passed in one live session.','RETAINED',NULL,'Historical native control; superseded by the verified 18.3 DEV route','Retained for provenance only. Source/presentation FPS were transport metrics, not Unreal engine FPS; CoreAudio software path passed, while user-audible confirmation and a full native match remained gaps.');
 
 INSERT OR REPLACE INTO evidence(id,observed_at,kind,source_path,source_sha256,statement,confidence,notes) VALUES
-('ev_native_fullscreen_20260830','2026-08-30T08:41:35Z','native_runtime_acceptance','~/Library/Application Support/TFTMAC/Captures/2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94/TFTMAC_NATIVE_RUNTIME.sqlite',NULL,'Native AppKit TFTMAC authenticated Emulator37.1.11, reached ADB5038/emulator-5582 device, rendered exact 1920x1080 raw RGBA through Metal, accepted mouse input, and launched official TFT18.1 into com.epicgames.unreal.GameActivity.','DIRECT','Live lobby acceptance. Does not claim a completed native match, user-audible sound, or causal graphics-boundary attribution.');
+('ev_native_fullscreen_20260830','2026-08-30T08:41:35Z','native_runtime_acceptance','~/Library/Application Support/TFTMAC/Captures/2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94/TFTMAC_NATIVE_RUNTIME.sqlite',NULL,'Historical pre-18.3 native AppKit TFTMAC capture authenticated Emulator37.1.11, reached ADB5038/emulator-5582, rendered exact 1920x1080 raw RGBA through Metal, accepted mouse input, and launched the then-current Unreal GameActivity.','DIRECT','Historical lobby acceptance only. It does not describe the current 18.3 DEV launcher, package, display, audio, or performance baseline.');
 
 INSERT OR REPLACE INTO map_meta(key,value) VALUES
 ('current_native_runtime','TFTMAC.app; packaged TFTMAC Emulator Host.app via /usr/bin/open -n -W; ADB5038; emulator-5582; no injected ADB_VENDOR_KEYS; 6 vCPU; 5120 MiB; 1920x1080/320dpi/60Hz; CoreAudio; authenticated gRPC raw RGBA -> AppKit Metal full screen.'),
@@ -1482,3 +1482,61 @@ INSERT OR REPLACE INTO map_meta(key,value) VALUES
 ('current_game_settings','Current Control target: High graphics; 60 FPS; Performance Mode OFF. The historical combat_latency_a Build 8 capture is evidence, not an active or promoted configuration.'),
 ('current_pipeline_next_probe','Run the deterministic stock-shadow Vulkan-probe campaign, then establish uninstrumented modern-source parity and enable owned-stage work IDs with valid clock joins, sealed streams, and <=5% observer overhead.'),
 ('current_optimization_priority','Use the deterministic probe to screen supported settings, then use causal hooks to name the first divergent owned boundary. Patch only replicated evidence; otherwise report UNKNOWN or UNREAL_OR_PRE_HOST_UNKNOWN.');
+
+
+-- ---------------------------------------------------------------------------
+-- 2026-09-27 current 18.3 authority override
+-- All earlier Build 8/control values remain historical receipts. These exact-key
+-- overrides are the only current state used for TFTDEV decisions.
+-- ---------------------------------------------------------------------------
+UPDATE runtime_variants
+SET display_profile='2560x1440 / 416 DPI / 60Hz',
+    resource_profile='8 vCPU / 6144 MiB / host GPU / CoreAudio',
+    exact_result='Post-cleanup 18.3 DEV receipt reached the official home/play surface; audio, input, logger growth, and clean stop passed. No complete-match benchmark.',
+    promotion_state='PROMOTED',
+    current_relevance='Current 18.3 DEV playability baseline',
+    notes='StockShadow advanced diagnostics; selected RHI is OpenGL ES through ANGLE. In-game quality preset, FPS cap, and Performance Mode were not re-read in the post-cleanup receipt.'
+WHERE id='rv_stock_shadow_dev';
+
+UPDATE runtime_variants
+SET promotion_state='RETAINED',
+    current_relevance='Historical pre-18.3 runtime receipt; superseded by the verified 18.3 DEV route.',
+    notes=COALESCE(notes,'') || ' Reclassified on 2026-09-27; not current package, display, settings, or optimization authority.'
+WHERE id='rv_stock_build8_normal_play';
+
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('current_phase','18.3 DEV playable baseline recovered; no new performance winner; next gate is one complete real 18.3 game with comprehensive logger coverage.'),
+('current_release_gameplay_benchmark','VERIFIED_18_3_HOME_PLAYABILITY_ONLY; complete-match benchmark pending.'),
+('current_runtime_authority','TFTMAC DEV 2.3.0 build 8 through StockShadow advanced diagnostics; official TFT 18.3-5530794 / 8530794; protected Control remains rollback-only and was not reverified by the post-cleanup receipt.'),
+('current_observed_configuration','Historical post-cleanup snapshot: 2560x1440 / 416 DPI / 60Hz; 8 vCPU / 6144 MiB; host GPU; CoreAudio; ADB 5041; console 5586; controller 8556; OpenGL ES through ANGLE. Superseded current default: 1920x1080 / 416 DPI / 60Hz. In-game quality/FPS/Performance values remain NOT_RECORDED_POST_CLEANUP.'),
+('current_pipeline_receipt','Unreal OpenGL ES -> ANGLE Vulkan -> gfxstream ASG -> host Vulkan -> MoltenVK -> Metal; current route is receipt-backed for 18.3 launch/home acceptance only.'),
+('current_capture_validity','Post-cleanup logger growth, package identity, display, audio, input, and clean stop are verified. Complete-match phase coverage and gameplay attribution remain pending.'),
+('current_root_attribution','NOT_EVALUATED_ON_COMPLETE_MATCH; no component ownership is inferred from the launch/home receipt.'),
+('current_advanced_logger_status','Launch/home logger is verified with 119 events, 2,597 game-frame intervals, 39 game-frame windows, 101 presentation samples, 47 runtime receipts, 26 input samples, and 4 audio samples. Complete-match coverage is pending.'),
+('current_host_audit','Historical host-trust audit retained for provenance; it does not override the post-cleanup 18.3 runtime receipt.'),
+('current_presentation_candidate','RETIRED_AS_CURRENT_ACTION: no graphics or transport candidate is promoted from the post-cleanup receipt.'),
+('current_graphics_next_action','Capture one complete real 18.3 game with comprehensive logger coverage; then compare one reversible setting or pipeline variable only after the baseline is sealed.'),
+('current_renderer','Unreal OpenGL ES -> ANGLE Vulkan -> gfxstream ASG -> host Vulkan -> MoltenVK -> Metal.'),
+('current_graphics_pipeline','Historical 2560x1440 rendering description; current promoted output is 1920x1080. Selected Unreal RHI is OPENGL_ES_ANGLE; backing layers remain separate evidence boundaries.'),
+('current_game_surface_quality','The post-cleanup receipt is historical 2560x1440 evidence. Current sealed full-Trial receipts prove the promoted 1920x1080 output; source render-surface size and in-game quality selection remain separately unrecorded.'),
+('current_connector_state','Current 18.3 launch/home route is receipt-verified; per-frame connector ownership and complete-match latency are not yet measured.'),
+('current_presentation_state','Post-cleanup receipt records presentation samples but no complete-match miss window; historical cumulative SurfaceFlinger counters remain context only.'),
+('current_native_runtime','StockShadow advanced diagnostics; ADB 5041; emulator-5586; 8 vCPU; 6144 MiB; promoted 1920x1080/416 DPI/60Hz; CoreAudio; current 18.3 full-Trial playability evidence. Explicit 2560x1440 remains the matched control.'),
+('current_native_metric_boundary','Game-frame and presentation samples are evidence for the recorded launch/home run; no complete-match FPS or causal boundary is claimed.'),
+('current_game_settings','NOT_RECORDED_POST_CLEANUP for quality preset, FPS cap, and Performance Mode; re-read them in the next complete 18.3 game.'),
+('current_pipeline_next_probe','Run the complete 18.3 logger baseline first. Only then choose one reversible probe based on measured phase-specific evidence.'),
+('current_optimization_priority','Keep the verified 18.3 DEV baseline fixed. Complete one full-match logger run before any optimization comparison; then test one reversible variable at a time and require cold confirmation.'),
+('current_ram_decision','Do not promote the historical 5120-MiB decision to current authority; current 18.3 effective launch is 6144 MiB.'),
+('current_preplay_pressure_thresholds','Historical threshold retained for provenance; not a current 18.3 gameplay result.');
+
+-- 2026-10-02 current 18.3 promotion overrides. Earlier rows remain immutable
+-- provenance; these final keys are the effective current map authority.
+INSERT OR REPLACE INTO map_meta(key,value) VALUES
+('current_playable_baseline','post_cleanup_18_3_dev_home_playability: promoted 1920x1080 full-Trial route'),
+('current_observed_configuration','Current DEV launch default: 1920x1080 / 416 DPI / 60Hz; 8 vCPU / 6144 MiB; host GPU; CoreAudio; ADB 5041; console 5586; controller 8556; selected Unreal RHI OPENGL_ES_ANGLE. Physical displays remain 2560x1440; 2560x1440 is explicit control.'),
+('current_graphics_pipeline','TFT Unreal OpenGL ES -> ANGLE Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal -> SurfaceFlinger/HWC -> 1920x1080 guest output. Selected Unreal RHI is OPENGL_ES_ANGLE; backing layers do not establish Unreal Vulkan ownership.'),
+('current_game_surface_quality','Three matched 18.3 full-Trial receipts promote 1920x1080 at density 416 for playability. Strict continuous 60-FPS/severe-stall contract remains unmet; causal result is UNKNOWN_PRESENT_LINEAGE_GAP.'),
+('current_native_runtime','StockShadow advanced diagnostics; ADB 5041; emulator-5586; 8 vCPU; 6144 MiB; 1920x1080/416 DPI/60Hz; CoreAudio; current 18.3 full-Trial promotion.'),
+('current_optimization_priority','Use promoted 1920x1080 for playability and retain 2560x1440 as explicit control. Do not admit vCPU10, RAM, renderer, or graphics-CVar changes until present-lineage evidence or a new evidence-backed plan passes.'),
+('current_logger_status','Automatic full-session logger seals complete Tocker''s Trial captures; observer cadence 2s produced no admissible gain; default remains 1s.'),
+('current_causal_status','UNKNOWN_PRESENT_LINEAGE_GAP: pipeline_events and pipeline_lineage remain zero; no owner may be inferred.');

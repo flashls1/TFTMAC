@@ -35,8 +35,8 @@
     "activeExperiment": "control"
   },
   "currentDevWorking": {
-    "observedAt": "2026-09-10",
-    "sourceOfTruth": "facts.md + project.md; validated by RuntimeModeAuthority.swift and current live QEMU/runtime receipts",
+    "observedAt": "2026-10-02T03:20:18Z",
+    "sourceOfTruth": "TFTDEV-SSOT/receipts/tocker-campaign/observer-cadence-2026-10-02/decision.json; cold-launch default receipt 2026-10-02T03:20:18.566Z",
     "workingVersion": "DEV-B8-WIN-01",
     "application": {
       "path": "/Applications/TFTMAC DEV.app",
@@ -59,7 +59,7 @@
       "storedAvdBaselineRamMiB": 5120,
       "storedAvdBaselineSHA256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125",
       "display": "1920x1080",
-      "densityDpi": 320,
+      "densityDpi": 416,
       "refreshHz": 60,
       "gpu": "host",
       "audio": "coreaudio",
@@ -67,8 +67,10 @@
     },
     "package": {
       "name": "com.riotgames.league.teamfighttactics",
-      "versionName": "18.1-5423749",
-      "versionCode": "8423749"
+      "versionName": "18.3-5530794",
+      "versionCode": "8530794",
+      "versionPolicy": "GOOGLE_PLAY_CURRENT_OBSERVED",
+      "installerAuthority": "com.android.vending"
     },
     "graphics": {
       "selectedGameRHI": "OPENGL_ES_ANGLE",
@@ -81,7 +83,7 @@
       "angleDisabled": "preferSubmitAtFBOBoundary",
       "syncMonolithicPipelinesToBlobCache": false
     },
-    "promotionState": "VERIFIED_NET_IMPROVEMENT_INTEGRATED"
+    "promotionState": "VERIFIED_18_3_1080P_PLAYABILITY_PROMOTED"
   },
   "androidWebView": {
     "package": "com.google.android.webview",
@@ -91,10 +93,8 @@
     "riotLoginActivity": "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity"
   },
   "package": {
-    "scope": "PROTECTED_CONTROL_HISTORICAL_OBSERVATION",
+    "scope": "PROTECTED_CONTROL_FALLBACK_NOT_REVERIFIED_IN_POST_CLEANUP_RECEIPT",
     "name": "com.riotgames.league.teamfighttactics",
-    "versionName": "18.1-5402721",
-    "versionCode": "8402721",
     "installer": "com.android.vending"
   },
   "emulatorController": {
@@ -270,5 +270,19 @@
     "sql:graphics_frame_facts:FULLY_LINKED",
     "appkit-accessibility:AXFullScreen=true"
   ],
-  "supersedes": "ssot/history/runtime-authority-gate4-2026-08-30.json"
+  "supersedes": "ssot/history/runtime-authority-gate4-2026-08-30.json",
+  "latestPostCleanupAcceptance": {
+    "observedAt": "2026-09-27T15:44:00Z",
+    "receipt": "/Volumes/MAC MINI M4/TFTDEV-SSOT/receipts/post-cleanup-launch-2026-09-27.txt",
+    "packageVersion": "18.3-5530794",
+    "packageCode": "8530794",
+    "display": "2560x1440",
+    "densityDpi": 416,
+    "audio": "CoreAudio; active output; 48000 Hz stereo; zero partial or empty underruns",
+    "inputSamples": 26,
+    "gameFrameIntervals": 2597,
+    "gameFrameWindows": 39,
+    "presentationSamples": 101,
+    "acceptance": "PLAYABLE_HOME_SCREEN; NO_COMPLETE_MATCH_BENCHMARK"
+  }
 }

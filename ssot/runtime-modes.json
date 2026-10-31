@@ -3,7 +3,7 @@
   "default_mode": "control",
   "modes": {
     "advanced_diagnostics": {
-      "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb",
+      "adb_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/platform-tools/adb",
       "adb_server_port": 5041,
       "allowed_purpose": "ISOLATED_STOCK_SHADOW_SCREENING_AND_DIAGNOSTIC_BASELINE",
       "application_build": "8",
@@ -11,31 +11,31 @@
       "application_version": "2.3.0",
       "authority_manifest": {
         "kind": "external_sealed_manifest",
-        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
-        "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285"
+        "path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+        "sha256": "e5552f724e036f479b6065c89cb3d01ddc8f456cda941357fa0e92af3bd28884"
       },
-      "avd_config_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd/config.ini",
+      "avd_config_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd/config.ini",
       "avd_config_sha256": "b8cccc257dcc114ae5e6d24149514b7149b7e60a580fb74f79ca343823c28125",
-      "avd_directory": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd",
-      "avd_home": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD",
-      "avd_ini_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.ini",
-      "avd_ini_sha256": "85a50d6174c22d815ccb7c8ebeae13342922c2904f24e461fac47f953fb1a587",
+      "avd_directory": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.avd",
+      "avd_home": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/AVD",
+      "avd_ini_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/AVD/TFTMAC_Diagnostic_StockShadow_R1.ini",
+      "avd_ini_sha256": "9513f3e2ffc9e28437fd3cbba366d53f0e5054ca44bfe7a198523a49bb411848",
       "avd_name": "TFTMAC_Diagnostic_StockShadow_R1",
       "comparability_class": "STOCK_BUILD8_CONTROL_SHADOW",
-      "configuration_sha256": "3321a0246409313194cbe120a90c7d16b32f34c2ff550632554c8912ed69b4a0",
+      "configuration_sha256": "4305b60bf4a5a6238f82b3824a918c21581256cd59fdfcc7bd195b398ebcccf3",
       "console_port": 5586,
       "controller_port": 8556,
-      "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/emulator",
+      "emulator_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/emulator/emulator",
       "emulator_sha256": "b3b8fc0dcedcf6e15b54b41f3e5156319029aa00b88a59fd489f80abdd8fc133",
-      "gfxstream_backend_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/lib64/libgfxstream_backend.dylib",
+      "gfxstream_backend_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/emulator/lib64/libgfxstream_backend.dylib",
       "gfxstream_backend_sha256": "3772fef215058831ea419c9281fd203d010003d5defdc195dd120bc7748e4093",
       "launch_state": "enabled",
-      "library_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/lib64",
+      "library_root": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/emulator/lib64",
       "mode": "advanced_diagnostics",
       "requires_control_stopped": true,
       "rollback_target": "control",
-      "runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
-      "sdk_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK",
+      "runtime_root": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow",
+      "sdk_root": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK",
       "serial": "emulator-5586",
       "state_namespace": "advanced_diagnostics",
       "uses_legacy_application_support_root": false,
@@ -67,7 +67,7 @@
       "emulator_uuids": [
         "4C4C449E-5555-3144-A182-644CCB895091:arm64"
       ],
-      "qemu_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
+      "qemu_path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
       "qemu_sha256": "eaa97a970b81f81640db73ed79e19ee173323653a0a1203217e1199d078011f3",
       "qemu_uuids": [
         "4C4C4467-5555-3144-A10A-A9E5A99446F1:arm64"
@@ -77,7 +77,7 @@
       ],
       "host_application": {
         "kind": "external_application",
-        "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/Install/gate4-r9-forwarder-r1/TFTMAC Diagnostic Forwarder.app",
+        "path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/Install/gate4-r9-forwarder-r1/TFTMAC Diagnostic Forwarder.app",
         "bundle_identifier": "com.flashls1.tftmac.runtime.diagnostic-forwarder",
         "executable_relative_path": "Contents/MacOS/TFTMACDiagnosticForwarder",
         "executable_sha256": "128239b2cf3ddb04669c4fda97e895e1a4a800dcf2c2144066979427d92af5b6",
@@ -89,20 +89,20 @@
       },
       "diagnostic_receipts": {
         "build_id": "stock-shadow-r1-20260902",
-        "runtime_configuration_sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+        "runtime_configuration_sha256": "e5552f724e036f479b6065c89cb3d01ddc8f456cda941357fa0e92af3bd28884",
         "build": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
-          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "e5552f724e036f479b6065c89cb3d01ddc8f456cda941357fa0e92af3bd28884",
           "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         },
         "clone": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
-          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "e5552f724e036f479b6065c89cb3d01ddc8f456cda941357fa0e92af3bd28884",
           "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         },
         "native_host": {
-          "path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
-          "sha256": "540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285",
+          "path": "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/Manifests/stock-shadow-r1-20260902/stock-shadow-runtime.json",
+          "sha256": "e5552f724e036f479b6065c89cb3d01ddc8f456cda941357fa0e92af3bd28884",
           "required_state": "STOCK_SHADOW_RUNTIME_IDENTITY_PASS"
         }
       }
@@ -169,7 +169,7 @@
       "authority_manifest": {
         "kind": "bundled_resource",
         "path": "runtime-authority.json",
-        "sha256": "2af6196e08b3f81032b8226fa3a9c25a3b0d99537f0872b7eb21a96aaf2b5d2f"
+        "sha256": "1bf8d19b03aea2400dde9ba62c33c561f0bb18f1ff9b046188807cc8a84139f2"
       },
       "avd_config_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/AVD/TFT_Ultra_Tablet.avd/config.ini",
       "avd_config_sha256": null,
@@ -179,7 +179,7 @@
       "avd_ini_sha256": null,
       "avd_name": "TFT_Ultra_Tablet",
       "comparability_class": "STOCK_BUILD8_CONTROL",
-      "configuration_sha256": "b74eb944b70af29b73ab9cfa3a5bcb522e728a66f1c89ec2b767c36dc90dfc38",
+      "configuration_sha256": "eaa12ce35faad62938e87493b4b5c5769b1caff98915f391586b4a03778ab412",
       "console_port": 5582,
       "controller_port": 8554,
       "emulator_path": "/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/emulator",

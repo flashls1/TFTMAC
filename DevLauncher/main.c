@@ -8,6 +8,7 @@
 
 static const char *const kRuntimeMode = "advanced_diagnostics";
 static const char *const kCoreExecutable = "TFTMACDEVCore";
+static const char *const kPromotedDisplay = "1920x1080";
 
 int main(int argc, char *argv[]) {
     char launcherPath[PATH_MAX];
@@ -43,6 +44,13 @@ int main(int argc, char *argv[]) {
 
     if (setenv("TFTMAC_RUNTIME_MODE", kRuntimeMode, 1) != 0) {
         fprintf(stderr, "TFTMAC DEV could not select its isolated runtime mode: %s\n", strerror(errno));
+        return 70;
+    }
+    // The matched 18.3 campaign promoted 1920x1080 as the current gameplay
+    // winner. Keep an explicit TFTMAC_DEV_DISPLAY override authoritative so
+    // the 2560x1440 control remains one launch away for rollback and A/B runs.
+    if (getenv("TFTMAC_DEV_DISPLAY") == NULL && setenv("TFTMAC_DEV_DISPLAY", kPromotedDisplay, 1) != 0) {
+        fprintf(stderr, "TFTMAC DEV could not select its promoted display: %s\n", strerror(errno));
         return 70;
     }
 

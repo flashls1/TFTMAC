@@ -35,13 +35,26 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             renderStartupCurtain(on: controller, animated: false)
 
             let isDEV = runtimeConfiguration.selection.mode == .advancedDiagnostics
-            let unlockSecret: TFTMACGuestUnlockSecret? = isDEV ? nil : try TFTMACGuestUnlockSecretStore.loadOrPrompt(
-                applicationName: "TFTMAC",
-                runtimeMode: runtimeConfiguration.selection.mode
-            )
-            if ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1" {
+            let unlockSetupOnly = ProcessInfo.processInfo.environment["TFTMAC_UNLOCK_SETUP_ONLY"] == "1"
+            let unlockSecret: TFTMACGuestUnlockSecret?
+            if isDEV {
+                // DEV uses a distinct local keychain item so Android can keep
+                // its secure lock enabled for Google Play. The campaign
+                // runner never supplies a credential on the command line and
+                // never logs the PIN; a missing item remains fail-closed.
+                unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                    applicationName: "TFTMAC DEV",
+                    runtimeMode: runtimeConfiguration.selection.mode
+                )
+            } else {
+                unlockSecret = try TFTMACGuestUnlockSecretStore.loadOrPrompt(
+                    applicationName: "TFTMAC",
+                    runtimeMode: runtimeConfiguration.selection.mode
+                )
+            }
+            if unlockSetupOnly {
                 controller.emulatorView.setStatus(
-                    isDEV ? "TFTMAC DEV does not require an Android PIN." : "Automatic Android unlock is stored securely.",
+                    "Automatic Android unlock is stored securely.",
                     isError: false
                 )
                 NSApp.terminate(nil)
@@ -53,7 +66,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
                 mailbox: mailbox,
                 status: { [weak self, weak controller] text, isError in
                     guard let self, let controller else { return }
-                    if isError, self.startupCurtain.state.isVisuallyCovered {
+                    if !isError,
+                       text.hasPrefix("Google Play authentication is required."),
+                       self.startupCurtain.state.isVisuallyCovered {
+                        self.startupCurtain.revealForInteractiveSurface()
+                        self.renderStartupCurtain(on: controller)
+                    } else if isError, self.startupCurtain.state.isVisuallyCovered {
                         self.startupCurtain.fail(text)
                         self.renderStartupCurtain(on: controller)
                     } else {
@@ -139,6 +157,10 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     @objc func markMatchEntry(_ sender: Any?) { recordMarker("MATCH_ENTRY") }
+    @objc func markCarouselStart(_ sender: Any?) { recordMarker("CAROUSEL_START") }
+    @objc func markCarouselEnd(_ sender: Any?) { recordMarker("CAROUSEL_END") }
+    @objc func markCombatStart(_ sender: Any?) { recordMarker("COMBAT_START") }
+    @objc func markCombatEnd(_ sender: Any?) { recordMarker("COMBAT_END") }
     @objc func startCombatBenchmark(_ sender: Any?) {
         runtimeController?.startCombatBenchmark(performanceModeConfirmed: false)
     }

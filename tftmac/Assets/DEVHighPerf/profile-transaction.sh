@@ -3,7 +3,22 @@
 set -eu
 mode="$1"
 session="$2"
-expected=45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c
+control_expected=5b46164caea56dd4f24caf6afac7650fe61ae7c8fc20f8ae7c0b0a95b13e4264
+prev2_control_expected=ccd23e717f2ae146ce76fc1f5bab8befa208c44d588fc5303bcb8670b20ea1ec
+prev_control_expected=0e4c0f5816f1834f027db52f11696578c4984e2cb688ed81e3418b6275d9bb1e
+prior_control_expected=636cdb47792b8975fe0ef29a1669368eea041b665a45a7169d475d0a67b40d64
+candidate_expected=cbb645faa3a6772e70f969860c9c739046dcd5d38fce0eef061ed974cf68903c
+priority_candidate_expected=87c281b39d8e28ab75f7bd2a82e24493acf1b65db3f0eece9743f79bc929072d
+program_lru_candidate_expected=b87de95aaa4720204d199b55da908661f0aa249ee5873b738a2e92b2af09aaea
+defer_texture_candidate_expected=36c7572b0bc2b95234a0faf3ab3e852eb5a480766d3b66fb9bacf1d17c0401ab
+expected="$control_expected"
+# Previously staged DEV profiles left behind by interrupted sessions are
+# admitted only for rollback, after which the journal is archived and all
+# new applies use the current hash above.
+legacy_expected=76f1eb0ae79d60373dc034a9632dfe788087709d4a863ce9c6ceea12e4a05bc4
+mql1_expected=8c98b6cb0e233b0fda844c50d7b8c81a101c777e30c345d0cb1f184b967bbdfb
+older_control_expected=6d8751171edb53c51d565868e2e4a8bd1336829e1bab92976fded8c9de3437f2
+lkg_control_expected=45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c
 package=com.riotgames.league.teamfighttactics
 target=/data/user/0/$package/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini
 parent=${target%/*}
@@ -25,11 +40,15 @@ rollback() {
     return
   fi
   [ ! -L "$stage" ] && [ "$(cat "$stage/target")" = "$target" ] || fail 'journal target mismatch'
-  [ "$(cat "$stage/expected")" = "$expected" ] || fail 'journal revision mismatch'
+  observed_expected=$(cat "$stage/expected" 2>/dev/null || true)
+  case "$observed_expected" in
+    "$control_expected"|"$prev2_control_expected"|"$prev_control_expected"|"$prior_control_expected"|"$candidate_expected"|"$priority_candidate_expected"|"$program_lru_candidate_expected"|"$defer_texture_candidate_expected"|"$legacy_expected"|"$mql1_expected"|"$older_control_expected"|"$lkg_control_expected") journal_expected="$observed_expected" ;;
+    *) fail "journal revision mismatch expected=$expected observed=${observed_expected:-missing}" ;;
+  esac
   count=$(mount_count)
   [ "$count" -le 1 ] || fail 'stacked mounts'
   if [ "$count" = 1 ]; then
-    [ "$(sha "$target")" = "$expected" ] || fail 'unknown mount bytes'
+    [ "$(sha "$target")" = "$journal_expected" ] || fail 'unknown mount bytes'
     umount "$target"
   fi
   [ "$(mount_count)" = 0 ] || fail 'unmount not proven'
@@ -49,6 +68,7 @@ rollback() {
   archive="$stage.rolled-back.$(cat "$stage/session")"
   [ ! -e "$archive" ] || fail 'archive already exists'
   mv "$stage" "$archive"
+  sync
   echo 'ROLLED_BACK original content, metadata and presence verified'
 }
 case "$mode" in
@@ -56,6 +76,15 @@ rollback) rollback; exit 0 ;;
 apply) rollback ;;
 *) fail 'unsupported operation' ;;
 esac
+if [ "$mode" = apply ] && [ "${3:-control}" = pso_wait_all ]; then
+  expected="$candidate_expected"
+elif [ "$mode" = apply ] && [ "${3:-control}" = pso_priority_escalate ]; then
+  expected="$priority_candidate_expected"
+elif [ "$mode" = apply ] && [ "${3:-control}" = program_lru_evict20 ]; then
+  expected="$program_lru_candidate_expected"
+elif [ "$mode" = apply ] && [ "${3:-control}" = defer_texture_creation1 ]; then
+  expected="$defer_texture_candidate_expected"
+fi
 [ -d "$parent" ] && [ ! -L "$target" ] || fail 'private parent missing or target symlink'
 [ "$(stat -c %u "$parent")" = 10215 ] || fail 'unexpected official package owner'
 ctx=$(context "$parent")

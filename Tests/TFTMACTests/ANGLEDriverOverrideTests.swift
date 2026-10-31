@@ -73,4 +73,27 @@ final class ANGLEDriverOverrideTests: XCTestCase {
             XCTAssertThrowsError(try manifest.verifyLoadedReceipt(missing, session: session))
         }
     }
+
+    func testBlockCacheCandidateManifestValidatesSuccessfully() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let candidateDir = root.appendingPathComponent("DriverRuntime/angle1166/block-cache-candidate")
+        let libraries: [ANGLEDriverOverride.Library] = [
+            ("libEGL_angle.so", "2af48c412a92820ee0e4c91b2a311cdf2fac0b22e63815989a0e4d64e6659056"),
+            ("libGLESv2_angle.so", "c4467dffd7475dd0c1b011707e68bd7e480465eb20cdbbdc0c626873c7b90ad0"),
+            ("libGLESv1_CM_angle.so", "01ca3c2b67bd5cf11c3938411c4136a5d03452301d2ab3eab01b332f6a295127")
+        ].map { name, hash in
+            let path = candidateDir.appendingPathComponent(name).path
+            return ANGLEDriverOverride.Library(name: name, path: path, sha256: hash)
+        }
+        let manifest = ANGLEDriverOverride(
+            schema: 1,
+            variant: "reuse",
+            angleRevision: ANGLEDriverOverride.revision,
+            reuseEnabled: true,
+            captureFrames: 0,
+            viewDiagnosticsEnabled: false,
+            libraries: libraries
+        )
+        XCTAssertNoThrow(try manifest.validate())
+    }
 }

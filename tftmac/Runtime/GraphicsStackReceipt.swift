@@ -1,6 +1,42 @@
 import CryptoKit
 import Foundation
 
+enum TFTSelectedGameRHI: String, Sendable, Equatable {
+    case openGLESAngle = "OPENGL_ES_ANGLE"
+    case vulkan = "VULKAN"
+    case unknown = "UNKNOWN"
+
+    var confidence: String {
+        switch self {
+        case .unknown: return "UNKNOWN"
+        case .openGLESAngle, .vulkan: return "DIRECT_SELECTED_RHI_ENGINE_LOG"
+        }
+    }
+}
+
+enum TFTSelectedGameRHIParser {
+    /// Selects the game's RHI from the engine's selection/initialization lines.
+    /// Capability lines such as `VulkanRHI is available` are deliberately not
+    /// sufficient evidence of the selected route.
+    static func parse(_ engineLog: String) -> TFTSelectedGameRHI {
+        let hasOpenGLRHI = engineLog.contains("LogRHI: Initializing OpenGL RHI")
+        let hasAngleRenderer = engineLog.range(
+            of: "GL_RENDERER: ANGLE",
+            options: [.caseInsensitive]
+        ) != nil
+        let hasVulkanRHI = engineLog.contains("LogRHI: Initializing Vulkan RHI")
+            || engineLog.contains("Creating Vulkan Device")
+
+        if hasOpenGLRHI && hasAngleRenderer && !hasVulkanRHI {
+            return .openGLESAngle
+        }
+        if hasVulkanRHI && !hasOpenGLRHI {
+            return .vulkan
+        }
+        return .unknown
+    }
+}
+
 struct GraphicsStackReceiptField: Sendable, Equatable {
     let value: String
     let source: String

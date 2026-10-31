@@ -11,6 +11,7 @@ struct EmulatorFrame: @unchecked Sendable {
 
 enum FrameContractError: LocalizedError, Equatable {
     case inactiveDisplay
+    case invalidDisplayOverride(String)
     case wrongDimensions(width: Int, height: Int)
     case wrongByteCount(expected: Int, actual: Int)
 
@@ -18,8 +19,10 @@ enum FrameContractError: LocalizedError, Equatable {
         switch self {
         case .inactiveDisplay:
             return "The Android display is inactive."
+        case .invalidDisplayOverride(let value):
+            return "Unsupported advanced-diagnostics display override: \(value). Use 2560x1440 or 1920x1080."
         case .wrongDimensions(let width, let height):
-            return "Expected a 1920×1080 Android frame, received \(width)×\(height)."
+            return "Expected a \(FrameContract.width)×\(FrameContract.height) Android frame, received \(width)×\(height)."
         case .wrongByteCount(let expected, let actual):
             return "Expected \(expected) RGBA bytes, received \(actual)."
         }
@@ -27,14 +30,51 @@ enum FrameContractError: LocalizedError, Equatable {
 }
 
 enum FrameContract {
-    static let width = 1920
-    static let height = 1080
+    private static let supportedAdvancedDiagnosticDisplays: [String: (width: Int, height: Int, densityDPI: Int)] = [
+        "2560x1440": (2560, 1440, 416),
+        "1920x1080": (1920, 1080, 416)
+    ]
+
+    private static func parsedDisplayOverride(_ value: String?) -> (width: Int, height: Int, densityDPI: Int)? {
+        guard let value, let display = supportedAdvancedDiagnosticDisplays[value] else { return nil }
+        return display
+    }
+
+    // One launch-selected geometry owns guest pixels, Metal textures and mouse mapping.
+    static func display(
+        forRuntimeMode mode: String?,
+        requestedOverride: String? = ProcessInfo.processInfo.environment["TFTMAC_DEV_DISPLAY"]
+    ) -> (width: Int, height: Int, densityDPI: Int) {
+        guard mode == "advanced_diagnostics" else { return (1920, 1080, 320) }
+        return parsedDisplayOverride(requestedOverride) ?? (2560, 1440, 416)
+    }
+
+    static func validatedDisplay(
+        forRuntimeMode mode: String?,
+        requestedOverride: String? = ProcessInfo.processInfo.environment["TFTMAC_DEV_DISPLAY"]
+    ) throws -> (width: Int, height: Int, densityDPI: Int) {
+        guard mode == "advanced_diagnostics" else { return display(forRuntimeMode: mode, requestedOverride: nil) }
+        guard requestedOverride == nil || parsedDisplayOverride(requestedOverride) != nil else {
+            throw FrameContractError.invalidDisplayOverride(requestedOverride ?? "")
+        }
+        return display(forRuntimeMode: mode, requestedOverride: requestedOverride)
+    }
+
+    private static let selectedDisplay = display(forRuntimeMode: ProcessInfo.processInfo.environment["TFTMAC_RUNTIME_MODE"])
+    static let width = selectedDisplay.width
+    static let height = selectedDisplay.height
     static let bytesPerPixel = 4
     static let expectedByteCount = width * height * bytesPerPixel
 
-    static func validate(width: Int, height: Int, byteCount: Int) throws {
+    static func validate(
+        width: Int, height: Int, byteCount: Int,
+        runtimeMode: String? = ProcessInfo.processInfo.environment["TFTMAC_RUNTIME_MODE"],
+        requestedOverride: String? = ProcessInfo.processInfo.environment["TFTMAC_DEV_DISPLAY"]
+    ) throws {
+        let expected = display(forRuntimeMode: runtimeMode, requestedOverride: requestedOverride)
+        let expectedByteCount = expected.width * expected.height * bytesPerPixel
         guard width > 0, height > 0 else { throw FrameContractError.inactiveDisplay }
-        guard width == Self.width, height == Self.height else {
+        guard width == expected.width, height == expected.height else {
             throw FrameContractError.wrongDimensions(width: width, height: height)
         }
         guard byteCount == expectedByteCount else {

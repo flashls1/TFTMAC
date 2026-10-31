@@ -237,25 +237,59 @@ struct TFTMACRuntimeModeAuthority: Sendable {
                     message: "Runtime mode \(selection.mode.rawValue) is missing its fixed profile."
                 )
             }
+            let display = try FrameContract.validatedDisplay(forRuntimeMode: selection.mode.rawValue)
             let devVCPUOverride = (selection.mode == .advancedDiagnostics)
                 ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_VCPU"].flatMap(Int.init) ?? 8)
                 : locked.vcpu
-            let effectiveVCPU = TFTMACRuntimeProfile.supportedVCPU.contains(devVCPUOverride) ? devVCPUOverride : locked.vcpu
+            let supportedVCPU = selection.mode == .advancedDiagnostics
+                ? TFTMACRuntimeProfile.supportedAdvancedDiagnosticsVCPU
+                : TFTMACRuntimeProfile.supportedVCPU
+            let effectiveVCPU = supportedVCPU.contains(devVCPUOverride) ? devVCPUOverride : locked.vcpu
+            let devRAMOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_RAM_MIB"].flatMap(Int.init) ?? locked.ramMib)
+                : locked.ramMib
+            let effectiveRAM = TFTMACRuntimeProfile.supportedRAMMiB.contains(devRAMOverride)
+                ? devRAMOverride
+                : locked.ramMib
+            let devFlushOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_ASG_FLUSH"].flatMap(Int.init) ?? locked.asgDrawFlushInterval)
+                : locked.asgDrawFlushInterval
+            let effectiveFlush = TFTMACRuntimeProfile.supportedASGDrawFlushIntervals.contains(devFlushOverride)
+                ? devFlushOverride
+                : locked.asgDrawFlushInterval
+            let devDataRingOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_ASG_DATA_RING"].flatMap(Int.init) ?? locked.asgDataRingSize)
+                : locked.asgDataRingSize
+            let effectiveDataRing = TFTMACRuntimeProfile.supportedASGDataRingSizes.contains(devDataRingOverride)
+                ? devDataRingOverride
+                : locked.asgDataRingSize
+            let devStepOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_ASG_WRITE_STEP"].flatMap(Int.init) ?? locked.asgWriteStepSize)
+                : locked.asgWriteStepSize
+            let effectiveStep = TFTMACRuntimeProfile.supportedASGWriteStepSizes.contains(devStepOverride)
+                ? devStepOverride
+                : locked.asgWriteStepSize
+            let devWriteBufferOverride = (selection.mode == .advancedDiagnostics)
+                ? (ProcessInfo.processInfo.environment["TFTMAC_DEV_ASG_WRITE_BUFFER"].flatMap(Int.init) ?? locked.asgWriteBufferSize)
+                : locked.asgWriteBufferSize
+            let effectiveWriteBuffer = TFTMACRuntimeProfile.supportedASGWriteBufferSizes.contains(devWriteBufferOverride)
+                ? devWriteBufferOverride
+                : locked.asgWriteBufferSize
             return TFTMACRuntimeProfile(
                 identifier: locked.identifier,
-                width: locked.width,
-                height: locked.height,
-                densityDPI: locked.densityDpi,
+                width: selection.mode == .advancedDiagnostics ? display.width : locked.width,
+                height: selection.mode == .advancedDiagnostics ? display.height : locked.height,
+                densityDPI: selection.mode == .advancedDiagnostics ? display.densityDPI : locked.densityDpi,
                 refreshHz: locked.refreshHz,
                 vCPU: effectiveVCPU,
-                ramMiB: locked.ramMib,
+                ramMiB: effectiveRAM,
                 gpuMode: locked.gpuMode,
                 audioBackend: locked.audioBackend,
                 graphicsTransport: locked.graphicsTransport,
-                asgWriteBufferSize: locked.asgWriteBufferSize,
-                asgWriteStepSize: locked.asgWriteStepSize,
-                asgDataRingSize: locked.asgDataRingSize,
-                asgDrawFlushInterval: locked.asgDrawFlushInterval,
+                asgWriteBufferSize: effectiveWriteBuffer,
+                asgWriteStepSize: effectiveStep,
+                asgDataRingSize: effectiveDataRing,
+                asgDrawFlushInterval: effectiveFlush,
                 controllerPort: controllerPort,
                 angleEnabledFeatures: locked.angleEnabledFeatures,
                 angleDisabledFeatures: locked.angleDisabledFeatures,

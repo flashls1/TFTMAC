@@ -524,13 +524,13 @@ INSERT INTO unknowns VALUES
 -- preserving those older rows as historical context elsewhere in the project.
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
-('current_playable_baseline','tftmac_official_baseline_v1'),
-('current_playable_baseline_session','2026-08-28T11-06-18-553Z-e6d3204f-17c2-4b80-9084-e76642089da2'),
+('current_playable_baseline','post_cleanup_18_3_dev_home_playability'),
+('current_playable_baseline_session','2026-09-27T15-43-32.475Z-c7bdcf57-bd64-4f6f-b41e-7c0cd2979f39'),
 ('current_guest','Android 16 / API 36 Google Play ARM64 revision >=7'),
 ('current_emulator','Google Android Emulator 37.1.11'),
-('current_tft','18.1-5392842 / versionCode 8392842 / installer com.android.vending'),
+('current_tft','18.3-5530794 / versionCode 8530794 / installer com.android.vending'),
 ('current_renderer_path','TFT Unreal GameActivity -> ANGLE -> Vulkan/ranchu -> virtio-gpu-asg/gfxstream -> MoltenVK -> Metal'),
-('current_measurement_gap','gfxinfo does not expose native Unreal/Vulkan gameplay frames; native frame timing is blocking before graphics tuning'),
+('current_measurement_gap','The post-cleanup 18.3 receipt proves launch/home logger growth but is not a complete-match benchmark; full-match phase coverage is required before graphics tuning.'),
 ('current_trace_sources','Perfetto proven available: android.surfaceflinger.frame, android.surfaceflinger.frametimeline, android.surfaceflinger.layers, android.gpu.memory, linux.ftrace, linux.process_stats, linux.sys_stats'),
 ('current_trace_collector_smoke','5s smoke succeeded: 7479-byte raw pftrace, SHA-256 214dddf456fa94f0ba634dc564f391d576a27bfc6b58610b6e91314376bd9028, four lightweight SurfaceFlinger/GPU-memory sources, zero missed-frame counter delta during idle smoke'),
 ('logger_guard_policy','Sampler starts before emulator; sampler must survive startup; launch-game requires a live growth health check; MATCH_ENTRY and COMBAT_START require fresh process, memory and logcat streams; status reports LOGGER_FAULT when the gate is not ready.'),
@@ -540,10 +540,10 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('multi_match_policy','Keep raw telemetry continuous across games. Pair each MATCH_ENTRY with the next MATCH_RESULT; preserve per-match analysis artifacts; ingest match 2+ as distinct <capture-session>-match-N SQL sessions so later games never overwrite earlier evidence.'),
 ('current_tft_graphics_domain','Low | Medium | High | Ultra High'),
 ('current_tft_fps_cap_domain','30 | 60 | None'),
-('current_tft_graphics_observed','Medium'),
-('current_tft_fps_cap_observed','60'),
-('current_tft_performance_mode_beta_observed','OFF'),
-('current_optimization_priority','Continuous-run analysis is authoritative. Keep the logger running and analyze the whole capture; treat matches, placements, graphics preset, FPS cap, Performance Mode, app restarts, ANRs and user quality reports as timestamped annotations. Change one variable at a time, but do not require per-match start/stop boundaries.');
+('current_tft_graphics_observed','NOT_RECORDED_POST_CLEANUP'),
+('current_tft_fps_cap_observed','NOT_RECORDED_POST_CLEANUP'),
+('current_tft_performance_mode_beta_observed','NOT_RECORDED_POST_CLEANUP'),
+('current_optimization_priority','Keep the verified 18.3 DEV baseline fixed. Complete one full-match logger run before any optimization comparison; then test one reversible variable at a time and require cold confirmation.');
 
 INSERT OR REPLACE INTO host_facts VALUES
 ('control_image','control_system_image','system-images;android-36;google_apis_playstore;arm64-v8a',NULL,'DIRECT_OBSERVATION','gameplay-analysis.json','FROZEN','2026-08-28T18:30:59Z','First full official TFT match completed on this real Google Play image family.'),
@@ -643,11 +643,11 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('latest_closed_run_audio','CoreAudio sustained: explicit backend, 0 ranchu pcm_write I/O errors, active TFT 44.1 kHz stereo OpenSL ES track, 0 mixer underruns.'),
 ('latest_closed_run_network','No emulator/Android network disconnect reproduced: TFT PID stayed 5276; network 101 stayed assigned; end-of-game callback requests were immediately reassigned to network 101.'),
 ('latest_closed_run_presentation','Surface remains 1280x720 scaled to 1920x1080; post-run total missed=562 and HWC missed=562 at 60 Hz. Zero-valued GPU counter parsing was fixed so zero no longer becomes NULL. Next graphics intervention remains ASG drawFlushInterval 800 -> 400 only.'),
-('current_5gb_operational_decision','KEEP 5120 MB as development runtime. Two long runs reproduce lower pressure/pageout direction versus 6144 MB while maintaining adequate heavy-game guest headroom; 4096 MB remains deferred.'),
-('current_graphics_experiment','Next one-factor candidate: tftmac_5gb_flush400_exp_v1, drawFlushInterval 800 -> 400 only. Hold RAM, in-game settings, CoreAudio, resolution, vCPU, ANGLE, Vulkan, gfxstream and MoltenVK constant.'),
+('current_5gb_operational_decision','HISTORICAL PRE-18.3 DECISION: 5120 MB was retained in an earlier control. It does not override the verified current 18.3 DEV runtime at 6144 MiB.'),
+('current_graphics_experiment','No active optimization experiment. The next decision-critical run is one complete 18.3 game with comprehensive logger coverage; no candidate is promoted.'),
 ('latest_graphics_quality_observation','2026-08-28 late game: user changed TFT from Medium to Ultra High, observed Ultra High as unplayable due to severe lag, then returned to Medium and playability recovered. Exact switch timestamps were not instrumented in this legacy run, so do not assign telemetry bins or inferred FPS values to the Ultra High interval.'),
-('current_tft_graphics_observed','Medium'),
-('ultra_high_current_usability','REJECT for current runtime usability until new native-app FPS/config instrumentation can quantify the boundary; direct user observation is decisive for usability but not causal pipeline attribution.');
+('current_tft_graphics_observed','NOT_RECORDED_POST_CLEANUP'),
+('ultra_high_current_usability','HISTORICAL USER OBSERVATION ONLY: Ultra High was reported unplayable in a pre-18.3 run; current in-game quality was not re-read in the post-cleanup receipt.');
 
 UPDATE experiments
 SET notes=COALESCE(notes,'') || ' Latest qualitative result: Ultra High was unplayable from severe lag and returning to Medium restored playability. Exact switch timestamps/FPS were not captured, so this is a usability rejection for Ultra High, not a completed quantitative preset A/B.'
@@ -683,20 +683,20 @@ INSERT OR REPLACE INTO sessions(
     package_state_sha256,renderer_state_sha256,session_manifest_sha256,
     package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
 ) VALUES
-('2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94','tftmac_5gb_native_v1','2026-08-30T08:40:36Z',NULL,NULL,NULL,'COLD','LOBBY','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,0,'PARTIAL',1,NULL,'Native full-screen lobby acceptance; capture was still open when this SSOT receipt was written.');
+('2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94','tftmac_5gb_native_v1','2026-08-30T08:40:36Z',NULL,NULL,NULL,'COLD','LOBBY','com.riotgames.league.teamfighttactics','pre-18.3 historical client','8402721',NULL,NULL,NULL,0,'PARTIAL',1,NULL,'Native full-screen lobby acceptance; capture was still open when this SSOT receipt was written.');
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
-('current_playable_baseline','tftmac_5gb_native_v1'),
-('current_native_runtime_config','tftmac_5gb_native_v1'),
-('current_native_acceptance_session','2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94'),
-('current_runtime_identity','ADB 5038; console 5582; serial emulator-5582; packaged app host via /usr/bin/open; no injected ADB_VENDOR_KEYS'),
-('current_native_frame_truth','Raw gRPC source-window rate and Metal presentation rate are transport/output metrics only. Do not label either as Unreal engine FPS.'),
+('current_playable_baseline','post_cleanup_18_3_dev_home_playability'),
+('current_native_runtime_config','post_cleanup_18_3_dev_receipt'),
+('current_native_acceptance_session','2026-09-27T15-43-32.475Z-c7bdcf57-bd64-4f6f-b41e-7c0cd2979f39'),
+('current_runtime_identity','StockShadow advanced diagnostics; ADB 5041; console 5586; serial emulator-5586; 8 vCPU; 6144 MiB; host GPU; CoreAudio; clean stop leaves no runtime lease'),
+('current_native_frame_truth','The post-cleanup 18.3 receipt records game-frame and presentation samples for launch/home acceptance; it is not a complete-match FPS benchmark and does not prove a performance winner.'),
 ('current_native_logger','Private local capture: SQL receipts/events, one-second frame interval windows, presentation, qemu CPU/RSS, guest memory, clock sync, SurfaceFlinger deltas, AudioFlinger health, aggregate logcat signals, game PID sessions, input counts and explicit match/stutter markers.'),
 ('current_surfaceflinger_counter_policy','Sample the live dumpsys SurfaceFlinger counters every 30 seconds during gameplay and at session boundaries. Compare deltas inside marked windows; absolute counters remain cumulative since boot.'),
-('current_optimization_priority','Hold 1920x1080/320 dpi, 5038/5582, 5120 MiB, 6 vCPU, CoreAudio, host GPU and the renderer chain. Run one restart-bound variable A/B at a time and require cold confirmation before promotion.');
+('current_optimization_priority','Historical pre-promotion baseline at 2560x1440/416 dpi; superseded by the promoted 1920x1080 18.3 DEV default. Retain 2560x1440 only as the explicit matched control and require cold confirmation for any future candidate.');
 
 INSERT OR REPLACE INTO evidence(id,hypothesis_id,session_id,experiment_id,evidence_type,claim,relation,strength,source_artifact_id,created_at,notes) VALUES
-('ev_native_fullscreen_acceptance_20260830',NULL,'2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94',NULL,'DIRECT_MEASUREMENT','Native TFTMAC filled the 1920x1080 display in an AppKit full-screen window, authenticated Emulator37.1.11 gRPC, authorized emulator-5582 on ADB5038, rendered 1920x1080 RGBA through Metal at about 60 output presentations/s, and launched official TFT18.1 into Unreal GameActivity.','NEUTRAL','DECISIVE',NULL,'2026-08-30T08:41:35Z','Capture 2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94. Lobby/input/software-audio path proven; full-match and user-audible acceptance remain separate.');
+('ev_native_fullscreen_acceptance_20260830',NULL,'2026-08-30T08-40-36.792Z-5637b7cf-0c8b-435e-adbb-8f4c0e18de94',NULL,'DIRECT_MEASUREMENT','Historical pre-18.3 native TFTMAC lobby capture; it filled a 1920x1080 display in an AppKit full-screen window, authenticated Emulator37.1.11 gRPC, authorized emulator-5582 on ADB5038, and rendered 1920x1080 RGBA through Metal at about 60 output presentations/s.','NEUTRAL','WEAK',NULL,'2026-08-30T08:41:35Z','Retained as provenance only. It is not the current launcher, package, display, or optimization baseline; full-match and user-audible acceptance were separate gaps.');
 
 -- ---------------------------------------------------------------------------
 -- 2026-08-31 Build 8 automatic full-run capture: current causal baseline
@@ -722,7 +722,7 @@ INSERT OR REPLACE INTO sessions(
     package_updated_during_session,capture_state,semantic_valid,invalid_reason,notes
 ) VALUES (
     '2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200','tftmac_stock_build8_high60_control','2026-08-31T22:31:03Z','2026-08-31T23:13:30Z',NULL,NULL,
-    'UNKNOWN','MIXED','com.riotgames.league.teamfighttactics','18.1-5402721','8402721',NULL,NULL,NULL,
+    'UNKNOWN','MIXED','com.riotgames.league.teamfighttactics','pre-18.3 historical client','8402721',NULL,NULL,NULL,
     0,'COMPLETE',1,NULL,'42m27s automatic PID/layer-lifetime run. Markers and battle labels are optional annotations; no marker is required for validity or causal analysis.'
 );
 
@@ -761,15 +761,15 @@ INSERT OR REPLACE INTO unknowns(id,question,boundary,status,blocking,resolution_
 ('u_current_internal_root_cause','Which owned graphics component first diverges before TFT SurfaceFlinger actual-present degradation?','CROSS_STACK_CAUSAL','OPEN',1,NULL,'2026-08-31T23:13:30Z',NULL,'Requires the planned source-instrumented causal logger and complete work-ID joins.');
 
 INSERT OR REPLACE INTO lab_meta(key,value) VALUES
-('current_playable_baseline','tftmac_stock_build8_high60_control'),
-('current_playable_baseline_session','2026-08-31T22-30-26.086Z-8df607d7-a34a-4e2a-b00d-739aa3143200'),
-('current_release_gameplay_benchmark','VERIFIED_CAPTURE_ROOT_ATTRIBUTION_UNKNOWN'),
-('current_runtime_mode','STOCK_BUILD8_NORMAL_PLAY_AUTHORITY'),
-('current_active_experiment','control selected; High/60/Performance Mode OFF'),
-('current_renderer_path','Unreal direct Vulkan -> gfxstream/ASG -> host Vulkan -> MoltenVK -> Metal; ANGLE conditional only'),
+('current_playable_baseline','post_cleanup_18_3_dev_home_playability'),
+('current_playable_baseline_session','2026-09-27T15-43-32.475Z-c7bdcf57-bd64-4f6f-b41e-7c0cd2979f39'),
+('current_release_gameplay_benchmark','VERIFIED_18_3_HOME_PLAYABILITY_ONLY'),
+('current_runtime_mode','STOCKSHADOW_18_3_DEV_ADVANCED_DIAGNOSTICS'),
+('current_active_experiment','NONE; in-game quality preset, FPS cap, and Performance Mode were not re-read in the post-cleanup receipt'),
+('current_renderer_path','Unreal OpenGL ES -> ANGLE Vulkan -> gfxstream ASG -> host Vulkan -> MoltenVK -> Metal'),
 ('current_mac_presenter_policy','Final Mac presenter is excluded from causal candidates and retained only as context/correctness telemetry.'),
 ('current_marker_policy','MATCH_ENTRY, MATCH_END, combat, battle, and quality markers are optional annotations only; automatic process/layer lifetime defines capture validity.'),
-('current_root_attribution','UNKNOWN_UPSTREAM_OF_OR_AT_GUEST_SURFACE'),
+('current_root_attribution','NOT_EVALUATED_ON_COMPLETE_MATCH; the current receipt is launch/home acceptance only'),
 ('advanced_source_causal_logger','PARTIAL_NOT_LIVE_ACCEPTED: PipelineEventV1 ABI, fixed rings, segment hashing, SQL schema, analyzer states, owned Vulkan probe, stock-shadow DEV runtime, and campaign runner exist. Modern source hooks, uninstrumented parity, live lineage, clock, loss, and observer-overhead gates remain pending.');
 
 UPDATE experiments
@@ -788,11 +788,42 @@ INSERT OR REPLACE INTO lab_meta(key,value) VALUES
 ('logger_guard_policy','Automatic logging follows the TFT process and exact layer from game start until process/app close. MATCH_ENTRY, MATCH_END, combat, battle, quality, and result markers are optional annotations only.'),
 ('multi_match_policy','Keep raw telemetry continuous across every game. Process/layer lifetime and timestamps define validity; marker pairing and battle classification are never required.'),
 ('current_measurement_gap','Exact TFT SurfaceFlinger actual-present timing is implemented and verified. PipelineEventV1, storage, SQL, analyzer states, and the owned probe are implemented, but live modern-source hook joins below the guest surface have not passed parity, lineage, loss, clock, or observer-overhead gates.'),
-('current_tft_graphics_observed','High'),
-('current_tft_fps_cap_observed','60'),
-('current_tft_performance_mode_beta_observed','OFF'),
+('current_tft_graphics_observed','NOT_RECORDED_POST_CLEANUP'),
+('current_tft_fps_cap_observed','NOT_RECORDED_POST_CLEANUP'),
+('current_tft_performance_mode_beta_observed','NOT_RECORDED_POST_CLEANUP'),
 ('current_native_frame_truth','Exact TFT SurfaceFlinger actual-present timestamps are FPS authority. Final Mac presentation is hidden correctness context only and is excluded from causal ranking.'),
 ('current_native_logger','Automatic private SQL capture covers the TFT PID/layer lifetime, exact intervals/windows, receipts, incidents, and bounded supporting telemetry. Markers are optional annotations.'),
 ('current_surfaceflinger_counter_policy','Exact TFT actual-present intervals and one-second windows are primary. Cumulative counters are supporting context only and do not require marked windows.'),
-('current_optimization_priority','Run the bounded owned-probe screen first. Name or patch a component only after source causal hooks prove the first divergent owned boundary; otherwise report UNKNOWN or UNREAL_OR_PRE_HOST_UNKNOWN.'),
-('current_graphics_experiment','Control is selected for normal play. The isolated stock-shadow DEV seven-run Vulkan-probe campaign is prepared and awaits its sealed execution; no synthetic candidate or historical combat_latency_a configuration is promoted.');
+('current_optimization_priority','Keep the verified 18.3 DEV baseline fixed. Complete one full-match logger run before any optimization comparison; then test one reversible variable at a time and require cold confirmation.'),
+('current_graphics_experiment','No active optimization experiment. The next decision-critical run is one complete 18.3 game with comprehensive logger coverage; no candidate is promoted.');
+
+-- 2026-10-02 current 18.3 playability promotion. This final override keeps
+-- the machine-readable lab authority aligned with the sealed matched campaign.
+INSERT OR REPLACE INTO runtime_configs(
+  id,parent_config_id,name,config_sha256,emulator_version,platform_tools_version,
+  system_image_package,system_image_revision,avd_name,adb_serial,adb_server_port,
+  emulator_console_port,vcpu,ram_mb,display_width,display_height,density_dpi,
+  refresh_hz,gpu_mode,audio_enabled,graphics_transport,angle_mode,vulkan_mode,
+  moltenvk_mode,presentation_mode,state,created_at,notes
+) VALUES(
+  'post_cleanup_18_3_dev_home_playability',NULL,
+  'TFT 18.3 promoted 1920x1080 full-Trial playability default',NULL,
+  '37.1.11.0',NULL,'system-images;android-36;google_apis_playstore;arm64-v8a',7,
+  'TFTMAC_Diagnostic_StockShadow_R1','emulator-5586',5041,5586,8,6144,
+  1920,1080,416,60.0,'host',1,'virtio-gpu-asg',
+  'OPENGL_ES_THROUGH_ANGLE','guest-vulkan-capability-only',
+  'backing-boundary-only','native-metal-presenter-context-only','PROMOTED',
+  '2026-10-02T03:20:18Z',
+  'Three sealed matched 18.3 full-Trial captures: median 59.03 workload FPS; explicit 2560x1440 remains the matched control. Causal present-lineage remains unknown.'
+);
+INSERT OR REPLACE INTO lab_meta(key,value) VALUES
+('current_playable_baseline','post_cleanup_18_3_dev_home_playability'),
+('current_playable_baseline_session','2026-10-02T03:01:08Z-20261002T031302Z-guest-1080p-20585'),
+('current_optimization_priority','Use the promoted 1920x1080 18.3 DEV default for playability. Keep 2560x1440 as explicit control. Do not admit vCPU10, RAM, renderer, or graphics-CVar changes until causal present-lineage evidence or a new evidence-backed plan passes.'),
+('current_tft_graphics_observed','High / 60 FPS / Performance Mode OFF; confirmed by the current full-Trial campaign route'),
+('current_tft_fps_cap_observed','60'),
+('current_tft_performance_mode_beta_observed','OFF'),
+('current_release_gameplay_benchmark','VERIFIED_18_3_FULL_TRIAL_1080P_PROMOTED_STRICT_60FPS_UNMET'),
+('current_renderer_path','TFT Unreal OpenGL ES -> ANGLE Vulkan -> gfxstream ASG -> host Vulkan -> MoltenVK -> Metal; selected Unreal RHI is OPENGL_ES_ANGLE'),
+('current_root_attribution','UNKNOWN_PRESENT_LINEAGE_GAP'),
+('current_graphics_experiment','NO_ACTIVE_EXPERIMENT; observer cadence 2s produced no admissible gain and runner default remains 1s');

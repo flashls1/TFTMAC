@@ -12,8 +12,6 @@ readonly RUNNER_LOCK="${HOME}/Library/Application Support/TFTMAC/Modes/advanced_
 readonly CONTROL_EXECUTABLE="${CONTROL_APP}/Contents/MacOS/TFTMAC"
 readonly CONTROL_EMULATOR="/Volumes/MAC MINI M4/TFTMAC/Runtime/SDK/emulator/emulator"
 readonly CONTROL_AVD="/Volumes/MAC MINI M4/TFTMAC/Runtime/AVD/TFT_Ultra_Tablet.avd"
-readonly KEYCHAIN_SERVICE="com.flashls1.tftmac.dev.android-unlock.v1"
-readonly KEYCHAIN_ACCOUNT="android-user-0"
 readonly RUN_TIMEOUT_SECONDS=900
 
 fail() { print -u2 -- "TFTMAC Vulkan campaign failed: $*"; exit 1; }
@@ -21,11 +19,6 @@ fail() { print -u2 -- "TFTMAC Vulkan campaign failed: $*"; exit 1; }
 [[ -x "${CONTROL_EXECUTABLE}" && -x "${CONTROL_EMULATOR}" ]] || fail "Control authority is unavailable"
 [[ -f "${DEV_APP}/Contents/Resources/TFTMACVulkanProbe.apk" ]] || fail "installed DEV app has no owned Vulkan probe"
 [[ -f "${DEV_APP}/Contents/Resources/workload-manifest.json" ]] || fail "installed DEV app has no workload manifest"
-/usr/bin/security find-generic-password \
-  -s "${KEYCHAIN_SERVICE}" \
-  -a "${KEYCHAIN_ACCOUNT}" \
-  "${HOME}/Library/Keychains/login.keychain-db" >/dev/null 2>&1 \
-  || fail "secure unlock is not initialized; run scripts/setup-android-unlock.command once"
 
 if /usr/bin/pgrep -f '/Applications/TFTMAC.app/Contents/MacOS/TFTMAC|@TFTMAC[^ ]*.*-port 5582' >/dev/null; then
   fail "Control is running; it will not be disturbed"

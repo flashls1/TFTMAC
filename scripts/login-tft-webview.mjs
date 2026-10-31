@@ -112,7 +112,7 @@ try {
   await call('Runtime.enable');
   helperStage = 'form_preflight';
   let preflightResult;
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
     const preflight = await call('Runtime.evaluate', {
       expression: `(() => {
         const username = document.querySelector('input[name="username"]');
@@ -132,7 +132,7 @@ try {
     });
     preflightResult = preflight.result?.value;
     if (preflightResult?.fieldsReady || preflightResult?.visibleCaptcha) break;
-    await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    await new Promise((resolve) => setTimeout(resolve, attempt * 125));
   }
 
   if (!preflightResult?.fieldsReady) {

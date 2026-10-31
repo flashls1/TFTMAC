@@ -1,9 +1,9 @@
 # TFTMAC Pipeline Settings & Tuning Reference
 
-**Reference reconciled:** 2026-09-10 America/Chicago.
+**Reference reconciled:** 2026-09-27 America/Chicago.
 **Authority:** this file is a detailed tuning/reference catalog, **not an independent SSOT**. Read `facts.md` first and `project.md` second; when this file conflicts with them, the authority records govern until validated newer evidence is used to update those records.
-**Hardware target:** Apple M4 Mac mini (`Mac16,10`), 10 physical CPU cores (4 performance + 6 efficiency), 10 GPU cores, 16 GiB unified memory, macOS 26.6.2 / build 25G83. Fixed CPU/GPU MHz values are not project-authoritative.
-**Current DEV execution:** TFTMAC DEV 2.3.0 build 8, 1920×1080 / 320 dpi / 60 Hz, **8 vCPU / 6144 MiB**, host GPU/CoreAudio, OpenGL ES through ANGLE, current winner `DEV-B8-WIN-01`. vCPUs are virtual scheduling resources; they do not reserve or dedicate an equal number of physical M4 host cores.
+**Hardware target:** Apple M6 Mac mini (`Mac18,5`), 12 CPU cores, 12 GPU cores, 16 GiB unified memory, macOS 27.0.1 / build 26A434. Fixed CPU/GPU MHz values are not project-authoritative.
+**Current DEV execution:** TFTMAC DEV 2.3.0 build 8, official TFT 18.3-5530794 / 8530794, promoted guest `1920×1080` / 416 dpi / 60 Hz, **8 vCPU / 6144 MiB**, host GPU/CoreAudio, OpenGL ES through ANGLE. Physical displays remain native `2560×1440`; that guest size is the explicit matched control. The post-cleanup receipt did not re-read the in-game quality preset, FPS cap, or Performance Mode. The table below is a reference/candidate catalog until a current 18.3 receipt exercises a value. vCPUs are virtual scheduling resources; they do not reserve or dedicate an equal number of physical M6 host cores.
 
 > **DEVELOPMENT TARGET LOCK — 2026-09-04:** The protected Control app at `/Applications/TFTMAC.app` is the stable known-good launcher and is not a development target. All new settings, UI, graphics, runtime, and experiment changes go to `/Applications/TFTMAC DEV.app` / `advanced_diagnostics` first. DEV may be promoted into a full production release only through a separate explicit Flash-authorized release process after acceptance. Until then, no DEV build/install step may overwrite or mutate Control.
 
@@ -48,7 +48,7 @@ Riot's current TFT mobile client is verified to use Unreal Engine. This project 
 * **Target Guest File**: `/sdcard/Android/data/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini`
 * **Provisioned By**: `TFTMACRuntime.swift -> provisionTFTDeviceProfiles`
 
-| Setting / CVar | Stock Android Value | TFTMAC High-Perf Value | Operational Impact & Rationale |
+| Setting / CVar | Stock Android Value | Historical/proposed High-Perf Value | Operational Impact & Rationale |
 | :--- | :--- | :--- | :--- |
 | `tft.DefaultFrameRateLimit` | `30` | `60` | Unlocks 60 FPS nominal budget during boot, splash, menus, and asset loading (bypasses mobile battery-saving throttle). |
 | `t.MaxFPS` | `0` or `30` | `60` | Hard clamp on the engine rendering loop; matches the 60 Hz hardware VSYNC clock. |
@@ -56,8 +56,8 @@ Riot's current TFT mobile client is verified to use Unreal Engine. This project 
 | `a.StripOddFramesWhenFrameStripping` | `1` | `0` | **Restores full 60 FPS champion animations.** Stock profile strips every odd animation frame to save mobile CPU. |
 | `a.StripFramesOnCompression` | `1` | `0` | Disables animation compression frame stripping. |
 | `r.SkeletalMeshForceLOD` | `1` | `0` | Prevents forced low-detail LOD on champion and Little Legend 3D models. |
-| `r.Streaming.PoolSize` | `300` | `1000` | Expands texture streaming memory pool to 1 GB (utilizes M4 unified memory). |
-| `r.Streaming.PoolSizeForMeshes` | `25` | `250` | **Eliminates combat hitching.** Stock 25 MB pool forced constant disk paging during 8-player combat; 250 MB keeps all units cached. |
+| `r.Streaming.PoolSize` | `300` | `1000` | Candidate hypothesis only; not validated on the promoted 18.3 route. |
+| `r.Streaming.PoolSizeForMeshes` | `25` | `250` | Candidate hypothesis only; no current 18.3 receipt proves that this value eliminates combat hitching. |
 | `r.RenderTargetPoolMin` | `0` | `100` | Pre-allocates 100 MB of render targets (3x mobile forward-shading requirement) while freeing 300 MB of guest RAM for OS disk/asset page caching. |
 | `r.pso.PrecompileThreadPoolSize` | historical `4` | current value must be read from the verified DEV profile/receipt | Controls background PSO compilation concurrency. It does **not** permanently reserve physical or virtual cores for GameThread/RHIThread; validate any change as a one-factor DEV candidate. |
 | `p.ClothPhysics` | `0` | `1` | Enables cape and cloth simulation physics on champions (~0.5 ms CPU budget under <=30 champions). |
@@ -161,7 +161,7 @@ Standard diagnostic tools repeatedly failed to provide truthful data because of 
 * **The Fix**: We updated `GameFrameTelemetrySampler` to detect `MobileFREWebViewActivity`. When active, it returns `.unavailable(.loginPromptActive)` and the HUD displays `TFT LOGIN (IDLE)`, keeping the database free of false degradation records.
 
 ### C. Host vs. Guest Causal Attributions (`PipelineEventV1` & Timelines)
-* **The Mystery**: When frame drops occurred during 8-player combat, was the bottleneck in QEMU's ASG decoder, the Vulkan driver, MoltenVK translation, or the Apple M4 Metal GPU?
+* **The Mystery**: When frame drops occurred during 8-player combat, was the bottleneck in QEMU's ASG decoder, the Vulkan driver, MoltenVK translation, or the Apple M6 Metal GPU?
 * **How We Discovered the Solution**:
   1. We designed `PipelineEventV1`: an exact 96-byte C++ binary event structure with SHA-256 segment chaining.
   2. We instrumented `gfxstream-backend` and `MoltenVK` using Vulkan 64-bit timeline semaphores (`VK_KHR_timeline_semaphore`).
@@ -177,9 +177,9 @@ Standard diagnostic tools repeatedly failed to provide truthful data because of 
 * **Historical profiling finding**: one earlier 6-vCPU match generated **4,253 child processes** from aggressive polling and also used a bounded Perfetto/ftrace capture. That combination was considered intrusive and was removed from the preferred measurement path. Do not generalize it as proof that tracing always completely starves RHIThread/AudioFlinger; current profiling must remain bounded.
 * **The Fix**: We restricted `dumpsys SurfaceFlinger --list` to run only when the active layer is lost or reports 0 frames, cached `currentGamePID`, and disabled automatic Perfetto dumps during normal interactive play (`TFTMAC_ENABLE_AUTO_PERFETTO=1` required).
 
-### E. Apple Silicon M4 CPU/GPU Routing & Thread Allocation Architecture
-* **Hardware boundary**: the Apple M4 Mac mini has 10 CPU cores (4 performance + 6 efficiency) and 10 GPU cores sharing unified memory. This project does not treat fixed P/E-core MHz values as an authoritative runtime fact because macOS dynamically manages frequency.
-* **GPU scheduling boundary**: the Android guest does not directly allocate physical M4 GPU cores. The current path ultimately submits work to Metal, and macOS/Metal own GPU scheduling. A prior bounded instrumented sample measured about 0.68 ms of Metal GPU work for its sampled frames; that does not prove every 1080p frame finishes in 0.68 ms or that every workload continuously occupies all 10 GPU cores.
+### E. Apple Silicon M6 CPU/GPU Routing & Thread Allocation Architecture
+* **Hardware boundary**: the verified Apple M6 Mac mini has 12 CPU cores and 12 GPU cores sharing 16 GiB unified memory. This project does not treat fixed P/E-core MHz values as an authoritative runtime fact because macOS dynamically manages frequency.
+* **GPU scheduling boundary**: the Android guest does not directly allocate physical M6 GPU cores. The current path ultimately submits work to Metal, and macOS/Metal own GPU scheduling. A prior bounded instrumented sample measured about 0.68 ms of Metal GPU work for its sampled frames; that sample is historical and does not prove every current 18.3 frame finishes in 0.68 ms or that every workload continuously occupies all 12 GPU cores.
 * **CPU/quality tuning history**:
   * Current DEV uses **8 vCPUs**, not 6. vCPU count does not dedicate or reserve physical host cores; it changes the guest scheduler's available virtual CPUs.
   * PSO worker-count experiments can reduce or increase contention, but a worker count does not permanently reserve vCPUs for GameThread/RHIThread and cannot be claimed to eliminate context-switch starvation without a matched result.

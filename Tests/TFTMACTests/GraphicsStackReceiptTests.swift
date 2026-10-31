@@ -1,6 +1,39 @@
 import XCTest
 
 final class GraphicsStackReceiptTests: XCTestCase {
+    func testSelectedRHIUsesEngineSelectionInsteadOfVulkanCapability() {
+        let engineLog = """
+        LogAndroid: VulkanRHI is available, Vulkan capable device detected.
+        LogAndroid: FAndroidGPUInfo ANGLE detected with GL_RENDERER string ANGLE (Apple, Vulkan 1.3.0)
+        LogAndroid: VulkanRHI will NOT be used:
+        LogAndroid:  ** Vulkan is disabled via console variable.
+        LogAndroid: OpenGL ES will be used.
+        LogRHI: Initializing OpenGL RHI
+        LogRHI:   GL_RENDERER: ANGLE (Apple, Vulkan 1.3.0)
+        """
+
+        XCTAssertEqual(TFTSelectedGameRHIParser.parse(engineLog), .openGLESAngle)
+    }
+
+    func testSelectedRHIRejectsCapabilityOnlyVulkanEvidence() {
+        let capabilityOnlyLog = """
+        LogAndroid: VulkanRHI is available, Vulkan capable device detected.
+        LogAndroid: FAndroidGPUInfo ANGLE detected with GL_RENDERER string ANGLE (Apple, Vulkan 1.3.0)
+        """
+
+        XCTAssertEqual(TFTSelectedGameRHIParser.parse(capabilityOnlyLog), .unknown)
+    }
+
+    func testSelectedRHIRecognizesVulkanInitialization() {
+        let engineLog = """
+        LogAndroid: VulkanRHI is available, Vulkan capable device detected.
+        LogRHI: Initializing Vulkan RHI
+        LogVulkanRHI: Creating Vulkan Device
+        """
+
+        XCTAssertEqual(TFTSelectedGameRHIParser.parse(engineLog), .vulkan)
+    }
+
     func testCanonicalJSONAndHashIgnoreFieldInsertionOrder() {
         let surface = GraphicsStackReceiptField(value: "EXACT_LAYER_ACTIVE", source: "SURFACEFLINGER", confidence: "PROVEN")
         let angle = GraphicsStackReceiptField(value: "PROVEN_ACTIVE", source: "EMULATOR_STDERR", confidence: "PROVEN")

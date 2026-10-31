@@ -6,8 +6,8 @@ External official-client telemetry and bounded experiment controller for TFTMAC 
 
 Before interpreting or running OvernightLab, read `facts.md`, `project.md`, and `CHANGELOG.md`. The current working baseline is **`DEV-B8-WIN-01`**:
 
-- official TFT `18.1-5423749` / versionCode `8423749`;
-- 1920x1080 / 320 DPI / 60 Hz;
+- official TFT `18.3-5530794` / versionCode `8530794`;
+- 2560x1440 / 416 DPI / 60 Hz;
 - effective DEV launch **8 vCPU / 6144 MiB** (the static StockShadow restoration file remains 6/5120 and is not the effective launch);
 - host GPU / CoreAudio;
 - selected game RHI **OpenGL ES through ANGLE**;
@@ -15,7 +15,7 @@ Before interpreting or running OvernightLab, read `facts.md`, `project.md`, and 
 - `preferSubmitAtFBOBoundary` disabled;
 - `syncMonolithicPipelinesToBlobCache` removed.
 
-The frozen Sept-10 LKG remains separate historical/control evidence. OvernightLab must not silently restore the old global-sync property set as the working control.
+The frozen pre-18.3 LKG remains separate historical/control evidence. OvernightLab must not silently restore the old global-sync property set as the working control.
 
 ## Evidence-retention policy
 

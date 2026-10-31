@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "client_scope": "OFFICIAL_LIVE",
-  "working_version": "DEV-B8-WIN-01",
+  "working_version": "DEV-B8-WIN-01_PROMOTED_1920X1080",
   "authority_sources": [
     "facts.md",
     "project.md",
@@ -14,13 +14,13 @@
     "current_promotion_baseline": "DEV-B8-WIN-01"
   },
   "package_name": "com.riotgames.league.teamfighttactics",
-  "version_name": "18.1-5423749",
-  "version_code": 8423749,
+  "version_name": "18.3-5530794",
+  "version_code": 8530794,
   "game_activity": "com.epicgames.unreal.GameActivity",
   "login_activity": "com.riotgames.platformui.mobilefre.MobileFREWebViewActivity",
   "expected_surface_identity": "SurfaceView[com.riotgames.league.teamfighttactics/com.epicgames.unreal.GameActivity](BLAST)",
   "installed_dev_app": "/Applications/TFTMAC DEV.app",
-  "frozen_lkg_root": "/Volumes/MAC MINI M4/TFTFINALBOSS/LKG-2026-09-10",
+  "frozen_lkg_root": "/Volumes/MAC MINI M4/TFTDEV-SSOT/evidence/historical/pre-18.3-lkg-2026-09-10",
   "diagnostic_runtime_root": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
   "capture_root": "~/Library/Application Support/TFTMAC/Modes/advanced_diagnostics/Captures",
   "adb_path": "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb",
@@ -33,7 +33,7 @@
   "expected_runtime_mode": "advanced_diagnostics",
   "expected_width": 1920,
   "expected_height": 1080,
-  "expected_dpi": 320,
+  "expected_dpi": 416,
   "expected_refresh_hz": 60,
   "expected_vcpu": 8,
   "expected_ram_mib": 6144,
@@ -41,19 +41,19 @@
   "expected_normal_rhi": "OPENGL_ES_ANGLE",
   "angle_revision": "1166eec4c0b125e9e945196acfc549983ef72b18",
   "current_dev_hashes": {
-    "Contents/MacOS/TFTMACDEVCore": "0fca0410873bfc76ffbf3f50066c6ebeb5b65090ef1725f1807a3df8bb2c6329",
-    "Contents/MacOS/TFTMACDEVLauncher": "e650e1cda1e0243d189c4b26d335ef79eabb8939b95849452b29d8cd82b83e61",
-    "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
-    "Contents/Resources/DEVHighPerf/profile-transaction.sh": "45649f06f1e4eef4711b7fec8e949120acab3bf30bfea9b664192cb907dc91ab",
-    "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
-    "Contents/Resources/TFTMACVulkanProbe.apk": "e4d6a8725c84040d6bb59a10fafd1c90f395bdce76b200168233d09c73ecf9bc"
+    "Contents/MacOS/TFTMACDEVCore": "750449fa3ef63d6f25010a65d13d2948c617ae85a373edb7a914bcf47de794cc",
+    "Contents/MacOS/TFTMACDEVLauncher": "2447803d8a228af4eec0055665d7e6b48d2e06f0476681d414e8a3f15b6d5c94",
+    "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "0d0332391bf3086be8d3851be3184efb265ddcc1e71cf97c75aa69a833f90c0a",
+    "Contents/Resources/DEVHighPerf/profile-transaction.sh": "e3589ab4f26bbe0d748a9a8268a3d910f465be9f11c2af488e90cd6ba8198fee",
+    "Contents/Resources/runtime-modes.json": "f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369",
+    "Contents/Resources/TFTMACVulkanProbe.apk": "970934c29d8726f283d301509944ad7ceae46fb9fba3508ac491dbc9432540d6"
   },
   "frozen_lkg_hashes": {
     "Contents/MacOS/TFTMACDEVCore": "89dbdce12e8e0b5524108bfc5444bdc31783e023d1b0a34a01653fd84a889cd4",
     "Contents/MacOS/TFTMACDEVLauncher": "b7a04c91b148d5cc71a82e1d1773e9180a1e901acb2fb4ac1a0975ca36cb3337",
-    "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "45d6465040ef8b7298cd8da000208e4ee0be924c65a20326900267f25adf5c9c",
+    "Contents/Resources/DEVHighPerf/DeviceProfiles.ini": "0d0332391bf3086be8d3851be3184efb265ddcc1e71cf97c75aa69a833f90c0a",
     "Contents/Resources/DEVHighPerf/profile-transaction.sh": "7d7d89df8db6927b09d4e2866aac932f9924b729584797e8364077102eeb5835",
-    "Contents/Resources/runtime-modes.json": "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518",
+    "Contents/Resources/runtime-modes.json": "f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369",
     "Contents/Resources/TFTMACVulkanProbe.apk": "fdc6db76fd572ae06cb72135ee5c91a126f76c1bbd4c2b03e283d1720840ad31"
   },
   "historical_lkg_cache_properties": {
@@ -69,5 +69,11 @@
   "cache_multifile_directory": "/data/user_de/0/com.riotgames.league.teamfighttactics/cache/com.android.opengl.shaders_cache.multifile",
   "cache_monolithic_file": "/data/user_de/0/com.riotgames.league.teamfighttactics/cache/com.android.opengl.shaders_cache",
   "device_profile_target": "/data/user/0/com.riotgames.league.teamfighttactics/files/UnrealGame/TFT/TFT/Saved/Config/Android/DeviceProfiles.ini",
-  "highperf_stage_profile": "/data/local/tmp/tftmac-native-highperf/DeviceProfiles.ini"
+  "highperf_stage_profile": "/data/local/tmp/tftmac-native-highperf/DeviceProfiles.ini",
+  "version_policy": "GOOGLE_PLAY_CURRENT_OBSERVED",
+  "installer_authority": "com.android.vending",
+  "frozen_lkg_state": "HISTORICAL_CURATED_COPY; original duplicate scheduled for permanent deletion by TFTDEV Fresh Start Initiative",
+  "continuity_ssot": "/Volumes/MAC MINI M4/TFTDEV-SSOT/TFTDEV1.md",
+  "current_receipt": "/Volumes/MAC MINI M4/TFTDEV-SSOT/receipts/tocker-campaign/promoted-default-confirmation-20261002T033147Z-guest-1080p-48885.json",
+  "current_authority_state": "18.3_CURRENT; promoted guest 1920x1080; 2560x1440 remains explicit matched control; previous client identities are archived and non-authoritative"
 }

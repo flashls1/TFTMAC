@@ -1,8 +1,8 @@
 # TFTMAC Benchmark and Analysis Contract
 
-**Authority date:** 2026-09-11 America/Chicago
+**Authority date:** 2026-10-02 America/Chicago
 **Formula version:** `tftmac-benchmark-v4`
-**Current DEV runtime:** TFTMAC DEV 2.3.0 build 8 / StockShadow on the M4 Mac mini; current verified optimization baseline `DEV-B8-WIN-01`, 1920×1080 / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE. Historical Build 8 full-run captures remain benchmark evidence for their recorded configurations.
+**Current DEV runtime:** TFTMAC DEV 2.3.0 build 8 / StockShadow on the verified M6 Mac mini; official TFT `18.3-5530794` / `8530794`; promoted guest `1920×1080` / 416 dpi / 60 Hz / **8 vCPU / 6144 MiB**, host GPU/CoreAudio, OpenGL ES through ANGLE. Physical displays remain native `2560×1440`, which is the explicit matched guest control. Complete full-Trial captures exist for both conditions; the strict 60-FPS/severe-stall contract and causal owner remain unresolved. Historical captures remain evidence only for their recorded configurations.
 **Purpose:** give a developer or AI agent one exact, reproducible process for turning TFTMAC session data into findings, comparisons, decisions, and explicit unknowns.
 
 This file is the current benchmark-analysis contract, subordinate to project fact/state authority. **Before finalizing any benchmark plan or promotion decision, read and reconcile `facts.md` and `project.md`; `facts.md` wins until validated newer evidence is used to update those records.** `CHANGELOG.md` holds the detailed DEV test/version ledger. `docs/benchmarks.md` is historical experiment evidence and must not be mistaken for current DEV truth.

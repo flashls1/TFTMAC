@@ -134,3 +134,62 @@ struct RiotLoginForm: Sendable {
         }
     }
 }
+enum GooglePlayListingState: String, Sendable, Equatable {
+    case authRequired = "AUTH_REQUIRED"
+    case updateAvailable = "UPDATE_AVAILABLE"
+    case installAvailable = "INSTALL_AVAILABLE"
+    case inProgress = "IN_PROGRESS"
+    case current = "CURRENT"
+    case unresolved = "UNRESOLVED"
+}
+
+struct RiotPackageAuthority {
+    static func installerPackageName(from output: String) -> String? {
+        for line in output.split(whereSeparator: \.isNewline).map(String.init) {
+            if let range = line.range(of: "installerPackageName=") {
+                let value = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty || value == "null" ? nil : value
+            }
+            if let range = line.range(of: "Installer package name:", options: [.caseInsensitive]) {
+                let value = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty || value == "null" ? nil : value
+            }
+            if let range = line.range(of: "installer=", options: [.caseInsensitive]) {
+                let value = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty || value == "null" ? nil : value
+            }
+        }
+        return nil
+    }
+
+    static func googlePlayListingState(from xml: String) -> GooglePlayListingState {
+        let lower = xml.lowercased()
+        if lower.range(of: #"(?:text|content-desc)="(?:sign in|add account|verify[^"]*account|choose an account|google account|authentication\s+is\s+required[^"]*|re[- ]?enter[^"]*credentials)""#, options: .regularExpression) != nil {
+            return .authRequired
+        }
+        if lower.range(of: #"(?:text|content-desc)="update""#, options: .regularExpression) != nil { return .updateAvailable }
+        if lower.range(of: #"(?:text|content-desc)="install""#, options: .regularExpression) != nil { return .installAvailable }
+        if lower.range(of: #"(?:text|content-desc)="(?:pending|installing|downloading|cancel|[^"]*%)""#, options: .regularExpression) != nil { return .inProgress }
+        if lower.range(of: #"(?:text|content-desc)="(?:open|play)""#, options: .regularExpression) != nil { return .current }
+        return .unresolved
+    }
+
+    static func actionCenter(in xml: String, label: String) -> (x: Int32, y: Int32)? {
+        guard let nodeRegex = try? NSRegularExpression(pattern: #"<node\b[^>]*>"#, options: [.caseInsensitive]),
+              let boundsRegex = try? NSRegularExpression(pattern: #"bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]""#) else { return nil }
+        let ns = xml as NSString
+        for match in nodeRegex.matches(in: xml, range: NSRange(location: 0, length: ns.length)) {
+            let node = ns.substring(with: match.range)
+            let escaped = NSRegularExpression.escapedPattern(for: label)
+            guard node.range(of: #"(?:text|content-desc)=""# + escaped + #"""#, options: [.regularExpression, .caseInsensitive]) != nil else { continue }
+            let nodeNS = node as NSString
+            guard let b = boundsRegex.firstMatch(in: node, range: NSRange(location: 0, length: nodeNS.length)), b.numberOfRanges == 5 else { continue }
+            let x1 = Int32(nodeNS.substring(with: b.range(at: 1))) ?? 0
+            let y1 = Int32(nodeNS.substring(with: b.range(at: 2))) ?? 0
+            let x2 = Int32(nodeNS.substring(with: b.range(at: 3))) ?? 0
+            let y2 = Int32(nodeNS.substring(with: b.range(at: 4))) ?? 0
+            return ((x1 + x2) / 2, (y1 + y2) / 2)
+        }
+        return nil
+    }
+}

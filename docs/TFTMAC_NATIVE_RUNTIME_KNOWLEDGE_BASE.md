@@ -1,10 +1,10 @@
 # TFTMAC Native Runtime Knowledge Base
 
-**Reference reconciled:** 2026-09-10
+**Reference reconciled:** 2026-10-02
 **Authority rule:** supporting knowledge base only; read `facts.md` then `project.md` for current truth. Historical receipts below retain their dates and do not override the current DEV state.
 
 **Product target:** Native macOS TFT client experience backed by the official Android TFT package
-**Current DEV profile:** `DEV-B8-WIN-01` — 1920×1080 / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE.
+**Current DEV profile:** StockShadow promoted 18.3 route — 1920×1080 / 416 dpi / 60 Hz / **8 vCPU / 6144 MiB**, OpenGL ES through ANGLE; TFT 18.3-5530794 / 8530794. Physical displays remain 2560×1440; 2560×1440 is the explicit matched control.
 **Protected Control reference:** `tftmac_5gb_native_v1`, 6 vCPU / 5120 MiB, ports 5038/5582/8554.
 
 ## 1. Outcome ledger
@@ -12,15 +12,15 @@
 | Claim | State | Decisive evidence |
 | --- | --- | --- |
 | TFTMAC is a real native Mac app | VERIFIED | AppKit `NSWindow`, native macOS full-screen space, Metal presenter, normal menus/window behavior |
-| Full display is 1920x1080 | VERIFIED | AX window receipt was origin `0,0`, size `1920x1080`, `AXFullScreen=true`; gRPC frames are exactly 1920x1080 RGBA |
+| Current DEV display is 1920x1080 | VERIFIED CURRENT | Three sealed matched 18.3 full-Trial receipts and the promoted launcher default; output is 1920x1080 at density 416 |
 | Correctly oriented live Android video | VERIFIED | Live screenshot and input mapping on native Metal output |
 | Donor-compatible launch architecture | VERIFIED | Packaged `TFTMAC Emulator Host.app` launched with `/usr/bin/open -n -W --env ... --args ...` in the logged-in Mac session |
 | DEV ADB identity | VERIFIED CURRENT | ADB server `5041`, console `5586`, serial `emulator-5586`; protected Control remains `5038/5582/emulator-5582` |
 | No manual ADB key injection | VERIFIED | `ADB_VENDOR_KEYS` absent in launch receipt; inherited service socket/address variables cleared |
 | Authenticated hidden-emulator control | VERIFIED | Exact PID-bound `pid_*.ini`, loopback gRPC `8556` for current DEV (`8554` protected Control), bearer token used in memory only, Emulator `37.1.11.0` authenticated |
-| Native frame transport | VERIFIED | Raw gRPC `RGBA8888`, 8,294,400 bytes per 1920x1080 frame; 16-MiB request/response limits on pinned gRPC transport |
+| Native frame transport | VERIFIED HISTORICAL | Raw gRPC `RGBA8888`, 8,294,400 bytes per 1920x1080 frame; 16-MiB request/response limits on the pinned historical transport. The current 18.3 post-cleanup receipt does not promote this as a current performance baseline. |
 | Native presentation near 60 Hz in lobby | VERIFIED | Live session observed source-window max `61.1` and Metal-output max `60.5`; these are transport/output metrics, not Unreal FPS |
-| Official current TFT launches | VERIFIED CURRENT | Package `com.riotgames.league.teamfighttactics`, version `18.1-5423749`, versionCode `8423749`; `com.epicgames.unreal.GameActivity` observed |
+| Official current TFT launches | VERIFIED CURRENT | Package `com.riotgames.league.teamfighttactics`, version `18.3-5530794`, versionCode `8530794`, Google Play-owned; `com.epicgames.unreal.GameActivity` observed |
 | Riot account can reach the TFT lobby | VERIFIED | Live rendered lobby on the existing signed-in official app state |
 | Primary touch and keyboard transport | VERIFIED | Mac primary-pointer down/drag/up uses EmulatorController `TouchEvent` with stable identifier `0` and pressure `1 -> 0`; keyboard remains gRPC evdev input; SQL records coordinates, pressure, counts and special keys, never typed content |
 | CoreAudio software path | VERIFIED | Emulator launched `-audio coreaudio`; active AudioFlinger output, stereo, 48 kHz on the live check, one active track, zero partial/empty underruns |
@@ -106,14 +106,14 @@ Engine fact: Unreal Engine
 DEV runtime root: /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
 Emulator: Google Android Emulator 37.1.11 / build 15917651
 DEV AVD: TFTMAC_Diagnostic_StockShadow_R1 / API36 Google Play ARM64
-Package: com.riotgames.league.teamfighttactics 18.1-5423749 / 8423749
+Package: com.riotgames.league.teamfighttactics 18.3-5530794 / 8530794 (post-cleanup receipt)
 Launcher: /usr/bin/open -n -W -> packaged TFTMAC Emulator Host.app
 DEV ADB server: 5041
 DEV Console: 5586
 DEV Serial: emulator-5586
 ADB_VENDOR_KEYS: absent
 DEV Controller: authenticated loopback gRPC, port 8556
-Display: 1920x1080 / 320 dpi / 60-Hz default
+Display: 2560x1440 / 416 dpi / 60 Hz (post-cleanup receipt)
 Effective DEV CPU/RAM: 8 vCPU / 6144 MiB
 GPU/audio: host / CoreAudio
 Graphics transport: virtio-gpu-asg
@@ -223,10 +223,11 @@ use a 120-second cooldown, and are capped at two per graphics run. During an
 active A/B those incidents share the benchmark's two-incident budget in addition
 to its one 20-second start trace.
 
-`Control` is the exact 1920x1080/320-dpi/60-Hz, 6-vCPU, 5120-MiB proven
-configuration with TFT High / 60 FPS / Performance Mode OFF. `Combat Latency A`
-changes only the packaged emulator host's requested macOS QoS class to
-`user_interactive`. The host records the requested value, return code and
+`Control` is the protected historical 1920x1080/320-dpi/60-Hz, 6-vCPU, 5120-MiB
+configuration with its recorded High / 60 FPS / Performance Mode OFF values. It is
+not the current 18.3 DEV authority. The current DEV default is 1920x1080 / 416 dpi /
+60 Hz with 8 vCPU / 6144 MiB; the matched 2560x1440 control remains available. `Combat Latency A` changes only the packaged emulator host's
+requested macOS QoS class to `user_interactive`. The host records the requested value, return code and
 pre-exec effective class before replacing itself with Android Emulator. It does
 not claim that every QEMU worker inherited the class without combat evidence.
 All graphics, ASG, MoltenVK, CPU, RAM, resolution and audio values remain locked.
@@ -346,21 +347,33 @@ The app's `Performance Lab…` window persists only validated, restart-bound val
 
 | Variable | Safe UI domain | Default | Evidence rule |
 | --- | --- | --- | --- |
-| vCPU | `4, 6, 8` | `6` | One-factor test; watch host CPU and frame windows |
-| Guest RAM | `4096, 5120, 6144 MiB` | `5120` | 5120 is KEEP; 4096 remains deferred unless a deliberate test is run |
+| vCPU | `4, 6, 8` | `8` | One-factor test; watch host CPU and frame windows |
+| Guest RAM | `4096, 5120, 6144 MiB` | `6144` | Current 18.3 effective launch is 6144 MiB; lower values are historical candidates until a matched current test is run |
 | Refresh target | `30, 60 Hz` | `60` | Do not confuse refresh target with engine FPS |
 | ASG draw flush | `400, 800` | `800` | 400 is experimental; score SurfaceFlinger delta and host CPU overhead |
 
-The following remain fixed in the UI: 1920x1080, 320 dpi, ports, AVD/image, official package, host GPU, CoreAudio, ASG buffer/step/ring, ANGLE compatibility flags, MoltenVK requests and native presenter design.
+The current promoted 18.3 route verifies 1920x1080, 416 dpi, ports 5041/5586/8556, StockShadow, official package, host GPU, CoreAudio, ANGLE route, and native presenter. The matched 2560x1440 control remains one-factor and receipt-bound; causal ownership is still unknown.
 
 The Telemetry menu records exact user-observed boundaries:
 
 ```text
 Command-Shift-1  MATCH_ENTRY
-Command-Shift-2  COMBAT_START
+Command-Shift-2  START_CONTROLLED_AB_WINDOW
 Command-Shift-3  VISIBLE_STUTTER
-Command-Shift-4  MATCH_END
+Command-Shift-4  END_CONTROLLED_AB_WINDOW
+Command-Shift-5  MATCH_END
+Command-Shift-6  CAROUSEL_START
+Command-Shift-7  CAROUSEL_END
+Command-Shift-8  COMBAT_START
+Command-Shift-9  COMBAT_END
 ```
+
+The automatic flight-recorder report is generated by
+`scripts/analyze-flight-recorder.command`. It joins host and guest clocks for
+temporal input-to-first-present measurements, reports automatic full-session
+coverage plus optional phase annotations and empty causal-lineage tables, and
+preserves `UNKNOWN` when the capture cannot identify an internal owner. The
+analyzer does not treat a temporal join as causal proof.
 
 `COMBAT_START` and `VISIBLE_STUTTER` also request a bounded 15-second Perfetto
 ring trace. Severe actual-present degradation may request a rate-limited trace
@@ -384,11 +397,11 @@ Current product decisions:
 
 - **Historical Control finding:** 5120 MiB had adequate headroom in its recorded runs. **Current DEV authority is 6144 MiB**; do not downgrade it based solely on the older donor/Control result.
 - DEFER 4096 MiB. It lacks sufficient heavy-game safety margin.
-- KEEP High / 60 / Performance OFF as the current in-game quality baseline unless a later verified DEV winner deliberately changes one of those values.
-- REJECT Ultra High for current usability; direct user observation found severe lag, without fabricating a numeric FPS.
+- Do not claim a current in-game quality/FPS/Performance baseline until the next complete 18.3 capture re-reads those values. The earlier High / 60 / Performance OFF result is historical.
+- Retain the Ultra High severe-lag report as historical user evidence only; it was not re-exercised on the current 18.3 receipt.
 - RETAIN 800 µs ASG flush in Control; do not recycle the historical 400 µs screen as a new result.
 - REJECT/retain Combat Latency A as historical; it is not part of the current DEV working winner.
-- KEEP raw gRPC as the working native presentation transport now.
+- Keep the verified current StockShadow presenter unchanged; no new transport candidate is promoted by the post-cleanup receipt.
 - DEFER MMAP until producer readiness, tear-free integrity, frame-age and performance are empirically proven.
 
 A transient black/white end-of-match frame was investigated before release.
@@ -404,7 +417,7 @@ The earlier 10,000-world simulation was reproducible but used subjective priors.
 
 That test has now resolved the first branch:
 
-- Raw authenticated gRPC is empirically viable for correct 1920x1080 native lobby presentation and input.
+- Raw authenticated gRPC was empirically viable for the historical 1920x1080 native lobby presentation and input capture.
 - MMAP remains a possible later efficiency optimization, not a requirement to play TFT.
 - Direct MMAP zero-copy is invalid without producer-readiness/integrity fencing.
 - Direct MoltenVK texture handoff has no supported resource-sharing contract.

@@ -43,6 +43,7 @@ final class MainWindowController: NSWindowController {
         window.titleVisibility = .visible
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.minSize = NSSize(width: 960, height: 540)
+        window.acceptsMouseMovedEvents = true
         window.center()
         window.contentView = rootView
         super.init(window: window)

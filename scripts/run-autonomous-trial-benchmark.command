@@ -1,4 +1,7 @@
 #!/bin/zsh
+print -u2 "RETIRED_PRE_18_3_ROUTE: this PBE/emulator-5582 benchmark is historical and cannot launch the current TFTDEV campaign."
+print -u2 "Use scripts/run-tftdev-tocker-campaign.command for the official 18.3 StockShadow route."
+exit 78
 set -euo pipefail
 
 unsetopt BG_NICE

@@ -1,0 +1,2927 @@
+{
+  "schema": 1,
+  "purpose": "Exact October TFT TURBO source preservation, not runtime acceptance",
+  "project_id": "tftmac",
+  "source_change_id": "7fc8b225-88fb-4c19-9bda-1f7b4671f0fe",
+  "original_head_sha": "70ee2aba4c67fc64864aa35a401b7be26cc665c1",
+  "planning_head_sha": "e3fd7bab4ecd02759cc7e59b2e23d06b55196d91",
+  "created_utc": "2026-10-31T03:47:31.985113+00:00",
+  "source_files": [
+    {
+      "path": ".antigravity/rules/tftmac-build-doctrine.md",
+      "git_mode": "100644",
+      "sha256": "477a84b06e3148c050dead76b32315342320253756f3b6cffd1bf9d46c38911f",
+      "bytes": 2586
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/AMENDMENT_001_CONTINUOUS_4H.md",
+      "git_mode": "100644",
+      "sha256": "a0fce91243fa1c31e9fcd72deaf560cda040b0ec1684ad392f59909f35cda80c",
+      "bytes": 3118
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/AMENDMENT_002_CLASSIFIER_BLOCKER.md",
+      "git_mode": "100644",
+      "sha256": "2e1724d5554ef8a86491fbff46fb82fa7dacc265aa923f199ad0a43282e625c1",
+      "bytes": 4381
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/AMENDMENT_003_DURABLE_DEADLINE.md",
+      "git_mode": "100644",
+      "sha256": "127ae052a7a66dc55d7a15ddf8b2084ffff01500a5fa330ca4ca17d2b7e8b71c",
+      "bytes": 3957
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/AMENDMENT_004_STAGE15_PHASE.md",
+      "git_mode": "100644",
+      "sha256": "099a5209a097819d4846916a60663d01fcf888fcf0240f7d834ac4b2863a7d04",
+      "bytes": 3335
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/FINAL_RESULTS.md",
+      "git_mode": "100644",
+      "sha256": "6e922b6a7a951732c61d076459a8894b3c77bedd4a05ae3d0f53ba0b45a9ab02",
+      "bytes": 7750
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "928e7b1b8bef86c4255684954d5b1759f8402593c4270954efcf9dba446b4013",
+      "bytes": 7714
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "e01f309e3bae8878d42a2eb6b45820ed1b1cf3c305046845c800f6abd10b6abc",
+      "bytes": 9819
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "f04866b7989e520ed1a146800d5b456fac6a5106669e1650069aa97c0561cd8f",
+      "bytes": 1339
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENMC_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "694d1a7524eb408f33a04632cfc479e99493a8c59286f49a3a0b7385a84cffb8",
+      "bytes": 1001
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENMC_V2_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "b3f9232c12feed8943e6402e62aa9c5878085191aae087a967eaf14292533f30",
+      "bytes": 1009
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENMC_V3_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "5c64e67f11727187fe2763eb269eb8c2f3afe8d3ca2f754ee31aa1c64ab6db49",
+      "bytes": 1282
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENMC_V4_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "4ef89c6a6c02408efd102dfacf247e0a9f439527d07432a6616197bd826a849e",
+      "bytes": 1182
+    },
+    {
+      "path": ".clara/plans/25f21f7e-ba86-4e3d-832d-9984522811c0/ZENMC_V5_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "070095cf717222216514603a4c9db73315dfc7d9bd1be7c3bac618c2337d0099",
+      "bytes": 1166
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V2.md",
+      "git_mode": "100644",
+      "sha256": "319d5ef3a673045a701e1e3e1d33667acda32f108cc4d6a1a51696c504458eff",
+      "bytes": 3031
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V3.md",
+      "git_mode": "100644",
+      "sha256": "516600f8e3ea3e2a55f0be26e81b10cf36dff0a81a8a81fa51cbec56af7c95ac",
+      "bytes": 3519
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V4_CONTINUE_GAINS.md",
+      "git_mode": "100644",
+      "sha256": "ce6cb7313406f432df083377a25c8f93763d2c85e2d5a85ad3349f2c9d7b3df1",
+      "bytes": 4519
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V5_ROLLBACK_QUIESCENCE.md",
+      "git_mode": "100644",
+      "sha256": "a6569bd760d4c546f9cf42dbb63b03aab52ca7ef0874470c40d68de46aafdcb8",
+      "bytes": 1835
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V6_RIOT_UPDATE_AUTHORITY_AND_DIFF.md",
+      "git_mode": "100644",
+      "sha256": "c5827fa1009a00492004a7cddf653fc0a6dfcece31362d88b0be9b0dea8a20ff",
+      "bytes": 6472
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V7_REMOVE_DEV_PIN_AND_REAPPLY_WIN01.md",
+      "git_mode": "100644",
+      "sha256": "3e0639b8a34ba6ae72c84f9a388ce0de9db06ab3f988b5b6d49ad9a8504c9c76",
+      "bytes": 4639
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/AMENDMENT_V8_RIOT182DEV_SETTINGS_MAP.md",
+      "git_mode": "100644",
+      "sha256": "942ae55d1567a7e6bc949ec584a436d3d28c2d6a087630d737f58def41bfc93c",
+      "bytes": 2667
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "7638904c7ea9e137a80a5ea6f2ca89e0da66a1dc752e88b95e156fc74b50649c",
+      "bytes": 7668
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "1d723c5640f73a939dcbbf5de2f7749c3d4fa8844238b7e5afc5201d95d100f2",
+      "bytes": 7538
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/PREFLIGHT_V8_RIOT182DEV_SETTINGS_MAP.md",
+      "git_mode": "100644",
+      "sha256": "422bf4f0e01ce8f17a6b23570bdc8357e672f1ae79e1e4a56777a45fd4d2c7e1",
+      "bytes": 3269
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENGATE_V4.md",
+      "git_mode": "100644",
+      "sha256": "8429e2f096ae4fdd37a8b273ff4eaebac6f288d856d60d4e5ae92b2f494c6da2",
+      "bytes": 1655
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENGATE_V6.md",
+      "git_mode": "100644",
+      "sha256": "faf22baa14d00891d47b7a151286ca8be7a072e10b499410594cf895ff8bf3c3",
+      "bytes": 2208
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENGATE_V7.md",
+      "git_mode": "100644",
+      "sha256": "9498f0128704259934bde03a88d18aac1d3a3b05acb1be5dd36ca01da89c5c8c",
+      "bytes": 1441
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENGATE_V8.md",
+      "git_mode": "100644",
+      "sha256": "0735336599e4e70399698034d5735d212e89854f3ca2215e1a4bd4c01f78c963",
+      "bytes": 1106
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_MODEL.py",
+      "git_mode": "100644",
+      "sha256": "275731a0310dfb780fb95d64f0a34c421ff13a42c7f243e68d5cd6ac53836f66",
+      "bytes": 2567
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "6850a183f663ef96a8fd97b1c54eb063eae7fae460c6883466015afffcb22c71",
+      "bytes": 676
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V2.py",
+      "git_mode": "100644",
+      "sha256": "b5631335a63f5a2b0f0be823e4796013f6d73b9286e74da01c835a0382b1d573",
+      "bytes": 3482
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V2_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "bb2279334a3f72dc7a9a96a08a88a33137ceff9fd0719e4e0109b23d5dd30c22",
+      "bytes": 725
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V3.py",
+      "git_mode": "100644",
+      "sha256": "74aba04c6bbe4e3795f15d81ff929ff4720fe76b6e01fcdd57e04fae43b375a4",
+      "bytes": 2694
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V3_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "083f257062614226ba1531237a54a2958c72f823ef257ec7c0269e2ee4a453a6",
+      "bytes": 691
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V5.py",
+      "git_mode": "100644",
+      "sha256": "0a1743b6b367a8ffa44d3405f1ed59286903fea315e5dd2ceb10267d31c9c56e",
+      "bytes": 2076
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V5_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "8fff282197ee4100469aab62837e179a1efd998ad33f0527c8d6d345ac8a547b",
+      "bytes": 600
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V6.py",
+      "git_mode": "100644",
+      "sha256": "448a3f36ac2b14a29c6df95b525a71fcafde97e2f5ab17e97453a892b6ae45d5",
+      "bytes": 3709
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V6_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "5c425ac1f15e824e4ea30ff276a73ece4c00a0d78fde3268b7a6d3164b17b28f",
+      "bytes": 813
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V7.py",
+      "git_mode": "100644",
+      "sha256": "8694505d2147fa9bfd6f3951b0891f8356301cbf0470aa4bbb910fea9d2a7231",
+      "bytes": 2544
+    },
+    {
+      "path": ".clara/plans/7fc8b225-88fb-4c19-9bda-1f7b4671f0fe/ZENMC_V7_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "c6812450b51d0dfd6d5f3c973257dfe69230aec911733c54a87a7ec6babefdad",
+      "bytes": 713
+    },
+    {
+      "path": ".clara/plans/b42fb30e-2f22-45f0-9d27-00d9e67a58bf/AMENDMENT_001.md",
+      "git_mode": "100644",
+      "sha256": "dbc8f802c1ea11145476d8192438cc4516e3e01af67848c6727a06064e06e8c8",
+      "bytes": 4108
+    },
+    {
+      "path": ".clara/plans/b42fb30e-2f22-45f0-9d27-00d9e67a58bf/AMENDMENT_002_INCREMENTAL_GAINS.md",
+      "git_mode": "100644",
+      "sha256": "3b893d10caef297d0efa9750188207129dc1bffa616024c9f4171b3ff6358246",
+      "bytes": 5509
+    },
+    {
+      "path": ".clara/plans/b42fb30e-2f22-45f0-9d27-00d9e67a58bf/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "ab4e429061248205e6a33c8535c1a2cdecba096b9a2a2733c107aa2ea583a550",
+      "bytes": 3817
+    },
+    {
+      "path": ".clara/plans/b42fb30e-2f22-45f0-9d27-00d9e67a58bf/PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "28c128fdac697419da6a04b9d3660f574736d3dc8bb0e8232b41bcec13ca7439",
+      "bytes": 5643
+    },
+    {
+      "path": ".clara/plans/bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "ed5e98271d1cb5c6c3d8f245dc5e91fe15ac870e30057379b58b55313fb99fcb",
+      "bytes": 6875
+    },
+    {
+      "path": ".clara/plans/bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541/PREFLIGHT.json",
+      "git_mode": "100644",
+      "sha256": "47fc16e65c7308d7da1ddd89392db5c9566bc889129a7313cdbc9ca1f0bddb5e",
+      "bytes": 3758
+    },
+    {
+      "path": ".clara/plans/bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541/SCOPE_LOCK.txt",
+      "git_mode": "100644",
+      "sha256": "ba6fda318f5c3141ea13aebbc5e2b87a856a12d6d007fb91a996e705710edfc3",
+      "bytes": 1343
+    },
+    {
+      "path": ".clara/plans/bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "383974ec96478e8e26bfb40ac6547da83d1fcc8ebc567dc6fd2329be98edbced",
+      "bytes": 981
+    },
+    {
+      "path": ".clara/plans/bddd2d6c-a2ed-46fb-9e9e-6674bfdf3541/ZENMC_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "d90b75cbbc129fa9e49ea13d21bf12af21cced7add1c7b37892eef8bede1dbd8",
+      "bytes": 859
+    },
+    {
+      "path": ".clara/plans/e10d952c-93d3-42d2-b983-b7ccc492a36d/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "141ff5b1e7e59f5be835151f7b05a345897bbb4197cb2c9ff79f6df20ca6bf3d",
+      "bytes": 13386
+    },
+    {
+      "path": ".clara/plans/e10d952c-93d3-42d2-b983-b7ccc492a36d/PREFLIGHT.json",
+      "git_mode": "100644",
+      "sha256": "314477484532ffdbe1f64636da62c285b2e36a74199e996719e65f1bcf791205",
+      "bytes": 4290
+    },
+    {
+      "path": ".clara/plans/e10d952c-93d3-42d2-b983-b7ccc492a36d/SCOPE_LOCK.txt",
+      "git_mode": "100644",
+      "sha256": "11f0b8bf7c06ba3454534ea98c655c2f176c70b458e013985c95b02f9df19dae",
+      "bytes": 2447
+    },
+    {
+      "path": ".clara/plans/e10d952c-93d3-42d2-b983-b7ccc492a36d/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "16e14def2b844146fa6c0e9b6c64eb809a995f3edc8715d4cf81c84e519d1e74",
+      "bytes": 3931
+    },
+    {
+      "path": ".clara/plans/e10d952c-93d3-42d2-b983-b7ccc492a36d/ZENMC_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "c4a0e26bc416fa90332b575caff490b74529d238f3a8a12adb10bc725e6a4b9f",
+      "bytes": 2513
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "d2a9c1ef3c6506d9af743d7e2e3a9bb447ec86c190d3a4d1f5eda71e163f2fdc",
+      "bytes": 4669
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/IMPLEMENTATION_PLAN_AMENDMENT_2026-09-10.md",
+      "git_mode": "100644",
+      "sha256": "ffdf7a97caa18dedadd8b6c59228fdf6309fad8f4f1500779a20c7b20e9af6a5",
+      "bytes": 2990
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "fba54addd8d0b6ff1da39a83f40cf692d7002e9e6e6a89b0f72d811d6da355e2",
+      "bytes": 4829
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/PREFLIGHT_AMENDMENT_2026-09-10.md",
+      "git_mode": "100644",
+      "sha256": "97cc16e68df97d5b8761983ab892da0065e50e17c095e2612cf5174eb74c444e",
+      "bytes": 3008
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/RECOVERY_CONSTRAINTS_2026-09-10.md",
+      "git_mode": "100644",
+      "sha256": "50e5e6362b35c999755c0652dfaa6d40c0b7cdf215825da54438f15e9acb04fc",
+      "bytes": 5632
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/RESULTS_LOG_2026-09-10.md",
+      "git_mode": "100644",
+      "sha256": "126d9627372bfc7f918f443ff02a87eb2550273ec7c91937303ae652aa80d3e6",
+      "bytes": 5040
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/ZENGATE.md",
+      "git_mode": "100644",
+      "sha256": "8bcf64960da656329e16aa3dc7542d3b207bcd6169867eadca5200eda9487633",
+      "bytes": 2093
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/ZENGATE_AMENDMENT_2026-09-10.md",
+      "git_mode": "100644",
+      "sha256": "6448f088388430a1d60684cc8d2792931438f5489459af0cd4b4845e5e095f43",
+      "bytes": 1374
+    },
+    {
+      "path": ".clara/plans/ff2f318b-245d-418a-b86f-e07d55b19826/ZENMC.md",
+      "git_mode": "100644",
+      "sha256": "a3c6092a5ca32bff5f16f47475a6313b6a326a7ac676d80b3bf1c602bec57835",
+      "bytes": 2543
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/AUTHORITY.json",
+      "git_mode": "100644",
+      "sha256": "290f5e445597b72cd7f65aa4fd07ffba8012df9a636989602a3ebd3d65cd1f51",
+      "bytes": 12570
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/IMPLEMENTATION_CHECKLIST.md",
+      "git_mode": "100644",
+      "sha256": "5fcd4ded6be4a8af1226bea273e09c9086dab2a0f910d3ead033f30512e9e0e6",
+      "bytes": 944
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "78785b29815dba26a8da1d2ed56e0e9c256d3e7d9cfb4c4857b3c954846e8d2b",
+      "bytes": 63528
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/PREFLIGHT.json",
+      "git_mode": "100644",
+      "sha256": "f07f29613a4a69d1f487c98deb86db0abfbd4819f59c30bf179611e1cc75e0bb",
+      "bytes": 2338
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "34487db97c39e2c0a775dae07c391b21d71f969672d2fa4c3c71e6d18c9f08c0",
+      "bytes": 2000
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/SCOPE_LOCK.txt",
+      "git_mode": "100644",
+      "sha256": "dc77b6913d14409adc883dd27a67c42e982c40ab9149a68771b61dc99fae297e",
+      "bytes": 2123
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/TFTMAC_CAUSAL_GRAPHICS_ZENMC_RECEIPT_V2_VERIFIED_4f0d706f.json",
+      "git_mode": "100644",
+      "sha256": "4f0d706f7c5bf5d7f88a1fb4363ef6efeb9f57f678f78a39cf30fec3c5bf1c80",
+      "bytes": 4951
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/TFTMAC_CAUSAL_GRAPHICS_ZENMC_RECEIPT_V2_VERIFIED_4f0d706f.sha256",
+      "git_mode": "100644",
+      "sha256": "76d6291cfbe24d0db9386a77dfde0688d9d2ac86de3b730544adabdb68c9689c",
+      "bytes": 129
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/AMENDMENT.md",
+      "git_mode": "100644",
+      "sha256": "c2440469ebfa4242427312560f045b747cc7a50883355a3700226287e340cda8",
+      "bytes": 2327
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/PORT_ALLOCATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "3536b1d54a0643bc3fcbb9dbff01be2402ca9c45d2100e220c2f857e65a129cd",
+      "bytes": 774
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/SOURCE_VALIDATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "3fb3e056e311824d63748f3cfbf99edbacb4cbbfee8905008d64b886ddf3988b",
+      "bytes": 1361
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "c37079f1f995f8a835600bd1a7deec9c6e1f46e094cb16b525c5e5a7d93b2e37",
+      "bytes": 884
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/diagnostic-first-boot-v1/validate-source.mjs",
+      "git_mode": "100755",
+      "sha256": "4bbcf735c018c257e40216a5377f5bd9e3eec4a15dccb27489ef1ef3504f8d3f",
+      "bytes": 9132
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/AppCoordinator.swift.template",
+      "git_mode": "100644",
+      "sha256": "5e95ff55b865d217e058ce252e8052eaba79a47bfd860c43cc9740e126ee35f6",
+      "bytes": 5567
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/INVENTORY.json",
+      "git_mode": "100644",
+      "sha256": "49aa9acff853f17bc41aa57b65c98993e588bc1f1fe66fbc348b928965587556",
+      "bytes": 4290
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/RuntimeLease.swift.template",
+      "git_mode": "100644",
+      "sha256": "de774fd9bd59020093ec35736374f0dfc6013831132ba42c386c6188a4bbe72e",
+      "bytes": 5137
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/RuntimeMode.swift.template",
+      "git_mode": "100644",
+      "sha256": "2e105ff01b778e98a4a6ef33e0c02972102b4b73aa0c8cd2250eafb2bac6b113",
+      "bytes": 23127
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/apply-waveb-source.mjs",
+      "git_mode": "100644",
+      "sha256": "1f07d2f828db3ada7a5e91502610a8c473a25ffffb546d9a99749484c34337de",
+      "bytes": 32420
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/preserve-unaccepted-waveb-partial.mjs",
+      "git_mode": "100644",
+      "sha256": "3147b1ccd63acb2d373d54ccbe137d494bd2063fddf809656479a8d9ec20fadc",
+      "bytes": 8360
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/runtime-modes.unaccepted.json",
+      "git_mode": "100644",
+      "sha256": "457ca5865f1bfcfaca16bd1eee1f32db15f90bd9c8764706ba64db56b7a9e518",
+      "bytes": 9665
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/validate-waveb.mjs",
+      "git_mode": "100644",
+      "sha256": "b78d9ad64882a7ad7e154e013dee3207dff2f83559f4570e6da5a7494c0d719c",
+      "bytes": 6605
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/RuntimeLease.swift.template",
+      "git_mode": "100644",
+      "sha256": "f3b4db12f4e8c085343d87813ab026ff6045ec679cb8afea48dd87bf8f04c0f9",
+      "bytes": 5159
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/RuntimeMode.swift.template",
+      "git_mode": "100644",
+      "sha256": "cb8e62545832e457e12046bed5eb8dcd72a17feb090ce3dad3e15b6cfad7f60f",
+      "bytes": 23785
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/apply-waveb-v2.mjs",
+      "git_mode": "100644",
+      "sha256": "07bcf67d0b3d6b549334b2b5636fb92af801d4d2c6f09958fa94b7c0e8556865",
+      "bytes": 39261
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/protected-local-work/unaccepted-waveb-draft-before-v3/wave-b-v2/gate-waveb-candidate.mjs",
+      "git_mode": "100644",
+      "sha256": "1d661898f48386ab91519ad1ca6c1653e335eb8c1dcc24a96547c8c07f0a3330",
+      "bytes": 8629
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/CONTINUATION_AMENDMENT.md",
+      "git_mode": "100644",
+      "sha256": "df9d3a537d94d4f32337c2658168714925c1f3206775964069ea135a27cbdc4a",
+      "bytes": 3930
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/PREFLIGHT.json",
+      "git_mode": "100644",
+      "sha256": "bec3a488d3386966cb3f98cdf1b5f35a083519d1dfb873260db4d63576b19247",
+      "bytes": 2204
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/PREPARATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "9b4f6fcdebe8bbb981da765f5b9e9a26acdeeb9919832d28a79c98ea58364b21",
+      "bytes": 1149
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/RuntimeModeAuthority.swift.template",
+      "git_mode": "100644",
+      "sha256": "3ab10d59a94ef4e60e920290a940a55a624a0209a7fe6e05abe65fdfaf040c59",
+      "bytes": 39098
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "6d460880102823285456668f98dde26d54a11b0e3e20f8270d699947ae2b7003",
+      "bytes": 1749
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/apply-waveb-v3.mjs",
+      "git_mode": "100644",
+      "sha256": "eedd8692657d1470870b06c21a4841a079510c45549ae8e6730764a30208eed1",
+      "bytes": 71319
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/prepare-waveb-v3.mjs",
+      "git_mode": "100644",
+      "sha256": "d430f413cec3f3c8281302565e80099776285aecb395ba98d31511dc445f10aa",
+      "bytes": 13228
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v3/validate-waveb-v3.mjs",
+      "git_mode": "100644",
+      "sha256": "23fe5b2e93622c73ba349f8327ab0dc80f94a4d10857bb7af53ea20e320e9a61",
+      "bytes": 20290
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/CORRECTION_AMENDMENT.md",
+      "git_mode": "100644",
+      "sha256": "18e85884498c52144f3e56217eb372b78289b6d938c5c92c0459a35882296b15",
+      "bytes": 3685
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/IMPLEMENTATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "af9e9c1c5612f9fb085fbd653dced0d3f8b0cfdf281bd2d5417b5a5ca297aab5",
+      "bytes": 1488
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/PREFLIGHT.json",
+      "git_mode": "100644",
+      "sha256": "6e8e415d921d0517d00a82101125340f109f9ca8bd3824b9ab9a130939054cfe",
+      "bytes": 1254
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/PREPARATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "437c717e5c37e5ed3505d48989c72ba62a96119a856a9b775f3e2caead8638b4",
+      "bytes": 1121
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/RuntimeLease.swift.template",
+      "git_mode": "100644",
+      "sha256": "f2a8f06ede29f06c57f038fd94f48047cd796ccf138d05b1d2e0bdd0de160cdc",
+      "bytes": 6412
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/RuntimeMode.swift.template",
+      "git_mode": "100644",
+      "sha256": "e57dafefcd8d1cbdc20dc5494b02b81736bf23d8c53006ecedc87c8b37259aa7",
+      "bytes": 23765
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/RuntimeModeAuthority.swift.template",
+      "git_mode": "100644",
+      "sha256": "3ab10d59a94ef4e60e920290a940a55a624a0209a7fe6e05abe65fdfaf040c59",
+      "bytes": 39098
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/VALIDATION_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "f486a3e085b6aa189cb6eadd8305bfc978dd485e551cc126eb2b33ca5cebdcca",
+      "bytes": 1523
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/ZENGATE_RECEIPT.json",
+      "git_mode": "100644",
+      "sha256": "35c9fbf5e295fd33a4ead854da72a3ac972620f4a4cd0205f5e6ebaa03b06c49",
+      "bytes": 1623
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/apply-waveb-v4.mjs",
+      "git_mode": "100644",
+      "sha256": "36275b1c20aafa68bd34ddca8e8ebd466c31d8e27f3ade1d08a246be4aa89c72",
+      "bytes": 72433
+    },
+    {
+      "path": ".clara/plans/tftmac-causal-graphics-v1/wave-b-v4/validate-waveb-v4.mjs",
+      "git_mode": "100644",
+      "sha256": "594ed6fce8c4897c1db83d90a425973805e2590267ea10bb29dc24550194a724",
+      "bytes": 20441
+    },
+    {
+      "path": ".editorconfig",
+      "git_mode": "100644",
+      "sha256": "875575ac4990abcfc1dc53f4c8a784a8c97c80f44dc60263647afe26d2b66b4e",
+      "bytes": 316
+    },
+    {
+      "path": ".gitattributes",
+      "git_mode": "100644",
+      "sha256": "c7294ab2558dfae81de04233f190f959d80fc6aa46c35fb9fc3ef2aec85600fd",
+      "bytes": 336
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "git_mode": "100644",
+      "sha256": "42b641bea91b30055d6e686e0f9cd4736351cd55fb55bd082d99670afb31d8ce",
+      "bytes": 1729
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "git_mode": "100644",
+      "sha256": "8b09e7df09fc7534371988062769ee427af2954a02c04c763e8a8005be0f2be4",
+      "bytes": 46
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "git_mode": "100644",
+      "sha256": "503bba2aecc825a011fbf1a05edd8e7a7134ec7634e58f30adf64375b7bb27ed",
+      "bytes": 1197
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "git_mode": "100644",
+      "sha256": "2ded52abfa684251bfeb22364a2945774ef957ffc38b073391741412a87c7180",
+      "bytes": 842
+    },
+    {
+      "path": ".github/repository-metadata.yml",
+      "git_mode": "100644",
+      "sha256": "0f1feb3c74cdbf525e4cc6c6a8502afe3cd7d6a6faa17e6b6ba9eef4c8f7646b",
+      "bytes": 284
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "git_mode": "100644",
+      "sha256": "6a5361749f930da2b0d13f8129f80fcec52483ad9b3ace717f8fa547867d7418",
+      "bytes": 814
+    },
+    {
+      "path": ".gitignore",
+      "git_mode": "100644",
+      "sha256": "7de180f043334840c9928b297e994351cf263269f118dbc3da83024dfc0f5949",
+      "bytes": 1796
+    },
+    {
+      "path": "AGENTS.md",
+      "git_mode": "100644",
+      "sha256": "5ac8d956453a1530f647cda4758437717959bf90ce5dc3d7b0875fd9e417bf11",
+      "bytes": 7291
+    },
+    {
+      "path": "AGENT_HANDOFF_2026-09-03.md",
+      "git_mode": "100644",
+      "sha256": "a1b74de1cb66bde689c756fe09d1f65d79530b7672f91269e518dc4db9630df0",
+      "bytes": 19431
+    },
+    {
+      "path": "AGENT_HANDOFF_2026-09-04.md",
+      "git_mode": "100644",
+      "sha256": "ed70329b8e498d50953bd22c8b4a800251442c1047eba5c35e016970737aaacb",
+      "bytes": 7647
+    },
+    {
+      "path": "AGENT_HANDOFF_2026-09-06.md",
+      "git_mode": "100644",
+      "sha256": "2df1c4312f25ce98ca95329d55014e9a59ee66a8b1c9dfe9fe848db0ade713cb",
+      "bytes": 10853
+    },
+    {
+      "path": "BUILD_PROTOCOL.md",
+      "git_mode": "100644",
+      "sha256": "c9bdeba69448a590fc58745701ce92b9818a9fad14be9fc9f436560db612a25a",
+      "bytes": 7032
+    },
+    {
+      "path": "CHANGELOG.md",
+      "git_mode": "100644",
+      "sha256": "f979b3b2964911650f7de7a4eba4136ce87241214c2072480d71ff2751dfff6c",
+      "bytes": 1819
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "git_mode": "100644",
+      "sha256": "12fec254f9608f9457ca431cd1829fa4ee5df9244e323ff560eb1068ec588fbf",
+      "bytes": 1183
+    },
+    {
+      "path": "CausalRuntime/ClockHandshake.c",
+      "git_mode": "100644",
+      "sha256": "13e8fae37425c0a9780f4de394b8646f8576c4e1aa4c330bce96e81f20a3b7b5",
+      "bytes": 9440
+    },
+    {
+      "path": "CausalRuntime/ClockHandshake.h",
+      "git_mode": "100644",
+      "sha256": "f5d1a18591d42a681ebdb631618a56822feb6e2f54bdaecb8801ba859b151fce",
+      "bytes": 1029
+    },
+    {
+      "path": "CausalRuntime/ClockHandshake_integration_test.py",
+      "git_mode": "100644",
+      "sha256": "57ef68eb8afa8c5cbc922623403c64eda6e79dae47c860cbc4fa6b71e05c513c",
+      "bytes": 2883
+    },
+    {
+      "path": "CausalRuntime/ClockHandshake_test.c",
+      "git_mode": "100644",
+      "sha256": "f5e17e708068223f3f0d4598bf3825ea1caccb4e1c549292af4eb2e07a6ee84f",
+      "bytes": 1492
+    },
+    {
+      "path": "CausalRuntime/NativeClockSession_integration_test.swift",
+      "git_mode": "100644",
+      "sha256": "8276cd273e0535e765a64cd90341681dcd943675b5627c3754ec329ebcbc32cc",
+      "bytes": 7043
+    },
+    {
+      "path": "CausalRuntime/PipelineEventV1.cpp",
+      "git_mode": "100644",
+      "sha256": "5fbcb20c952107cbe1bd523fcef136e2c300c130713ef356680dd82f433e5d21",
+      "bytes": 16134
+    },
+    {
+      "path": "CausalRuntime/PipelineEventV1.h",
+      "git_mode": "100644",
+      "sha256": "18e01305d71e7836a60715c8396ec3cada67b93d6b5b18e28e812283147233e1",
+      "bytes": 3612
+    },
+    {
+      "path": "CausalRuntime/PipelineEventV1_test.cpp",
+      "git_mode": "100644",
+      "sha256": "7b81e45dc7c640aed8b90a301114478e0d846c1195741e91dec3bdcd4b585333",
+      "bytes": 4497
+    },
+    {
+      "path": "CausalRuntime/validate_guest_clock.py",
+      "git_mode": "100644",
+      "sha256": "7f37c1dc4eaa69d121a8d164b59d8f394a06e227aaa288c7bda603fb7bdd56cd",
+      "bytes": 7761
+    },
+    {
+      "path": "ControlLauncher/Info.plist",
+      "git_mode": "100644",
+      "sha256": "bad8598fd3328320f63ec7c97db7196f6dd7be27d124a3557c3d47f629e71b5e",
+      "bytes": 924
+    },
+    {
+      "path": "ControlLauncher/main.swift",
+      "git_mode": "100644",
+      "sha256": "39ee7243d20a3c2521c4296fd3590823f3022a215b71e13bba71865e5c79e1ab",
+      "bytes": 6114
+    },
+    {
+      "path": "DevLauncher/main.c",
+      "git_mode": "100644",
+      "sha256": "187dd57edccc6cbfba81eb4028413f4c34ccd24c9855eb803a079d6a4b3a0400",
+      "bytes": 2656
+    },
+    {
+      "path": "DriverRuntime/angle1166/angle-buffer-view-diagnostics-complete.patch",
+      "git_mode": "100644",
+      "sha256": "26bcf8b42404b4b78f4e4742225ee1b10f50687433e34ae624dabb2e892b174e",
+      "bytes": 31892
+    },
+    {
+      "path": "DriverRuntime/angle1166/angle-buffer-view-reuse-complete.patch",
+      "git_mode": "100644",
+      "sha256": "e253ab1b0719c138bbd9d40396da00de5ba11fa3bc51fd4f4a71d4817db3ffdd",
+      "bytes": 22400
+    },
+    {
+      "path": "DriverRuntime/angle1166/angle-dependencies.txt",
+      "git_mode": "100644",
+      "sha256": "d20dae81d6adbe8d10675abaf536352a7c004b6a85349490263809e7268dd157",
+      "bytes": 54975
+    },
+    {
+      "path": "DriverRuntime/angle1166/binary-manifest.json",
+      "git_mode": "100644",
+      "sha256": "de2aaed82b3a038fd6c726c98d3158fdd2f4a53bb9bbac2240081c8701cf6a2b",
+      "bytes": 6130
+    },
+    {
+      "path": "DriverRuntime/angle1166/bootstrap-angle.sh",
+      "git_mode": "100644",
+      "sha256": "fe5d6a88cc46dabf2b5571a9db0802975dce55ba197e114adb08217a87a5955a",
+      "bytes": 2011
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-android-clock.sh",
+      "git_mode": "100644",
+      "sha256": "aa41c0a1835f50968542b474e6043324c817513c720e110b4be7d2881adfd99b",
+      "bytes": 1142
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-capture.sh",
+      "git_mode": "100644",
+      "sha256": "a004b9836fafe1467320e0aa109fc50640c18a09fa02aaed4cd6ec25809fd4c8",
+      "bytes": 1287
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-manifest.json",
+      "git_mode": "100644",
+      "sha256": "2ca43be4047e59ada5df77e3636837ab5e4d5e71c76f5d6eaece9945e322eab2",
+      "bytes": 2333
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-observed-reuse.sh",
+      "git_mode": "100644",
+      "sha256": "84f7d7e308f1c8364e477eb6b98042f2f9d6a75cee170245f5b1d6a8d6898dd9",
+      "bytes": 2032
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-packages.txt",
+      "git_mode": "100644",
+      "sha256": "0f65f7126a5ad35dca3a26a86551086954ec8d3025d3a508d90a84d5f47ca675",
+      "bytes": 10314
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-reference.sh",
+      "git_mode": "100644",
+      "sha256": "d43a28ea53dedc1854bd7c7d84911cf1e541e1b49cb429da74b107736bdaceb6",
+      "bytes": 1131
+    },
+    {
+      "path": "DriverRuntime/angle1166/build-reuse.sh",
+      "git_mode": "100644",
+      "sha256": "b7f6226bfdcf8c94dd401a6352e47e7f4f2b4a2194374fd87835c1b92e2cc4b0",
+      "bytes": 1837
+    },
+    {
+      "path": "DriverRuntime/angle1166/capture-admission.py",
+      "git_mode": "100644",
+      "sha256": "5777c768fea1cbea3dc38fb2defefaf3fc732b53302580caafef8a109726437a",
+      "bytes": 5352
+    },
+    {
+      "path": "DriverRuntime/angle1166/guest-driver-transaction.sh",
+      "git_mode": "100644",
+      "sha256": "1e34918a97c817d84146eb1dec0965ec1bd45de235b57efb5ac0d5652de3c585",
+      "bytes": 6545
+    },
+    {
+      "path": "DriverRuntime/angle1166/prepare-driver-manifest.py",
+      "git_mode": "100644",
+      "sha256": "943b7454f5ea1f0b9032ed5c9c9b08f59a9c11fdd537c963c9705eb18dc34757",
+      "bytes": 2293
+    },
+    {
+      "path": "Generated/EmulatorController/emulator_controller.grpc.swift",
+      "git_mode": "100644",
+      "sha256": "653febae34de04ce4ebdc2a38f46b9a0e015b2f5bb55b66a24c785f24b46e02f",
+      "bytes": 773885
+    },
+    {
+      "path": "Generated/EmulatorController/emulator_controller.pb.swift",
+      "git_mode": "100644",
+      "sha256": "55641fbefbf3baae5ab309dc722dcad5c7e9ea90644a8c027c78fbbadf3d8204",
+      "bytes": 240476
+    },
+    {
+      "path": "LICENSE",
+      "git_mode": "100644",
+      "sha256": "4a1972b1e3d9c150d54b9520a488b76b01ace4dfd101e44a54b0a2452f82efb6",
+      "bytes": 1070
+    },
+    {
+      "path": "NOTICE.md",
+      "git_mode": "100644",
+      "sha256": "cce79c80ca7dc350faa6b1a52338d0fa6fdd5fb09808d1aba42617eb909d62c6",
+      "bytes": 1263
+    },
+    {
+      "path": "OvernightLab/README.md",
+      "git_mode": "100644",
+      "sha256": "8cc6ef677bd92a494554b5b14685e6876602e27a67049e6d5cfab88752655447",
+      "bytes": 3551
+    },
+    {
+      "path": "OvernightLab/authority/native-capture-recovery-2026-09-11.json",
+      "git_mode": "100644",
+      "sha256": "e85e2b3e9b2b891d837b57a921bca8b9facc582ec1259df8d3763845a78ef3c7",
+      "bytes": 8166
+    },
+    {
+      "path": "OvernightLab/authority/official-client-runtime.json",
+      "git_mode": "100644",
+      "sha256": "f3fda5d190efbb5c5f8dd16a3158d51ddfcfbf481d408f1702e74f669d6cf1fe",
+      "bytes": 5344
+    },
+    {
+      "path": "OvernightLab/incremental_lab.py",
+      "git_mode": "100755",
+      "sha256": "57d4a2041703af58b1537fe0561b93d6d1f87001668c72be1b4ede17b7e76d7f",
+      "bytes": 43134
+    },
+    {
+      "path": "OvernightLab/install.command",
+      "git_mode": "100755",
+      "sha256": "e4f0cd76048dfc165f903330a39cf29593bd4bd93526bc9b2cc59297d44aaf0a",
+      "bytes": 2345
+    },
+    {
+      "path": "OvernightLab/manifests/incremental-candidates.json",
+      "git_mode": "100644",
+      "sha256": "f22044dc4a3586574565efa08cfc9233f47acb2b70b6d312ef3024df5d44669a",
+      "bytes": 3226
+    },
+    {
+      "path": "OvernightLab/manifests/official-candidates.json",
+      "git_mode": "100644",
+      "sha256": "88c4df2265300e52b06480b0655cab8aaba0a342cace002e1442173a2a65e287",
+      "bytes": 2866
+    },
+    {
+      "path": "OvernightLab/overnight_lab.py",
+      "git_mode": "100644",
+      "sha256": "7e822508da4e50d3a8918e40434e3ff5a1cae5737428c4085ea9ed76b5135f89",
+      "bytes": 111034
+    },
+    {
+      "path": "OvernightLab/run-overnight-campaign.command",
+      "git_mode": "100755",
+      "sha256": "98ea48b3506f6e206c872075c0fa8e9a91dd91be586ea2acb363a71f1f75c311",
+      "bytes": 544
+    },
+    {
+      "path": "OvernightLab/schema.sql",
+      "git_mode": "100644",
+      "sha256": "f6628819d3ea3a2e42a96fb80f4dbf035ae7f92e707d106b8baa1a520e5a73c2",
+      "bytes": 6554
+    },
+    {
+      "path": "Probes/EmbeddedControlProbe/EmbeddedControlProbe.swift",
+      "git_mode": "100644",
+      "sha256": "60a72c558efc12eb7ddfa27ae2e72346354efd48e59f462401b6ce3d57b19cf2",
+      "bytes": 8716
+    },
+    {
+      "path": "Probes/TFTMACVulkanProbe/AndroidManifest.xml",
+      "git_mode": "100644",
+      "sha256": "b410ed3af762782477283996b3a7ddb30b78cf49554cad4ceadb5f3977da7cda",
+      "bytes": 1262
+    },
+    {
+      "path": "Probes/TFTMACVulkanProbe/shaders/probe.frag",
+      "git_mode": "100644",
+      "sha256": "14d3ec8099574792584da994dbd09080eea19521503ce478c9c5f1453883e279",
+      "bytes": 358
+    },
+    {
+      "path": "Probes/TFTMACVulkanProbe/shaders/probe.vert",
+      "git_mode": "100644",
+      "sha256": "51d7b854e21adf92609589ce5a1971686cc290d2533576e0f1361d7d019664d7",
+      "bytes": 372
+    },
+    {
+      "path": "Probes/TFTMACVulkanProbe/src/main.cpp",
+      "git_mode": "100644",
+      "sha256": "33a7dc586f652c21525c3defa58aa7ba2824bbefe7e5750f71e9d4498b98d814",
+      "bytes": 51306
+    },
+    {
+      "path": "Probes/TFTMACVulkanProbe/workload-manifest.json",
+      "git_mode": "100644",
+      "sha256": "08872487624d84879cc89fc01cec138ca7f7f3bf6b7a878a0f8732b972f332d6",
+      "bytes": 1275
+    },
+    {
+      "path": "README.md",
+      "git_mode": "100644",
+      "sha256": "9823c7ef79ba283d4eeb6ed0a5149dbe65acde38698348c5c10e0a55de631984",
+      "bytes": 5379
+    },
+    {
+      "path": "RankedLauncher/main.c",
+      "git_mode": "100644",
+      "sha256": "4b88aa40acdac5b5062c563c34383ea0870eb6a76b8f64af14255f047b58633e",
+      "bytes": 3304
+    },
+    {
+      "path": "RuntimeHost/DiagnosticInfo.plist",
+      "git_mode": "100644",
+      "sha256": "91306c277a84a800617b2b5f20e5614795f183e2373f19309d9033530869e483",
+      "bytes": 1058
+    },
+    {
+      "path": "RuntimeHost/Info.plist",
+      "git_mode": "100644",
+      "sha256": "cab05fb3b54fb76c9b1b85e9f6a66aebcc5b91bed98c757b603db89e2b7939ca",
+      "bytes": 1022
+    },
+    {
+      "path": "RuntimeHost/main.c",
+      "git_mode": "100644",
+      "sha256": "c749cd998a6f066e2f7a6ef818eecf05b90d1a8808f6c9966e0b5fc21affeeed",
+      "bytes": 2408
+    },
+    {
+      "path": "SECURITY.md",
+      "git_mode": "100644",
+      "sha256": "be05f72b200d23dd4c9bd43393b7c23e5068f900c047942cdffe42512a54140d",
+      "bytes": 839
+    },
+    {
+      "path": "SUPPORT.md",
+      "git_mode": "100644",
+      "sha256": "1a009d77663f1b5eee0f098161d141ed3a97f76aeed38e73817b1c5445e4420d",
+      "bytes": 654
+    },
+    {
+      "path": "TFTMAC.md",
+      "git_mode": "100644",
+      "sha256": "ec7e7977d3ff582ea21583c9a3e0395458c0c3362b6b1038f443d010c2508fe0",
+      "bytes": 1343
+    },
+    {
+      "path": "TFTMAC.xcodeproj/project.pbxproj",
+      "git_mode": "100644",
+      "sha256": "cf5cb90513db4ce382464ae90fd1d3cb7007f60595208c022a9c44ee66adcd5c",
+      "bytes": 38844
+    },
+    {
+      "path": "TFTMAC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+      "git_mode": "100644",
+      "sha256": "b0707ca825734aa80f47115f6d51a6fcc0e45db36d8964f85cea276f71aa3986",
+      "bytes": 6248
+    },
+    {
+      "path": "TFTMAC.xcodeproj/xcshareddata/xcschemes/TFTMAC.xcscheme",
+      "git_mode": "100644",
+      "sha256": "6954d308bbb4874dcc053b4fd5ba6fa001fb717b96ec9846e10c706c7bc54861",
+      "bytes": 2815
+    },
+    {
+      "path": "TFTMACAPP.md",
+      "git_mode": "100644",
+      "sha256": "50bb5922181528039a24ce0c6dfd863151345bf6e1fc1a9b839188d25e13df68",
+      "bytes": 808
+    },
+    {
+      "path": "TFTMAC_CLEAN_OWNERSHIP_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "c0a73f6373f6c76e45907b1f09ac59ee74af1715a90a71d9f0e09bcf4e8c9b51",
+      "bytes": 518
+    },
+    {
+      "path": "TFTMAC_FREEZE_LOCK_V1.md",
+      "git_mode": "100644",
+      "sha256": "c7688235051bc3c9181abd0cb226ec7c8dab89a42349811ccd939c5f73e7e381",
+      "bytes": 14651
+    },
+    {
+      "path": "TFTMAC_FULL_IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "9e2fc294d99a2e6153af81aa51369cff3fd4265d61a251a80671e643fb55d02f",
+      "bytes": 576
+    },
+    {
+      "path": "TFTMAC_GPU_RUNTIME_SSOT.md",
+      "git_mode": "100644",
+      "sha256": "90713ab6dcbbb77bb2c723d8f5af37b338caa08a1d3354990c2e5feede42d2fe",
+      "bytes": 5367
+    },
+    {
+      "path": "Tests/TFTMACTests/ANGLEDriverOverrideTests.swift",
+      "git_mode": "100644",
+      "sha256": "8af2e29113b225147cedf995157aaab33325d31868e37b3369e2f27c3b0e262a",
+      "bytes": 6807
+    },
+    {
+      "path": "Tests/TFTMACTests/CombatBenchmarkAnalysisTests.swift",
+      "git_mode": "100644",
+      "sha256": "5fcb16632136d6360e89e8b580297ffe48b4caa9f35552faeec6680748c50ef0",
+      "bytes": 7501
+    },
+    {
+      "path": "Tests/TFTMACTests/DiagnosticArtifactFileTests.swift",
+      "git_mode": "100644",
+      "sha256": "34ca5b1725f169418f5eb35e5ce62348baa7f70c2c07a4276df028eb2b553877",
+      "bytes": 6506
+    },
+    {
+      "path": "Tests/TFTMACTests/GameFrameTelemetryTests.swift",
+      "git_mode": "100644",
+      "sha256": "3d3e08eabf3bb72254dce88fb3766e4eb0bb69570247d67721f112a4c82e8d8c",
+      "bytes": 9271
+    },
+    {
+      "path": "Tests/TFTMACTests/GraphicsStackReceiptTests.swift",
+      "git_mode": "100644",
+      "sha256": "4a8fdf6b551099718ad0b7ed86d4d34fddad39079320dc5014de1aaaa3d1d005",
+      "bytes": 3507
+    },
+    {
+      "path": "Tests/TFTMACTests/NativeClockSampleTests.swift",
+      "git_mode": "100644",
+      "sha256": "c2faba4009da1e6422c3ed66afe2d3c62dcd658158831173eb6fab68533b1f32",
+      "bytes": 3556
+    },
+    {
+      "path": "Tests/TFTMACTests/RiotLoginTests.swift",
+      "git_mode": "100644",
+      "sha256": "43c7c6c0f5d868d74bbc681722e9b9854daeec3770aea8a7d0c378c7262023d1",
+      "bytes": 3062
+    },
+    {
+      "path": "Tests/TFTMACTests/RuntimeInputChannelTests.swift",
+      "git_mode": "100644",
+      "sha256": "201af1dd8971bfe47d5f61af85a60c9533246918a5f1695c6fed46430f946f0f",
+      "bytes": 3537
+    },
+    {
+      "path": "Tests/TFTMACTests/StartupCurtainStateTests.swift",
+      "git_mode": "100644",
+      "sha256": "f43862e810861bc14ae1b1af98427424b2374c82b993c267a3cf490499709063",
+      "bytes": 5172
+    },
+    {
+      "path": "Tests/TFTMACTests/TFTMACGate1Tests.swift",
+      "git_mode": "100644",
+      "sha256": "6867a3cd3b202b97118c6f6300d768c631b953d25ccf34dacb5c04d0e33c1b85",
+      "bytes": 42807
+    },
+    {
+      "path": "Vendor/AndroidEmulator/SOURCE.json",
+      "git_mode": "100644",
+      "sha256": "edc6adcf9dbf2a15c07e758659f2bd749104d510ae21c6523465010f2aabaeeb",
+      "bytes": 1724
+    },
+    {
+      "path": "Vendor/AndroidEmulator/emulator_controller.proto",
+      "git_mode": "100644",
+      "sha256": "1d62c6bcad5f06621f90ec2bf26c661ba769ccd0f1416b5314d25a68e04eee5f",
+      "bytes": 81619
+    },
+    {
+      "path": "artifacts/android-egl-capability-probe/call_arm64.s",
+      "git_mode": "100644",
+      "sha256": "f0fd6bf1ec18f2a0d9e87bd537c6ad8d064f3958fb5a99f7a3dc5fb8b866834e",
+      "bytes": 1642
+    },
+    {
+      "path": "artifacts/android-egl-capability-probe/main.go",
+      "git_mode": "100644",
+      "sha256": "21a82d7e5f1eb525aa9bce7c3d5b245e30f76201f9431a51bd97d88e2239e894",
+      "bytes": 9907
+    },
+    {
+      "path": "artifacts/android-egl-capability-probe/native-clean-boot-output.txt",
+      "git_mode": "100644",
+      "sha256": "98871e8c5b15de272d0cbec00fdbdce717e56b8f00426bf9861fd574d4b28e21",
+      "bytes": 2990
+    },
+    {
+      "path": "artifacts/android-ui-transport-attested-20260811.json",
+      "git_mode": "100644",
+      "sha256": "addeceab036702f9becbcc5e9f669e519ce824a8ef382db8feefdde320b22004",
+      "bytes": 6092
+    },
+    {
+      "path": "artifacts/angle-causal-timeline-sideband.patch",
+      "git_mode": "100644",
+      "sha256": "648366419ba772d76facaad29e7be81ef65c391756307b523afda0807afe5acb",
+      "bytes": 6985
+    },
+    {
+      "path": "artifacts/angle-egl-probe.cpp",
+      "git_mode": "100644",
+      "sha256": "c6281ea6c47e7ea46cdb636f78d752e53e86c570d9a04416e06fab2d18144880",
+      "bytes": 41023
+    },
+    {
+      "path": "artifacts/gfxstream-gles32-guest-proc-alias-prototype.patch",
+      "git_mode": "100644",
+      "sha256": "ca825efb7d2db54598934bf9667838bc957a59c3bfd970a1e1068676ec8ca087",
+      "bytes": 4704
+    },
+    {
+      "path": "artifacts/gfxstream-gles32-host-capability-prototype.patch",
+      "git_mode": "100644",
+      "sha256": "b3ff89049534e19c42abeaf9b52502f7fca471057afc334b51e3b30a2cf2673d",
+      "bytes": 10807
+    },
+    {
+      "path": "artifacts/gfxstream-timeline-causal-instrumentation.patch",
+      "git_mode": "100644",
+      "sha256": "f9328230be10074928822faddb1f01fc5de39ab08acc7c2b8fc26982ee19b87e",
+      "bytes": 29878
+    },
+    {
+      "path": "artifacts/moltenvk-timeline-causal-instrumentation.patch",
+      "git_mode": "100644",
+      "sha256": "55e8dc5fa3814676c1bb0f38ddae87f5ad18226aec5fb82b6ec1e6613fc2ea74",
+      "bytes": 13352
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.baseline.ini",
+      "git_mode": "100644",
+      "sha256": "723249029df0ee01bafef6d94b00eed4c8b30bae2f7a2836953ad3528baadf03",
+      "bytes": 874
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.defer-off.ini",
+      "git_mode": "100644",
+      "sha256": "918d2ff6bbf38df1b725b4b2324e7b9a7b97dc612092755cd92e6bc412faf8c2",
+      "bytes": 912
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.effects-high.ini",
+      "git_mode": "100644",
+      "sha256": "a7dd54248136039b2872b373381594b50dca522506c31a3a400884e2dea18bb7",
+      "bytes": 1161
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.effects-performance.ini",
+      "git_mode": "100644",
+      "sha256": "24ef9b3774f295f5c9f53f9583eb3020612dd4e73927061d153f35d94669eb1c",
+      "bytes": 2419
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.fast-quality-fxaa.ini",
+      "git_mode": "100644",
+      "sha256": "c9c84bec09e60d2ee965f91ef0b7b1eb687521527e478e3df5054f779137c42b",
+      "bytes": 1106
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.fast-quality-material1.ini",
+      "git_mode": "100644",
+      "sha256": "c023be7cd0476357efdeeebe010aaccd6abf267c0fba8564ec6705ab55996705",
+      "bytes": 1137
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.fast-quality-msaa2.ini",
+      "git_mode": "100644",
+      "sha256": "ef14f72964dddffd5db7527c9f2f07468efe6d94fcc9d731b3369309820f415b",
+      "bytes": 1106
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.gpu-scene-texture-rhi-bypass.ini",
+      "git_mode": "100644",
+      "sha256": "6878cdb5d08a81b0c8d1abd0aab9aee11bc0faf172c7b266ab696c3e321fa3e8",
+      "bytes": 910
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.gpu-scene-texture.ini",
+      "git_mode": "100644",
+      "sha256": "01c00598b206e4dfb49eb4684290b4ab92a4913108abedff21b176e0d817d925",
+      "bytes": 910
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.ini",
+      "git_mode": "100644",
+      "sha256": "c9c84bec09e60d2ee965f91ef0b7b1eb687521527e478e3df5054f779137c42b",
+      "bytes": 1106
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.no-frame-ahead.ini",
+      "git_mode": "100644",
+      "sha256": "183d2196f3b79fdcff1d433480e803322c1b580bfaf117991e7229c2754002b5",
+      "bytes": 1180
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-animation-uro-67.ini",
+      "git_mode": "100644",
+      "sha256": "b376587cddec77ade0cf08c7bfc5e7c0937a5e11555a95d223a416536205c01c",
+      "bytes": 2444
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-effects-67.ini",
+      "git_mode": "100644",
+      "sha256": "5ab532b82e2706898d66b4325f880e0ab52982be36e70577a7a6f4aa12d2f8fa",
+      "bytes": 2362
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-extreme-effects-67.ini",
+      "git_mode": "100644",
+      "sha256": "cadfba96c55a3f6ab6b2be3def673cfd47e2ba70a3eea9ab069522cb30107cd6",
+      "bytes": 2362
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-lod-67.ini",
+      "git_mode": "100644",
+      "sha256": "72fcf65b348c1f3e0b390587429513f94cdb4123b0c5fedd02c4fbca61e1669d",
+      "bytes": 1971
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-max.ini",
+      "git_mode": "100644",
+      "sha256": "5ab532b82e2706898d66b4325f880e0ab52982be36e70577a7a6f4aa12d2f8fa",
+      "bytes": 2362
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-particles-67.ini",
+      "git_mode": "100644",
+      "sha256": "b1db2dfa4ab48a35964cbaf07de9ef5050d2f9c08e73ec584c611c9750fab169",
+      "bytes": 2321
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-resolution-50.ini",
+      "git_mode": "100644",
+      "sha256": "735095ac1ced7fc68fa34387c28c08872c06799c91e3ab737412caf87b6ecb0a",
+      "bytes": 1898
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.performance-ultra.ini",
+      "git_mode": "100644",
+      "sha256": "4ba9d03ae50d2cbdcca29af228fbd3914dbf4a6290b76f86205e9a90e3763b90",
+      "bytes": 2362
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.quality-fxaa.ini",
+      "git_mode": "100644",
+      "sha256": "2a49a1f546db50da7e6f61afed20469d6e3128a3fa20440bc52ac92848705327",
+      "bytes": 1040
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.rhi-bypass.ini",
+      "git_mode": "100644",
+      "sha256": "a9e85f96ad4664ef2521343edbef2ae540afbab1a68dd48ca55249402c839ac8",
+      "bytes": 874
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.shader-prewarm.ini",
+      "git_mode": "100644",
+      "sha256": "3479ffb5482b7e8d79d04627de4ffe052d9f7b9078f4107a690a575db87bea99",
+      "bytes": 1152
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.ubo-direct-write.ini",
+      "git_mode": "100644",
+      "sha256": "30e4933054e9b5b15549b90f1e0147e4ace1148d265b05fb4d5114af60166777",
+      "bytes": 1136
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/Android_Codex.DeviceProfiles.ubo-pool-16m.ini",
+      "git_mode": "100644",
+      "sha256": "b97f4c89132914bdfc3871cb819452bdad84456601a1347b433af8c15fe0422b",
+      "bytes": 1140
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-angle-opengl/README.md",
+      "git_mode": "100644",
+      "sha256": "4f7382517b43af709332a7e42f31a48823c0e80c0320bf82e4a3e417e1cb4076",
+      "bytes": 934
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-direct-vulkan/Android_Codex.DeviceProfiles.ini",
+      "git_mode": "100644",
+      "sha256": "e92e08b1f1f62b463cdbb43a522929a1cee66145b1abcf7380749e16f93ff451",
+      "bytes": 874
+    },
+    {
+      "path": "artifacts/tft-pbe-18.1-5212127-direct-vulkan/README.md",
+      "git_mode": "100644",
+      "sha256": "8cdda7e8bb0e5283f644f785e8f57413b357bc5faba6ef15e8f09d60d6abcaa1",
+      "bytes": 1203
+    },
+    {
+      "path": "benchmark.md",
+      "git_mode": "100644",
+      "sha256": "25d570995037ccd8740f16a7d8d6efae6688fb5432420347ac06192235ee9d70",
+      "bytes": 49963
+    },
+    {
+      "path": "dev.md",
+      "git_mode": "100644",
+      "sha256": "5368dac48c9a97ecc546eed9dee18125a41f21c98cd066d96b59f7da9d17d99e",
+      "bytes": 1938
+    },
+    {
+      "path": "docs/60FPS_AUTONOMOUS_CAMPAIGN_PLAN_2026-09-08.md",
+      "git_mode": "100644",
+      "sha256": "b3f15e5d443a14bba5f03719880b6eb6cdad0a9f2868c8d83bb9a062faee2cb0",
+      "bytes": 8380
+    },
+    {
+      "path": "docs/FAST_WINS_60FPS_PLAN_2026-09-08.md",
+      "git_mode": "100644",
+      "sha256": "727fc09cbda24748a050dd3e915721149f3a33bb5a3fbe0ba0e4d1047f0e3bf6",
+      "bytes": 7307
+    },
+    {
+      "path": "docs/HIGHPERF_6GB_EXPERIMENT_STATUS.md",
+      "git_mode": "100644",
+      "sha256": "cfa091808c69560a3947048506b0dc71605eb48a4bb8005e7da5609486359acf",
+      "bytes": 24190
+    },
+    {
+      "path": "docs/TFTMAC_GRAPHICS_ARCHITECTURE.md",
+      "git_mode": "100644",
+      "sha256": "761ac5d303ddb9990701269a6080fca231048bfe9fa111482c8c7dcf171bb3b1",
+      "bytes": 1518
+    },
+    {
+      "path": "docs/TFTMAC_GRAPHICS_PIPELINE_RESEARCH.md",
+      "git_mode": "100644",
+      "sha256": "867199a988bcff03cab5b8a81fe17562e8e3265dcb6367a712bff08a900e2dda",
+      "bytes": 16466
+    },
+    {
+      "path": "docs/TFTMAC_NATIVE_RUNTIME_KNOWLEDGE_BASE.md",
+      "git_mode": "100644",
+      "sha256": "d896bc18360efbbfa738ee21d82aaec01f71611d2545b1845542fd2ade62c7ca",
+      "bytes": 31324
+    },
+    {
+      "path": "docs/TFTMAC_UNREAL_PIPELINE_OBSERVABILITY.md",
+      "git_mode": "100644",
+      "sha256": "e4080ced97c540334f497285363d8ff4454c5fc3599027b7443dc007808a9f8b",
+      "bytes": 14754
+    },
+    {
+      "path": "docs/architecture.md",
+      "git_mode": "100644",
+      "sha256": "25479c85feaeeefe2380220c376e733a223ac0b28762a615dce951beacad6b78",
+      "bytes": 3013
+    },
+    {
+      "path": "docs/benchmarks.md",
+      "git_mode": "100644",
+      "sha256": "06af179ca2a79742788fa8f7b405ab075dc108e89ad6f36c353630b8e414b6d9",
+      "bytes": 11175
+    },
+    {
+      "path": "docs/building.md",
+      "git_mode": "100644",
+      "sha256": "bb650f1e393c085023ce950b1e478b75071597e6b351878c73db01e5dae9893b",
+      "bytes": 2559
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/TFTMAC.md",
+      "git_mode": "100644",
+      "sha256": "7d35a63a6b2dc891765f05743e1998150d92ffd55ba84bf7201609bbba39d1ff",
+      "bytes": 2693
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/TFTMACAPP.md",
+      "git_mode": "100644",
+      "sha256": "7b71e8782217ceac2c12b80e69388e9f856f96caec4654a908637cd40edfddcf",
+      "bytes": 55213
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/TFTMAC_CLEAN_OWNERSHIP_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "776616ec3e167729158e4dbc8c89ee5b6070def87bf5dfe04b38434cb03d8e0d",
+      "bytes": 33215
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/TFTMAC_FULL_IMPLEMENTATION_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "8249a0fee6ac3c971cd2e46f1b4a16a1334bac983c172ba950bbed11fbb3bc8e",
+      "bytes": 1333
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/TFTMAC_GRAPHICS_ARCHITECTURE.md",
+      "git_mode": "100644",
+      "sha256": "eaf7591965abbb2c4d7a3598c365b04ffda9c711e89a96d647ffdafc169e9753",
+      "bytes": 6505
+    },
+    {
+      "path": "docs/history/2026-08-31-pre-build8/launch-profiles.md",
+      "git_mode": "100644",
+      "sha256": "b3a53fff5c5e8ce37e5f7c0b1bf714e37d8ccead76e09981898934b8baa03524",
+      "bytes": 4539
+    },
+    {
+      "path": "docs/history/pre-18.3/research-log.md",
+      "git_mode": "100644",
+      "sha256": "772b8fdda293a8725ae8690d472052cb487b48b3a30f5a37d8714e3731ced3f0",
+      "bytes": 13478
+    },
+    {
+      "path": "docs/history/pre-18.3/riot182dev.md",
+      "git_mode": "100644",
+      "sha256": "6c7b0f578df652e17c4839b8958e8aa14f1d196147e63fcf7efe7a846e7cc99a",
+      "bytes": 100429
+    },
+    {
+      "path": "docs/launch-profiles.md",
+      "git_mode": "100644",
+      "sha256": "2cacf3cde9d8034994640e3e10dcf7033d57e32feea6e47ae99c0436003b60eb",
+      "bytes": 2691
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/adb-restart-targeted-gate.md",
+      "git_mode": "100644",
+      "sha256": "d0195abfd07f7716092875082c50d7a528c51dd602703fc04589bae6938df7e4",
+      "bytes": 2037
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/admission-fault-test-result.json",
+      "git_mode": "100644",
+      "sha256": "f1249da83708501d2c619a036972c8df422f2a9a6ea3ee6643486fce5f5c3b83",
+      "bytes": 241
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/keychain-no-ui-targeted-gate.md",
+      "git_mode": "100644",
+      "sha256": "c8ad510db91b274fffaad4bf9779bbc16d3b015f7ec176124c0d493d527f1bee",
+      "bytes": 2599
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/keychain-r17-admission.json",
+      "git_mode": "100644",
+      "sha256": "eabdbb30ad76f0cbef01781a0e06b818c3ed3beab8f9b6a59a3984184ead8ab3",
+      "bytes": 954
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/keychain-r17-live-result.json",
+      "git_mode": "100644",
+      "sha256": "5ed0cb0bbe26876a33c690a5f5980d48631f673eca83d18d5e3cacbb9ab4374d",
+      "bytes": 2960
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/launch-login-batch-gate.md",
+      "git_mode": "100644",
+      "sha256": "40381eca2b06e02da103a7b75bc32aceb1d535923918eee1808b6091b744c3f8",
+      "bytes": 6349
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/launch-login-batch-preflight.json",
+      "git_mode": "100644",
+      "sha256": "f65e44f3683b38d14e242677b0298a692bd89f1eee7bc0b1ec1c04246fbf5faa",
+      "bytes": 270
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/launch-login-three-cycle-result.json",
+      "git_mode": "100644",
+      "sha256": "c0ff226673bb0d872be004a7660d239ea69860ee61889856a474698a1967a8c5",
+      "bytes": 1173
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/sha256-receipts.json",
+      "git_mode": "100644",
+      "sha256": "0e1d1e7c56eb355b42fd2b3d78d15f0f70bc0d577aeda81bdfb2c90541a6387d",
+      "bytes": 15419
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/shader-cache-identity-targeted-gate.md",
+      "git_mode": "100644",
+      "sha256": "12bb78362954d3ab235d16db40abd92f9f40a9b706fd81bad83226329dd97308",
+      "bytes": 2820
+    },
+    {
+      "path": "docs/receipts/2026-09-06-dev-r17/zygote-relaunch-targeted-gate.md",
+      "git_mode": "100644",
+      "sha256": "ecb34185eb12ef06bf4b1d59bf7db86bc86a9d49dfe6fa09716bb37bba2d2d24",
+      "bytes": 1850
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/angle-reuse-gate-retry.md",
+      "git_mode": "100644",
+      "sha256": "5bf2c6a4f5f7f5b5cf67428dbb2106c953e6074ca4cb3220105070049af489c8",
+      "bytes": 1940
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/angle-reuse-gate.md",
+      "git_mode": "100644",
+      "sha256": "565fbbfae6581ce11182135c34cbe4d8445998f2f9310a6eee8399cefcf60729",
+      "bytes": 2415
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/angle-reuse-real-match.md",
+      "git_mode": "100644",
+      "sha256": "d4f7f26ea575ad699212c9cf0a5e18454618ce55abdcbafd954aadf380e9ada9",
+      "bytes": 3084
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/runtime-actor-diagnostic-blocker.md",
+      "git_mode": "100644",
+      "sha256": "68100e2d7eb1aa1461918a69b8f5c15ced1c2dda3a3f170285cffb52941490cd",
+      "bytes": 1018
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/shutdown-finalization-test.md",
+      "git_mode": "100644",
+      "sha256": "21f16951a3a7aba3490f22688436dc97be3c417cce75da0a5553acb0a7a2ef0a",
+      "bytes": 1587
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/stock-dev-lifecycle-comparator.md",
+      "git_mode": "100644",
+      "sha256": "f350e94bcc24ea1027610e073e0688c79e6fc0968737e6a2227f4d15aa570e3e",
+      "bytes": 2095
+    },
+    {
+      "path": "docs/receipts/2026-09-08-fast-wins-r1/tocker-trials-autonomous-run.md",
+      "git_mode": "100644",
+      "sha256": "d0bcd59eb4188e7ef99b67bbff0c01b4df94f860aac9f33bf35c2e38ecd7afa7",
+      "bytes": 4956
+    },
+    {
+      "path": "docs/receipts/2026-09-08-two-game-review/two-game-review.json",
+      "git_mode": "100644",
+      "sha256": "6c4d228a33e37901b1da6d74cad50b42d852fe2901700272706d2449fcf72732",
+      "bytes": 16075
+    },
+    {
+      "path": "docs/receipts/2026-09-08-two-game-review/two-game-review.md",
+      "git_mode": "100644",
+      "sha256": "79198c958d58f25809f8b4694117ddd8ae0326c1448dd980e5d32d8a68f4ec9c",
+      "bytes": 6481
+    },
+    {
+      "path": "docs/receipts/2026-09-09-silent-launch-gate.md",
+      "git_mode": "100644",
+      "sha256": "8ff04d74f71e5f9e7c2425eaf81838186adc7c5aacb733129197cf985dff2866",
+      "bytes": 1891
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-angle-sideband.md",
+      "git_mode": "100644",
+      "sha256": "a44dbd40f400264a3496b13e3c7e4031f6f16d0848f4fccdd05c980d3cc807a2",
+      "bytes": 3139
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-async-submit.md",
+      "git_mode": "100644",
+      "sha256": "b34a993c53909ad07baadd85c2a45eb99490a15ec95962b78cb6b2c8c4d1b089",
+      "bytes": 2528
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-blit.md",
+      "git_mode": "100644",
+      "sha256": "e7ce7a59b340ff0af7285bcd836c47e393ae3afedd0c676e9db664e159783e72",
+      "bytes": 2785
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-direct-vulkan-marker.md",
+      "git_mode": "100644",
+      "sha256": "0c14a672fbdf7bd68fc9d15d22d731d8010e05b0c33082a503a89dea08a25f05",
+      "bytes": 2955
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-display-post.md",
+      "git_mode": "100644",
+      "sha256": "962918f0728da41b97822ded7e9a7ad9e2b2c53bfd4a03dd063f2aeb397f21cd",
+      "bytes": 2323
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-egl-swap.md",
+      "git_mode": "100644",
+      "sha256": "13bbbcbf1e0017d3166e9e6c94345dd52e6150e08e795ba7b3ca2502580e0bf3",
+      "bytes": 2375
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-gles2-decoder.md",
+      "git_mode": "100644",
+      "sha256": "ebc254ea04b214dae35d174c335227b345a75ce88ef4c043aa76bb737a378c4e",
+      "bytes": 2966
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-gles2-duration.md",
+      "git_mode": "100644",
+      "sha256": "0c31c3447d73d535f82d623cdc377bba1584ac3882a756075377b41f9fb8d271",
+      "bytes": 2731
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-instrumented-tft.md",
+      "git_mode": "100644",
+      "sha256": "087a093057f4abcb4c43520fc2bf618a2568e1761118a95381205b41aaeca5bd",
+      "bytes": 3079
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-load-check.md",
+      "git_mode": "100644",
+      "sha256": "561a05afb64bed37bedd8045069ba2b3485dd6b7d1664c98b3dc4cc15307eb40",
+      "bytes": 1719
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-rc-flush.md",
+      "git_mode": "100644",
+      "sha256": "4629311caf2087235ddabdbf26fa1421ed1dfab94a3db420f4a1d58a6aa81fbc",
+      "bytes": 2928
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-rc-opcode.md",
+      "git_mode": "100644",
+      "sha256": "1bdf8d6e1d9171e147433d05f3bab4a64345426872f6c77cf47cbc750b226a55",
+      "bytes": 2784
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-stock-shadow.md",
+      "git_mode": "100644",
+      "sha256": "730272bca2d5a6cee8ad233d141ce937bcd33726584246670f3e2eee98bed3f6",
+      "bytes": 1597
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-submit2.md",
+      "git_mode": "100644",
+      "sha256": "a7a42c34b756bfa1ad100ac2db477ec1b5a77c7f1f81bc3920588c00a52001a1",
+      "bytes": 1968
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-admission-sync-submit.md",
+      "git_mode": "100644",
+      "sha256": "b233a0f2a74481276d64f7567cfabb38e85b10d0497aef6df4afb447da9af147",
+      "bytes": 2501
+    },
+    {
+      "path": "docs/receipts/2026-09-09-trace-boundary-summary.md",
+      "git_mode": "100644",
+      "sha256": "bcdd92cb97ed4453614c8575f6a31b53ac205a70abc27541328dbe33b59a5669",
+      "bytes": 3420
+    },
+    {
+      "path": "docs/receipts/2026-09-09-vcpu6-screening.md",
+      "git_mode": "100644",
+      "sha256": "339a8d8abfafba6011a92c7456f369c3c8b37dff7526e53de862d1491fad81c8",
+      "bytes": 3073
+    },
+    {
+      "path": "docs/releasing.md",
+      "git_mode": "100644",
+      "sha256": "655c707e0b58bbcff31bd5afd7147efdb8cd293a36038798f3200c614594b562",
+      "bytes": 2346
+    },
+    {
+      "path": "docs/reproducibility.md",
+      "git_mode": "100644",
+      "sha256": "e0c24c7e16d0da48590d2c1ae9afb48a3d8cf1d4a37fe60ef033d6031f1cd717",
+      "bytes": 1263
+    },
+    {
+      "path": "docs/research-log.md",
+      "git_mode": "100644",
+      "sha256": "b2c477f127c290a3bc314014a53f87ead8c106e75fdb2418f4645ab1ddabeec2",
+      "bytes": 442
+    },
+    {
+      "path": "docs/telemetry-contract/README.md",
+      "git_mode": "100644",
+      "sha256": "7ff9d195d8ab02fdb076f9d9d26f8f95fa5522840c6175a8341fcd2e1a2107ab",
+      "bytes": 538
+    },
+    {
+      "path": "docs/telemetry-contract/SHA256SUMS",
+      "git_mode": "100644",
+      "sha256": "b7ba3e637f354f0c6522fdde35a7cac3151dbc185e4788e7fe3d4f3dc384f6a3",
+      "bytes": 192
+    },
+    {
+      "path": "docs/telemetry-contract/first-game-session-v2.json",
+      "git_mode": "100644",
+      "sha256": "70994c8636048d25e04e4c8dec61aefec41fb5ebd52cc97fc3276701e64290fc",
+      "bytes": 232
+    },
+    {
+      "path": "docs/telemetry-contract/game-session-diagnostics-v2.json",
+      "git_mode": "100644",
+      "sha256": "f071c567b29c2f7ee77e791a5e273017f179a9937ff55e771fbe8ec90c64016e",
+      "bytes": 681
+    },
+    {
+      "path": "docs/telemetry.md",
+      "git_mode": "100644",
+      "sha256": "1b24417c15c93f6b358b6cb300f2676d3e7e461c9c7e5718007d8194156911b1",
+      "bytes": 7204
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "git_mode": "100644",
+      "sha256": "b6cb4010177bf84b08fcdaf04dcc040ce8a5f6f0a1c5c7f3b974479e310a0d1c",
+      "bytes": 1766
+    },
+    {
+      "path": "facts.md",
+      "git_mode": "100644",
+      "sha256": "def6ad8e543a4415653b082a62156b3b91a63d4c6b6b48b2fada01285be896ca",
+      "bytes": 5899
+    },
+    {
+      "path": "implementation.md",
+      "git_mode": "120000",
+      "sha256": "6e15281c2ef746d54fbdabef1e803301723900592cc49c0f50f4e4cb89c3ee3d",
+      "bytes": 15,
+      "target": "improvements.md"
+    },
+    {
+      "path": "improvements.md",
+      "git_mode": "100644",
+      "sha256": "b32dd252323f81e34ecc6746dc41d35eb31780db232406b4ac9b45bdfdc2691d",
+      "bytes": 27481
+    },
+    {
+      "path": "project.md",
+      "git_mode": "100644",
+      "sha256": "a8c033c3c42fcc25c57335b6bfce24c1594fedd42fab37b02e141337a34bc8c7",
+      "bytes": 3391
+    },
+    {
+      "path": "reference/avd/TftPBE.ini",
+      "git_mode": "100644",
+      "sha256": "cac98ebb93d072cb47d0f981ca0bb2f72405b0b7acdc54a3ed09bc1aa452b36c",
+      "bytes": 77
+    },
+    {
+      "path": "reference/avd/config.ini",
+      "git_mode": "100644",
+      "sha256": "14784c3ff8f384012f5a79a98eab09caa61a9a1bd781290d5467e5534e40e1f0",
+      "bytes": 426
+    },
+    {
+      "path": "reference/avd/hardware-qemu.ini",
+      "git_mode": "100644",
+      "sha256": "621032082a2b9571e68cfdc9a21e91c16d7f67a6e55dddb88091466b1a6e66a2",
+      "bytes": 3886
+    },
+    {
+      "path": "reference/rootable-avd/TftRootAffinity.ini",
+      "git_mode": "100644",
+      "sha256": "7c1c7d9653d25fbf6db27d6dcb81a8530f3b2941b7c491e0ae20279581d7d3e8",
+      "bytes": 95
+    },
+    {
+      "path": "reference/rootable-avd/config.ini",
+      "git_mode": "100644",
+      "sha256": "095305826c0efe3c8bec12f9926e81672773ceb9deda3594894fb103fafb6977",
+      "bytes": 631
+    },
+    {
+      "path": "riot182dev.md",
+      "git_mode": "100644",
+      "sha256": "868b9f9e31d671db7d8b1f64aad220883a72080efb05207ff83b542943b3ec16",
+      "bytes": 529
+    },
+    {
+      "path": "run-tft-angle-opengl.command",
+      "git_mode": "100755",
+      "sha256": "73aa734d8822852dd802d8822c66292f53a2cbcab818667f37559b010d7a0ae1",
+      "bytes": 1001
+    },
+    {
+      "path": "run-tft-best-verified.command",
+      "git_mode": "100755",
+      "sha256": "232edd727a37639892ff457d6ece2ef53683eb1b1f5fd864267ffa25b6807c48",
+      "bytes": 6317
+    },
+    {
+      "path": "run-tft-direct-vulkan.command",
+      "git_mode": "100755",
+      "sha256": "7e08945400fe5741c6a1e1180d31bbc8f02d59d00c013bf1c2bfb453915e9f5f",
+      "bytes": 403
+    },
+    {
+      "path": "run-tft-fast-quality-angle-no-fbo-submit.command",
+      "git_mode": "100755",
+      "sha256": "2fc3c512d1089e84982985894a90e2fd219ec955d240b5799f6f9e4877228d03",
+      "bytes": 432
+    },
+    {
+      "path": "run-tft-fast-quality-asg-active-consumer.command",
+      "git_mode": "100755",
+      "sha256": "0711eff805765876daf6aaf7483fe6eae68777b179ef62bebf4997400b892000",
+      "bytes": 1012
+    },
+    {
+      "path": "run-tft-fast-quality-native-gles.command",
+      "git_mode": "100755",
+      "sha256": "5333b96cbe55d5ff528f98bbf1e08aeba0885566a8e53d677f64a7e45332ff4a",
+      "bytes": 626
+    },
+    {
+      "path": "run-tft-fast-quality-native-gles30.command",
+      "git_mode": "100755",
+      "sha256": "45b2adf6446c142844e9cdbc442ea5af7f4133234f97b1d386c5651e517a9486",
+      "bytes": 1033
+    },
+    {
+      "path": "run-tft-fast-quality-native-gles31.command",
+      "git_mode": "100755",
+      "sha256": "b15fa3e8cacda43c7044087097aff1c68fbe5d6889dbd90b0efc7acc0a9b11c5",
+      "bytes": 1040
+    },
+    {
+      "path": "run-tft-fast-quality-shader-prewarm.command",
+      "git_mode": "100755",
+      "sha256": "6a3cb5b2b90f64f857fc28dc5817278b99e82810a9b20319f660416c51454ed6",
+      "bytes": 800
+    },
+    {
+      "path": "run-tft-fast-quality-submit-thread-control.command",
+      "git_mode": "100755",
+      "sha256": "6f41d08b746e2da95377578deeb8abe06a03c0b0e14d82302c3f66757b102d92",
+      "bytes": 280
+    },
+    {
+      "path": "run-tft-fast-quality-submit-thread.command",
+      "git_mode": "100755",
+      "sha256": "a63d5b6554985d5301faf70bfd34c20f44279e3a12f86ad27705a4ed99dbfd9c",
+      "bytes": 343
+    },
+    {
+      "path": "run-tft-fast-quality-ubo-direct-write.command",
+      "git_mode": "100755",
+      "sha256": "4065eb23f4b8204584f60107bff175d4b8ccf922447674782cf590c71f00be59",
+      "bytes": 606
+    },
+    {
+      "path": "run-tft-fast-quality-ubo-pool.command",
+      "git_mode": "100755",
+      "sha256": "a067eea856dad272bc4f4177cc5217509340d90ed763dc6451a28f1c47630581",
+      "bytes": 589
+    },
+    {
+      "path": "run-tft-fast-quality-upstream-asg.command",
+      "git_mode": "100755",
+      "sha256": "49fb8e574abb0c4c587a728780052a69e3d07ba6896ea02eb8e24165808e76b5",
+      "bytes": 746
+    },
+    {
+      "path": "run-tft-fast-quality.command",
+      "git_mode": "100755",
+      "sha256": "f0ed55ce7ecd157e735b34c98df440f0a6d0aafe49ed1c6071dff474c2d2941b",
+      "bytes": 1592
+    },
+    {
+      "path": "run-tft-gles32.command",
+      "git_mode": "100755",
+      "sha256": "28c31022482e69a87c58c16aca7a8aae19a42a6a2ecab1ec09c85a08118574db",
+      "bytes": 4077
+    },
+    {
+      "path": "run-tft-mvk128-experimental.command",
+      "git_mode": "100755",
+      "sha256": "c3da25ad6fb64b9cdf55547599f55119fd571c22bb0625f1bee00c965cc9ba8f",
+      "bytes": 530
+    },
+    {
+      "path": "run-tft-performance-max.command",
+      "git_mode": "100755",
+      "sha256": "50c88f9957854ed4167951fe02ca696db1da6690c92a673c302589f58ed544d4",
+      "bytes": 778
+    },
+    {
+      "path": "scripts/analyze-flight-recorder.command",
+      "git_mode": "100755",
+      "sha256": "fa40547c488a304015cb22f47490a6e3bccf8118aaf737742a1b9d99565e3bec",
+      "bytes": 400
+    },
+    {
+      "path": "scripts/analyze-vulkan-experiment-campaign.mjs",
+      "git_mode": "100755",
+      "sha256": "f781bbffcf9f13c660f3279890627e3c9e73120ecbf17a4a49a7fa2e26368404",
+      "bytes": 10106
+    },
+    {
+      "path": "scripts/android-environment.sh",
+      "git_mode": "100755",
+      "sha256": "ea21769068bc251a7098f617dfa1db05aafaa6eb80917291b3343f39554a8774",
+      "bytes": 2703
+    },
+    {
+      "path": "scripts/archive/pre-18.3/performance-candidates.json",
+      "git_mode": "100644",
+      "sha256": "e7879f4db8915d9ae239ce3888b038bd79c889c81764b1eec6e7d1234d522441",
+      "bytes": 33216
+    },
+    {
+      "path": "scripts/audit-native-gles-coverage.command",
+      "git_mode": "100755",
+      "sha256": "75c844e53265cb9fbaac72be410bc04876a156374896d5ca4399ffea3e02b688",
+      "bytes": 8583
+    },
+    {
+      "path": "scripts/build-android-egl-capability-probe.command",
+      "git_mode": "100755",
+      "sha256": "254c339c5e98543aba8937980b4f050cf68a26f4ab9f642714350a6eeb0ce08a",
+      "bytes": 774
+    },
+    {
+      "path": "scripts/build-asg-active-consumer-runtime.command",
+      "git_mode": "100755",
+      "sha256": "0f5d506a2138eb8a803501b3e7d0eaac05848979bfb2d5cde7d091949f7fdfcf",
+      "bytes": 4768
+    },
+    {
+      "path": "scripts/build-causal-stock-runtime.command",
+      "git_mode": "100755",
+      "sha256": "4b6272476d6d77ef9b7854c212416458257519cf05a3e86198486bfc43723e43",
+      "bytes": 330
+    },
+    {
+      "path": "scripts/build-control-launcher.command",
+      "git_mode": "100755",
+      "sha256": "dea490feadc5ce242563ecea916d924f8535fe3e1616c4b4c966399a0148f95e",
+      "bytes": 3493
+    },
+    {
+      "path": "scripts/build-dev-launcher.command",
+      "git_mode": "100755",
+      "sha256": "e80616afa4172afe8309ac1a600f1fe5045ca28100ea3fb0ba7e0f3aca63fecb",
+      "bytes": 6849
+    },
+    {
+      "path": "scripts/build-diagnostic-forwarder.command",
+      "git_mode": "100755",
+      "sha256": "634cc6468ee160711c183b912d7bb95a63419aa157401b5b65b5dd568411f204",
+      "bytes": 6342
+    },
+    {
+      "path": "scripts/build-native-app.command",
+      "git_mode": "100755",
+      "sha256": "fe236e3a086fc8ef1405147ceda008a1d8a05dcd8d3a857c426973aeb051954d",
+      "bytes": 7797
+    },
+    {
+      "path": "scripts/build-native-clock.command",
+      "git_mode": "100644",
+      "sha256": "3f5dfb75c0869289857b2b31e6b5e013dd043c97de7cf58aa8937eae1f0f1b89",
+      "bytes": 1421
+    },
+    {
+      "path": "scripts/build-native-gles30-lib.command",
+      "git_mode": "100755",
+      "sha256": "1b0e8d33e5ba53ae21f2ad591987a43ba01c3eac5dbc4d8988930aa872deb217",
+      "bytes": 2115
+    },
+    {
+      "path": "scripts/build-native-gles31-lib.command",
+      "git_mode": "100755",
+      "sha256": "b5139004a8f4b5296c771d81677e522c9fca824fe35546f97ec26de5d7595ed2",
+      "bytes": 2115
+    },
+    {
+      "path": "scripts/build-performance-leaderboard.command",
+      "git_mode": "100755",
+      "sha256": "02c640dbcf94f398ba958a505bc4b5271db2df6d614eb24512d6d12bc7cac279",
+      "bytes": 8051
+    },
+    {
+      "path": "scripts/build-ranked-app.py",
+      "git_mode": "100644",
+      "sha256": "7f069732c83be406258d97e4f1ff952251839bf1cb64e6e4ef7de2878335acd8",
+      "bytes": 5735
+    },
+    {
+      "path": "scripts/build-stock-shadow-runtime.command",
+      "git_mode": "100755",
+      "sha256": "3ff9c255d7d0f47ce2159f546623b0d53a4248d26e9d5a74421a15723117d2e4",
+      "bytes": 7709
+    },
+    {
+      "path": "scripts/build-tft-screen-classifier.command",
+      "git_mode": "100755",
+      "sha256": "d173f8e05552ee6ccb6d651303d34a908737544a8fcabcc0e868190a174eb0a1",
+      "bytes": 575
+    },
+    {
+      "path": "scripts/build-tftmac-app.command",
+      "git_mode": "100644",
+      "sha256": "1923a1a13c56458561a7f683ff0fdafd03825f79666b6a04ea01ff845dd52b66",
+      "bytes": 345
+    },
+    {
+      "path": "scripts/build-turbo-app.py",
+      "git_mode": "100755",
+      "sha256": "2b60b7a404361891ff5fa5dd6d0f057f8a35a29469e07a340c255d43c780cfb9",
+      "bytes": 10404
+    },
+    {
+      "path": "scripts/build-vulkan-probe.command",
+      "git_mode": "100755",
+      "sha256": "23a60851fa2de1e5c61faafb2ed8a2ad3ad50d39aa717693e5c7f188a9bf99f1",
+      "bytes": 6917
+    },
+    {
+      "path": "scripts/capture-frame-pacing.command",
+      "git_mode": "100755",
+      "sha256": "1c97a470a9e72aac90ce724aa6109ae7e5b3c774864d99d93cf1f6598a8a679c",
+      "bytes": 24071
+    },
+    {
+      "path": "scripts/capture-input-latency.command",
+      "git_mode": "100755",
+      "sha256": "3958537d5bc4a87d09b0560e1e6e57cccca23958012cd7b9df142174d55d623f",
+      "bytes": 10140
+    },
+    {
+      "path": "scripts/compare-input-latency.command",
+      "git_mode": "100755",
+      "sha256": "d6f611f0d8aac7a7a7542f32e0a2d62b4a02901da91680e8b4647f03f4daa006",
+      "bytes": 2626
+    },
+    {
+      "path": "scripts/ensure-local-signing-identity.command",
+      "git_mode": "100755",
+      "sha256": "b168fd39bdffe3e0d863eea10a0eec1610f555e3f83becf8e1d4400e771d0056",
+      "bytes": 2542
+    },
+    {
+      "path": "scripts/generate-emulator-proto.command",
+      "git_mode": "100644",
+      "sha256": "42dcc967ed55acc187784d9509f3f3738083768fc6bc4ed57f2a358b35dfbb52",
+      "bytes": 2696
+    },
+    {
+      "path": "scripts/install-desktop-launchers.command",
+      "git_mode": "100755",
+      "sha256": "de012bac0fc6365e03072a8bc88327b64b33faf60a9deb91a812b00a119a7f60",
+      "bytes": 3218
+    },
+    {
+      "path": "scripts/install-trace-processor.command",
+      "git_mode": "100644",
+      "sha256": "21fc569999126622267e0c2352b26f2beeba84bef91194dbee17d0864d0f002b",
+      "bytes": 1519
+    },
+    {
+      "path": "scripts/login-tft-from-keychain.command",
+      "git_mode": "100755",
+      "sha256": "961c601575a59b917a1ae1eae73fa3ba01b6efb4d0d49597868f41ff4466af7f",
+      "bytes": 3822
+    },
+    {
+      "path": "scripts/login-tft-webview.mjs",
+      "git_mode": "100644",
+      "sha256": "15163a27d47f3b047dc32baf511086cdf216c690f3bab671273989ac40b1b76d",
+      "bytes": 7415
+    },
+    {
+      "path": "scripts/macos-hypervisor.entitlements",
+      "git_mode": "100644",
+      "sha256": "338bcd77c4edd7bbb7b5e31ae27d15fc485c9803739be5858e2827dc4b61b364",
+      "bytes": 246
+    },
+    {
+      "path": "scripts/measure-frame-pacing.command",
+      "git_mode": "100755",
+      "sha256": "d4e90dbeb488b0cc0be316770d3b90564f24a144bdb2a353c5f02b2fc46aac7e",
+      "bytes": 2655
+    },
+    {
+      "path": "scripts/performance-candidates.json",
+      "git_mode": "100644",
+      "sha256": "665d9014f66b208419ce1ef0b6055a9512e94b079d0051485c74128061275d8d",
+      "bytes": 1042
+    },
+    {
+      "path": "scripts/prepare-causal-source-runtime.command",
+      "git_mode": "100755",
+      "sha256": "079f48b8e5478a2dbbf006e556d8ed0f25d288a6dc4906bb1db05cff35593642",
+      "bytes": 329
+    },
+    {
+      "path": "scripts/prewarm-tft-gameplay.command",
+      "git_mode": "100755",
+      "sha256": "8de6157ac8171264b76ae572873181a8626e0b1fd882ce741f207bbe562d47a2",
+      "bytes": 2314
+    },
+    {
+      "path": "scripts/restore-emulator-graphics.command",
+      "git_mode": "100755",
+      "sha256": "499dbe3897526bb4a764fe5b30b0a81b291179f752e92b52f6b6890e99480c8a",
+      "bytes": 911
+    },
+    {
+      "path": "scripts/riot-update-audit.py",
+      "git_mode": "100644",
+      "sha256": "6f57f84230eeb53efd0b357e66553c3a16fbe7335ed3de3bd6a99ccaafbe6e27",
+      "bytes": 15214
+    },
+    {
+      "path": "scripts/run-60fps-win-campaign.command",
+      "git_mode": "100755",
+      "sha256": "979833c871762631b4e6883b840d781ec439bc16e131b5fa2129c63492034e43",
+      "bytes": 399
+    },
+    {
+      "path": "scripts/run-asg-experiment.command",
+      "git_mode": "100755",
+      "sha256": "a4ebb2a213b30c57408a245dc7383459184444401f1ff975e37fc1f55550328a",
+      "bytes": 11776
+    },
+    {
+      "path": "scripts/run-autonomous-trial-benchmark.command",
+      "git_mode": "100755",
+      "sha256": "af310423aa90298f6570cb5782bc99dc0a7e99ba7a0de2edee368187e2f0168f",
+      "bytes": 72163
+    },
+    {
+      "path": "scripts/run-host-angle-capability-probe.command",
+      "git_mode": "100755",
+      "sha256": "9388b43fa156a0fe80ec7e31f1ba4ded6d65095b03e10163f4509d6d4b301db4",
+      "bytes": 1787
+    },
+    {
+      "path": "scripts/run-input-latency-experiment.command",
+      "git_mode": "100755",
+      "sha256": "164bb4ba59209fc943e43b39eac22a82fe7adbd11c86a822bc3e8be79d40a26b",
+      "bytes": 4179
+    },
+    {
+      "path": "scripts/run-macos-game-mode-experiment.command",
+      "git_mode": "100755",
+      "sha256": "bcc1961a77b8e1d3ea0e0853e3ec08e4cc9447bf586384cbbffc9f709e868e7a",
+      "bytes": 285
+    },
+    {
+      "path": "scripts/run-mvk-async-submit-experiment.command",
+      "git_mode": "100755",
+      "sha256": "75a97c261abfaa0e17d5bd32a166ddda8beeda0d5525c9d9ca9ca7657b18245d",
+      "bytes": 285
+    },
+    {
+      "path": "scripts/run-osft-profile-experiment.command",
+      "git_mode": "100755",
+      "sha256": "3dab48870663c7e433fca51b6a1e5ab8dcfa72505bc136866491c421af7c2f0c",
+      "bytes": 295
+    },
+    {
+      "path": "scripts/run-performance-campaign.command",
+      "git_mode": "100755",
+      "sha256": "6d394936ed3f68240b8347da64f55ddb30a279ca3e654b0795fbd5874af17133",
+      "bytes": 34214
+    },
+    {
+      "path": "scripts/run-tftdev-tocker-campaign.command",
+      "git_mode": "100755",
+      "sha256": "d16a2fce90811a706f2c5c177c7b965875b690f836d921d71b4a7251e8849927",
+      "bytes": 57880
+    },
+    {
+      "path": "scripts/run-turbo-profile-experiment.command",
+      "git_mode": "100755",
+      "sha256": "288418d557081fc4f0067dc0ff03816df3279b7f70d836dd556bd8c882bd6b67",
+      "bytes": 341
+    },
+    {
+      "path": "scripts/run-vulkan-batched-experiment.command",
+      "git_mode": "100755",
+      "sha256": "ce96ec96b2384584ad4f53f53ab7095d37ed3cef711d8f9bbb3a021017ad18a9",
+      "bytes": 303
+    },
+    {
+      "path": "scripts/run-vulkan-experiment-campaign.command",
+      "git_mode": "100755",
+      "sha256": "bc55f033195a59e886f3ddb8e3dfebf315fa5cd6f207a83f3729e4c2ae50a4a5",
+      "bytes": 13133
+    },
+    {
+      "path": "scripts/setup-android-unlock.command",
+      "git_mode": "100755",
+      "sha256": "c671e0b3a43899481aec713586054853281b506975ad55e06ea94531748babec",
+      "bytes": 212
+    },
+    {
+      "path": "scripts/sign-apk-v2.mjs",
+      "git_mode": "100755",
+      "sha256": "5a23bed501f924774fde88c96be25bf5bfb80c8ef5d5b382b66113ff2ae301aa",
+      "bytes": 4460
+    },
+    {
+      "path": "scripts/summarize-android-ui-transport.command",
+      "git_mode": "100755",
+      "sha256": "699fbb387f4195cf3036e11ec4031432ea32a23d0bbcb7862ab49d0cf81184a1",
+      "bytes": 3490
+    },
+    {
+      "path": "scripts/summarize-native-session.command",
+      "git_mode": "100755",
+      "sha256": "fe7e76f27687e04d7a365f89a2e7a0f1e1727c8cf3130a4d35ee5b45d43b8a09",
+      "bytes": 11771
+    },
+    {
+      "path": "scripts/test-causal-runtime.command",
+      "git_mode": "100755",
+      "sha256": "80903f00d8c8cb5e048e26a38d52dea53f529710f6dab0c402a16699f95c54a1",
+      "bytes": 500
+    },
+    {
+      "path": "scripts/test-native-app.command",
+      "git_mode": "100755",
+      "sha256": "b358d124a0d6bfe0178840ce2cd249e09f9618d7fa0b50f6e218dbd3da42ba3a",
+      "bytes": 940
+    },
+    {
+      "path": "scripts/test-native-clock-session.command",
+      "git_mode": "100644",
+      "sha256": "1876598e75e30192951dd2b87caa306a3142e67b970c370b3c4493600b8c5cf6",
+      "bytes": 560
+    },
+    {
+      "path": "scripts/test-native-clock.command",
+      "git_mode": "100644",
+      "sha256": "c7c729e6395038d64f97b31dd0ee9e59689f38db236f05579e65e07243f66768",
+      "bytes": 836
+    },
+    {
+      "path": "scripts/test-tft-screen-classifier.command",
+      "git_mode": "100755",
+      "sha256": "17f6f77140268943e5ead15390a819d6fb91cbb284b0fdba985f93c35b7a77a2",
+      "bytes": 3283
+    },
+    {
+      "path": "scripts/tftdev-tocker-candidates.json",
+      "git_mode": "100644",
+      "sha256": "41623025df8d687e37e29339fab1cd64d0226ff2ec627282d110de068116027d",
+      "bytes": 5152
+    },
+    {
+      "path": "scripts/tftmac-accept-android-licenses.command",
+      "git_mode": "100644",
+      "sha256": "e9adb1b705420f4fc72ad018c5741fc010ea937d17f7626dfaedaf0302c3014d",
+      "bytes": 2249
+    },
+    {
+      "path": "scripts/verify-diagnostic-runtime.command",
+      "git_mode": "100755",
+      "sha256": "7eb69f62a9c95fcc35b735ee4027cb1c40ff037e2814212ed181d0a18883e9ba",
+      "bytes": 4385
+    },
+    {
+      "path": "scripts/verify-environment.sh",
+      "git_mode": "100755",
+      "sha256": "f9d7da4e3a220cb83acf48f7b088ff8ecf7a7273beddc14c666d3af20d50961d",
+      "bytes": 1864
+    },
+    {
+      "path": "scripts/verify-installed-runtime.command",
+      "git_mode": "100755",
+      "sha256": "7f01312a70efa52560eaa1ba85c0269c1a4b2df97a2ff8d416d9d8cb01f2bcb7",
+      "bytes": 4451
+    },
+    {
+      "path": "scripts/verify-tftmac.command",
+      "git_mode": "100755",
+      "sha256": "3857dc0a7c256c3073542a38cfd8f551f3fad5863d02e858246bc8d3e11b6763",
+      "bytes": 25244
+    },
+    {
+      "path": "scripts/verify-turbo-build.command",
+      "git_mode": "100755",
+      "sha256": "85dd4436a06bae6bfd3c740c8c619e6085b3ef851f44148df15645b385bbc0e5",
+      "bytes": 13439
+    },
+    {
+      "path": "scripts/watch-root-pso.command",
+      "git_mode": "100755",
+      "sha256": "0b46f889bc12ca67b726dedccdcbfa877e07181d50f0410e83a11591202ccdc8",
+      "bytes": 3831
+    },
+    {
+      "path": "settings.md",
+      "git_mode": "100644",
+      "sha256": "8ba42a6f82ab5decbcc224ff35f7c777956e26ca0c615eea191c10675884bde3",
+      "bytes": 26368
+    },
+    {
+      "path": "ssot/AUTHORITY_INPUTS.sha256",
+      "git_mode": "100644",
+      "sha256": "d6bbc217a5915d723341f4b5a684c5d762fdab767b4cab9604689d62c2d5cc5d",
+      "bytes": 687
+    },
+    {
+      "path": "ssot/STACK.lock.yaml",
+      "git_mode": "100644",
+      "sha256": "e12102a26ebe6562edebe7270f02232b6da7eeef021928dd1c7aa05451d7206a",
+      "bytes": 15972
+    },
+    {
+      "path": "ssot/TFTMAC_DIRECT_PLAY_CONTROL_BUILD.md",
+      "git_mode": "100644",
+      "sha256": "ba83f0b7021639efa83ae5788df2e916113866d01525b7bbfc2c27cb7f865500",
+      "bytes": 35070
+    },
+    {
+      "path": "ssot/TFTMAC_ENGINEERING_MAP.sql",
+      "git_mode": "100644",
+      "sha256": "f9cd44608472a9bad37b499e5ee612d50a96e90ea3dde21f42a7ecdf1578275c",
+      "bytes": 221989
+    },
+    {
+      "path": "ssot/TFTMAC_NATIVE_APP_EMBEDDED_BUILD_PLAN.md",
+      "git_mode": "100644",
+      "sha256": "9e4b656042910ffd753ac485b25048ac605d56cb93efee94e9f8c0130e0374a7",
+      "bytes": 23547
+    },
+    {
+      "path": "ssot/TFTMAC_NATIVE_APP_PREFLIGHT.md",
+      "git_mode": "100644",
+      "sha256": "5c715ef9a925f891d31195952d7c8ab644bcbaa4024a4d3033f7edbe3682c3eb",
+      "bytes": 27849
+    },
+    {
+      "path": "ssot/TFTMAC_PERFORMANCE_LAB.sql",
+      "git_mode": "100644",
+      "sha256": "e7ba0bdff8e4cd3e5aff95dc1f368e588097910c75f9744bf95304e1be0248ec",
+      "bytes": 71319
+    },
+    {
+      "path": "ssot/android-license-status.json",
+      "git_mode": "100644",
+      "sha256": "f8d407fe045044dc187f9305c4a0b7fc376f9c10b4c2820965980635a843cd18",
+      "bytes": 119
+    },
+    {
+      "path": "ssot/android-sdk-packages.txt",
+      "git_mode": "100644",
+      "sha256": "2b372bfa9fc60d778da095bafb6dd0c660472f5c8b0b36bf138a5a76419426dd",
+      "bytes": 297
+    },
+    {
+      "path": "ssot/guestangle-authority.json",
+      "git_mode": "100644",
+      "sha256": "d10e51b341852dafb8aa565c8e2d7e48137d6da6e5700f08a733951b8f6b0bee",
+      "bytes": 2477
+    },
+    {
+      "path": "ssot/history/runtime-authority-gate4-2026-08-30.json",
+      "git_mode": "100644",
+      "sha256": "86c9cec2c2f62c394973cc5fae75f468f2f3be5a996930939835c4432f6d67c6",
+      "bytes": 1718
+    },
+    {
+      "path": "ssot/host-preflight.json",
+      "git_mode": "100644",
+      "sha256": "c32ab07bdc18afa5ea261c4ab702f75a087319bce6f8cfe0efff9a3f898e5b97",
+      "bytes": 1540
+    },
+    {
+      "path": "ssot/moltenvk-integration-discovery.json",
+      "git_mode": "100644",
+      "sha256": "bcbe0ae0a2bf37a4c1520ceaa2a19836ec10151cb0eba72b900f6d04b3c2e22a",
+      "bytes": 694
+    },
+    {
+      "path": "ssot/phase0-policy.json",
+      "git_mode": "100644",
+      "sha256": "0814d819e7a37d4373c01dd946e8e966ffa463a3e6fdf09d235795613b10a1c0",
+      "bytes": 2180
+    },
+    {
+      "path": "ssot/phase0-remediation-inventory.md",
+      "git_mode": "100644",
+      "sha256": "c77370f624091896fbca6760cf42a66717485e1278adf3b6e1b8cbccb3e549c6",
+      "bytes": 1324
+    },
+    {
+      "path": "ssot/phase0-source.json",
+      "git_mode": "100644",
+      "sha256": "8eab765aa60a04b034a09c41f10970b13a45797b94b8ac1d8ebd09c1027521d6",
+      "bytes": 1275
+    },
+    {
+      "path": "ssot/preflight-report.md",
+      "git_mode": "100644",
+      "sha256": "0ce58e1a891a3a250f1dcca1bccab5ace8c4ae08ed05877dbd0206327081136b",
+      "bytes": 1883
+    },
+    {
+      "path": "ssot/project-retirement.json",
+      "git_mode": "100644",
+      "sha256": "ec6705187b341c5fff7415b5de89ad7dc94c5235d6f6b034c0567c5c7df78f2e",
+      "bytes": 1094
+    },
+    {
+      "path": "ssot/retained-evidence-index.json",
+      "git_mode": "100644",
+      "sha256": "bf10144b0212cdc7b669da0decbd2dd058091bdeef8d8d249f06191c1e5d1fed",
+      "bytes": 1385
+    },
+    {
+      "path": "ssot/runtime-authority.json",
+      "git_mode": "100644",
+      "sha256": "1bf8d19b03aea2400dde9ba62c33c561f0bb18f1ff9b046188807cc8a84139f2",
+      "bytes": 12750
+    },
+    {
+      "path": "ssot/runtime-modes.json",
+      "git_mode": "100644",
+      "sha256": "a7317bd7e9dfe87ce04e679802eb6d1636f659f362c8bf0318f9c820f4a779ae",
+      "bytes": 12594
+    },
+    {
+      "path": "ssot/source-hashes.txt",
+      "git_mode": "100644",
+      "sha256": "e646ebb6c9fdfd2ef504b4f0a5d815c776da0c90e7e7a653ca2c2205ff5e2e91",
+      "bytes": 467
+    },
+    {
+      "path": "ssot/storage-reclamation.json",
+      "git_mode": "100644",
+      "sha256": "631a2b4c6180fd985052b56739daba4ef2ed4da2c7ba9bf666571c61f4d90d5a",
+      "bytes": 1128
+    },
+    {
+      "path": "ssot/tool-versions.txt",
+      "git_mode": "100644",
+      "sha256": "5228b61d8b0e206b24a645a18c08c4b28bf7ae5665cd9f0aaf4bdcbfe2dc328e",
+      "bytes": 222
+    },
+    {
+      "path": "ssot/upstreams-aemu.lock.xml",
+      "git_mode": "100644",
+      "sha256": "28865cd8a162178ba462b296f5714b6b7b6916e0cafcddfc0c5e44aa03f8e8d3",
+      "bytes": 11562
+    },
+    {
+      "path": "ssot/vulkan-required-cases-selection.json",
+      "git_mode": "100644",
+      "sha256": "c0e2c1f5d1ca05cf7b7cea4391d6a0325937a4a0bcc73026899399623e1478c7",
+      "bytes": 3565
+    },
+    {
+      "path": "ssot/vulkan-required-cases.spec.json",
+      "git_mode": "100644",
+      "sha256": "ee085639d3f479fd3d1fe11c29762ef45807120645a37e55818c412c68d7942d",
+      "bytes": 4506
+    },
+    {
+      "path": "ssot/vulkan-required-cases.txt",
+      "git_mode": "100644",
+      "sha256": "5c021e8c6ddf39a73d93fdbbf8f3ad451ae31cfd389a6e948c474ec7bcbc5f7d",
+      "bytes": 2472
+    },
+    {
+      "path": "ssot/vulkaninfo-summary.txt",
+      "git_mode": "100644",
+      "sha256": "b5c98b2cf9d832cdf50342ef5f0cbfccf3f8bae278c61e3bb21f235706b83552",
+      "bytes": 2531
+    },
+    {
+      "path": "ssot/xcode-discovery.json",
+      "git_mode": "100644",
+      "sha256": "a49f7bc7421aed40f62ed14d22d6ff235a67e12a7bf3aee21024bf943bd4b931",
+      "bytes": 289
+    },
+    {
+      "path": "tftmac/App/AppCoordinator.swift",
+      "git_mode": "100644",
+      "sha256": "4a838af539e31774e7d8d3e349ba090a7a4acd0a1cf60ebaf59cd835de1097a6",
+      "bytes": 10819
+    },
+    {
+      "path": "tftmac/App/MainWindowController.swift",
+      "git_mode": "100644",
+      "sha256": "25386c63a8e0c3888221395f03fd75a1d9c923ce899f328d1d505b3b3311b6c7",
+      "bytes": 3988
+    },
+    {
+      "path": "tftmac/App/RuntimeSettingsWindowController.swift",
+      "git_mode": "100644",
+      "sha256": "fd3a432832da717eb66eb21f46143700c73df8efaa8d249a06ad50302924eecb",
+      "bytes": 7817
+    },
+    {
+      "path": "tftmac/App/TFTMACApplication.swift",
+      "git_mode": "100644",
+      "sha256": "e59265f2f2c2936692146cf55ae8c9af8ceacde3fa34112e2622f7485bf62bda",
+      "bytes": 6079
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/DeviceProfiles.ini",
+      "git_mode": "100644",
+      "sha256": "5b46164caea56dd4f24caf6afac7650fe61ae7c8fc20f8ae7c0b0a95b13e4264",
+      "bytes": 9966
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/README.md",
+      "git_mode": "100644",
+      "sha256": "cb1bddf2f11410bff74a70ccbfa0de065995a5b5628f6db710d3af55e356c68f",
+      "bytes": 6154
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/baseline-device-cvars.json",
+      "git_mode": "100644",
+      "sha256": "372af2d3edf45477961b749c7b376ace9c4db5e3df96bf4648b506f21984f21e",
+      "bytes": 3294
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/debug-ramdisk.img",
+      "git_mode": "100644",
+      "sha256": "35e03aec0f5faea16db88d852ac80ad9691c44e7b4f1d1305a6b7ad6984de956",
+      "bytes": 2074275
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/profile-transaction.sh",
+      "git_mode": "100755",
+      "sha256": "280c2e2d2ab8953e74f4fe0137d34e92023563512b3e363035aa5a87abd5ced1",
+      "bytes": 7816
+    },
+    {
+      "path": "tftmac/Assets/DEVHighPerf/riot-defaults.sh",
+      "git_mode": "100644",
+      "sha256": "0e787ecfaa39ee24b2b8898e1caf31bfc0a1ef125a76ec4baa19b045958b57bb",
+      "bytes": 4532
+    },
+    {
+      "path": "tftmac/Assets/TFTMAC-DEV-Icon.png",
+      "git_mode": "100644",
+      "sha256": "660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945",
+      "bytes": 2743913
+    },
+    {
+      "path": "tftmac/Assets/TFTMAC-Official-Icon.png",
+      "git_mode": "100644",
+      "sha256": "d6ba9ceb76c4b1e44e87f059f775a0ed629f9bea29b0dd73245853d7dca3a016",
+      "bytes": 2662793
+    },
+    {
+      "path": "tftmac/Assets/TFTMAC-Splash-1920x1080.png",
+      "git_mode": "100644",
+      "sha256": "533236b335d46616402fb64d4d35b0aff55308d4df9e891d837719b43bced6a2",
+      "bytes": 3476031
+    },
+    {
+      "path": "tftmac/Assets/TFTMAC-TURBO.icns",
+      "git_mode": "100644",
+      "sha256": "9fbef42a57ee20467cdb607e9ee04f486f4641f6ae51ff72a8190a5a881d9d6b",
+      "bytes": 3809180
+    },
+    {
+      "path": "tftmac/GenerateIcon.swift",
+      "git_mode": "100644",
+      "sha256": "cfb3640fa541236982cfa9b76c6e93f0a3a1c5186028ea7e0fc5f7ad2e1c4c2a",
+      "bytes": 2014
+    },
+    {
+      "path": "tftmac/Info.plist",
+      "git_mode": "100644",
+      "sha256": "166c7187e3618bf42c65f014f1f05a77347924f59e68144c815b448a3f20ee4a",
+      "bytes": 1355
+    },
+    {
+      "path": "tftmac/Presentation/EmbeddedEmulatorView.swift",
+      "git_mode": "100644",
+      "sha256": "44fff465bc1f8c69989c91bdf507f795aadd8a88e0c48af63665ab4bcae51b2e",
+      "bytes": 30767
+    },
+    {
+      "path": "tftmac/Presentation/FrameContract.swift",
+      "git_mode": "100644",
+      "sha256": "f52e568ba29bb87de2d05bd7c65b6ec3d2217d06f476f9ef738b521e3987a294",
+      "bytes": 6426
+    },
+    {
+      "path": "tftmac/Presentation/StartupCurtainState.swift",
+      "git_mode": "100644",
+      "sha256": "e4449821df3aa0f218c08818a0c35b713dbb3670f82d9b3aafb61c33943e0367",
+      "bytes": 2949
+    },
+    {
+      "path": "tftmac/Presentation/StartupSplashView.swift",
+      "git_mode": "100644",
+      "sha256": "788933fb9280f058625c01ab1ae868d7852ab2777cb39abe64475eec0087665f",
+      "bytes": 3708
+    },
+    {
+      "path": "tftmac/Presentation/ViewportMapper.swift",
+      "git_mode": "100644",
+      "sha256": "5ca8cbf103d5911d8d15695d57e2f86898bba7d5e3c87d9fe7a10d4ac53acd91",
+      "bytes": 1604
+    },
+    {
+      "path": "tftmac/Runtime/ANGLEDriverOverride.swift",
+      "git_mode": "100644",
+      "sha256": "4ac5e439e46f11eae7c28db752aadea3da64182ac9bc5badeee6121af51efdbc",
+      "bytes": 3887
+    },
+    {
+      "path": "tftmac/Runtime/ANGLEViewEvidence.swift",
+      "git_mode": "100644",
+      "sha256": "97627f333b7d101e48d0a838c3bbbf7240055cc27c120ec048c4e8c5c63d97af",
+      "bytes": 6754
+    },
+    {
+      "path": "tftmac/Runtime/AVDTransactionGuard.swift",
+      "git_mode": "100644",
+      "sha256": "5a407028933736ee98507174ea7e2b1e4a8010ccb747a8594875b1942f66d732",
+      "bytes": 4694
+    },
+    {
+      "path": "tftmac/Runtime/CombatBenchmarkAnalysis.swift",
+      "git_mode": "100644",
+      "sha256": "5848e59e6c7bc6b5f3d4ba4d976c3c7f8ec879b16334513f5ed99b882e2c81cb",
+      "bytes": 9816
+    },
+    {
+      "path": "tftmac/Runtime/CombatBenchmarkStore.swift",
+      "git_mode": "100644",
+      "sha256": "fb471d2a75166a272a7ae43bd8f7ad510388684ac20324295a7761fa1ecf7951",
+      "bytes": 24689
+    },
+    {
+      "path": "tftmac/Runtime/DiagnosticArtifactFile.swift",
+      "git_mode": "100644",
+      "sha256": "516a7918db3670b25256c0d1a654725c1f599b93aa12126b36d562a34807c111",
+      "bytes": 4366
+    },
+    {
+      "path": "tftmac/Runtime/GameFrameTelemetry.swift",
+      "git_mode": "100644",
+      "sha256": "998ac743f2c91be59fc31e48861c967e71671fd8bfbd9a1cbb5d566e989bb356",
+      "bytes": 16217
+    },
+    {
+      "path": "tftmac/Runtime/GraphicsStackReceipt.swift",
+      "git_mode": "100644",
+      "sha256": "3e128e5c010952e89fe1bc4324b1db7900513c39936339497db67689e6c8f4cf",
+      "bytes": 3146
+    },
+    {
+      "path": "tftmac/Runtime/GuestUnlockSecret.swift",
+      "git_mode": "100644",
+      "sha256": "4c75d4694ec93b3749beb7093f7f984be572d886fd3705bb65000e5828ffd310",
+      "bytes": 12492
+    },
+    {
+      "path": "tftmac/Runtime/NativeClockSample.swift",
+      "git_mode": "100644",
+      "sha256": "7b5ef302a87aa94ad536366238ef993a0b9f3fddb6a950f408869c068b6a6a16",
+      "bytes": 15274
+    },
+    {
+      "path": "tftmac/Runtime/RiotLogin.swift",
+      "git_mode": "100644",
+      "sha256": "775b4be3318cbbeef31e1f61eadc55e269e12ebc1dbf972335e18444707ea7da",
+      "bytes": 10324
+    },
+    {
+      "path": "tftmac/Runtime/RuntimeInputChannel.swift",
+      "git_mode": "100644",
+      "sha256": "53d110eb0eacff74fb64ea2c6c2cba94a83ccd403fecd6e9bbf5927cc455174a",
+      "bytes": 3837
+    },
+    {
+      "path": "tftmac/Runtime/RuntimeLease.swift",
+      "git_mode": "100644",
+      "sha256": "f2a8f06ede29f06c57f038fd94f48047cd796ccf138d05b1d2e0bdd0de160cdc",
+      "bytes": 6412
+    },
+    {
+      "path": "tftmac/Runtime/RuntimeMode.swift",
+      "git_mode": "100644",
+      "sha256": "c2b768d6d3fd01b731db5ce40217def128463d4b779bf1126b5dcc78b5ed413f",
+      "bytes": 24449
+    },
+    {
+      "path": "tftmac/Runtime/RuntimeModeAuthority.swift",
+      "git_mode": "100644",
+      "sha256": "37956159d7ea8b268659f1910b51bc78879ceaeec2010488396a14b2622cc6e1",
+      "bytes": 45577
+    },
+    {
+      "path": "tftmac/Runtime/RuntimeProfile.swift",
+      "git_mode": "100644",
+      "sha256": "86fa11bd91856cd19bf05303f69a8f7128b20aec0c6ed2f048343a47ef583160",
+      "bytes": 20516
+    },
+    {
+      "path": "tftmac/Runtime/TFTMACRuntime.swift",
+      "git_mode": "100644",
+      "sha256": "b79a7ce463fecc964b6a722f9f38b60057140d661c7771759158a268c89c643f",
+      "bytes": 473359
+    },
+    {
+      "path": "tftmac/Runtime/TelemetrySignalClassifier.swift",
+      "git_mode": "100644",
+      "sha256": "3358b1746dbbfec22243a6884f501ac675a30f679892b5217890f5d79ae67fea",
+      "bytes": 14064
+    },
+    {
+      "path": "tftmac/Runtime/TouchInput.swift",
+      "git_mode": "100644",
+      "sha256": "b318ba639a134719e52271fb7d3bb27f8588932f40c40c25e580be9ef5359c15",
+      "bytes": 1286
+    },
+    {
+      "path": "tftmac/Sources/README.md",
+      "git_mode": "100644",
+      "sha256": "499a73b40b8db0bceb70a501df1ed10e261c7040ae6609e4a116c29ee21d6de8",
+      "bytes": 342
+    },
+    {
+      "path": "tftmac/Sources/TFTMACApp.swift",
+      "git_mode": "100644",
+      "sha256": "6dbda13d7dab9b7272c5a882705e44ef88c6820dbe4a403613c675b7936dc18a",
+      "bytes": 1405
+    },
+    {
+      "path": "tftmac/Sources/TFTMACRuntimeBridge.swift",
+      "git_mode": "100644",
+      "sha256": "cf0d309a5b1ae56ccc4c3e743740e4e099d6096fabf6f8ffb83fec1ba3a2e009",
+      "bytes": 12954
+    },
+    {
+      "path": "tftmac/Sources/TFTMACViews.swift",
+      "git_mode": "100644",
+      "sha256": "fe10c6b13bdecca79037322c39a469425f45727519475acd06c99d3cc01d4c61",
+      "bytes": 11021
+    },
+    {
+      "path": "tftmac/Sources/TFTMACWindowCoordinator.swift",
+      "git_mode": "100644",
+      "sha256": "67385b7f8856b2eb4aa07fbef35d8025150617f7fd12777772672f3d75de659b",
+      "bytes": 9307
+    },
+    {
+      "path": "tools/analyze_native_flight_recorder.py",
+      "git_mode": "100755",
+      "sha256": "91828bc4ceb0199d4129bfed98b34dc1a4b7654e897cc3ba82a652886147630f",
+      "bytes": 30990
+    },
+    {
+      "path": "tools/analyze_workload_window.py",
+      "git_mode": "100755",
+      "sha256": "86e2a4320f0068e0726702345a65b6389036d4a3e362f556335496d99c71b9de",
+      "bytes": 9673
+    },
+    {
+      "path": "tools/causal_analysis_pipeline.py",
+      "git_mode": "100755",
+      "sha256": "8c65595e255a4659223f99582ccf01a58a70c33ac57907ffcc78fa68ba5bc4d9",
+      "bytes": 7978
+    },
+    {
+      "path": "tools/tft-input-bridge.swift",
+      "git_mode": "100644",
+      "sha256": "4fceb99b44df65b7e5dd5abb6a603154bab3f78e5b4ac18622967fa8126fe07a",
+      "bytes": 24585
+    },
+    {
+      "path": "tools/tft-screen-classifier.swift",
+      "git_mode": "100644",
+      "sha256": "1b7b9b5e0b1a58cb961e315302c4e61f21d983926ce8a909d29e1c775fada7de",
+      "bytes": 43296
+    },
+    {
+      "path": "tools/tftmac-clean-source-layers.mjs",
+      "git_mode": "100644",
+      "sha256": "397d1fa6c0a7e2e1709e0f7139838d989e2400b7ba58902d36cafb11c1b430c3",
+      "bytes": 4736
+    },
+    {
+      "path": "tools/tftmac-direct-control.mjs",
+      "git_mode": "100644",
+      "sha256": "61e79c80b968a799280d89c3e10f47aaf81db30130b4eb614d30339f33d428c6",
+      "bytes": 298765
+    }
+  ],
+  "source_file_count": 482,
+  "source_manifest_sha256": "e4ca3173c0c0f8e1f77054cb521a19ee2d81173254effd0a03729457d28bbfb4",
+  "excluded_untracked_preserved_in_place": [
+    "DriverRuntime/angle1166/block-cache-candidate/args.gn",
+    "scripts/__pycache__/riot-update-audit.cpython-314.pyc"
+  ],
+  "installed_nonsecret_artifact_hashes": {
+    "TFT TURBO.app": {
+      "Contents/MacOS/TFTMACDEVCore": "a3955be420b00b1fd13801a5dfcad65fe085fe7e3486a763b6788750acb1ed67",
+      "Contents/MacOS/TFTMACDEVLauncher": "133a4ee1355d7c2c07522391fa48dc1c4cab51d3f8eda436444ddd8bc3ebd9cf",
+      "Contents/Info.plist": "76df64006301091e1070cd64fcc4ca9286c96d5cd200fd73a16a78ec49de6ef5",
+      "Contents/_CodeSignature/CodeResources": "c73d5a4328f7910779b20152a223d7808c76f833a418bcd0df7ca41fa293cff8"
+    },
+    "TFT Ranked.app": {
+      "Contents/MacOS/TFTMACDEVCore": "00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee",
+      "Contents/MacOS/TFTMACDEVLauncher": "66ffe9e18a9a5a0659daeeae3e7a356aa6b2bbb4bbad94f2a4499961f5fadc1e",
+      "Contents/Info.plist": "d3531b5453cd28c6ef98c6ed3e8d0d49c31ae3098a720780bb964afb243c4a2e",
+      "Contents/_CodeSignature/CodeResources": "910b6e4244e8b1edb199c82c2a52070f222472c7b3365e44f4d64f7866062cb6"
+    }
+  },
+  "source_to_binary_provenance": "Existing build receipt identifies source root and old HEAD; six bundled source resources match. No fresh compile or complete dirty-source build receipt exists.",
+  "snapshot_only": true,
+  "prior_manifest_file_sha256": "62d5a0bbc5c262a2090c00880bc583a1a904b6d90fac9d4a4200a6da2990a5c4"
+}

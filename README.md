@@ -24,7 +24,7 @@ Current DEV optimization authority and protected Control are intentionally separ
 ```text
 DEV:     /Applications/TFTMAC DEV.app
          /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow
-         1920x1080 / 60 Hz / 8 vCPU / 6144 MiB
+         2560x1440 / 60 Hz / 8 vCPU / 6144 MiB
          ADB 5041 / console 5586 / controller 8556
          current winner DEV-B8-WIN-01
 
@@ -33,7 +33,7 @@ Control: /Applications/TFTMAC.app
          protected historical/playable rollback authority
 ```
 
-The stock emulator authority is Android Emulator 37.1.11. Current DEV test receipts select OpenGL ES through ANGLE and use TFT `18.1-5423749` / `8423749`. The exact installed EmulatorController protocol is vendored at `Vendor/AndroidEmulator/emulator_controller.proto` with provenance in `Vendor/AndroidEmulator/SOURCE.json`.
+The stock emulator authority is Android Emulator 37.1.11. The current promoted DEV route selects OpenGL ES through ANGLE and uses TFT `18.3-5530794` / `8530794` at 1920x1080; physical displays remain 2560x1440. The exact installed EmulatorController protocol is vendored at `Vendor/AndroidEmulator/emulator_controller.proto` with provenance in `Vendor/AndroidEmulator/SOURCE.json`.
 
 The source-built emulator laboratory is not part of the normal product path.
 `flashls1/tftmac-runtime@c8aa26e` is eligible only as an isolated,
@@ -112,7 +112,7 @@ If Google Play or Riot requires authentication, MFA, consent, or CAPTCHA, TFTMAC
 
 Performance work is evidence-driven. Build 8 automatically logs the TFT process/layer lifetime and has been live-verified. It proves exact gameplay cadence and degradation, but it does not yet name an internal graphics root. Source-level causal instrumentation is planned in an isolated diagnostic runtime, never by silently replacing the stock playable runtime.
 
-The current target is 1920x1080 at 60 Hz. High graphics at a 60 FPS cap with Riot Performance Mode OFF is the accepted playable baseline. Ultra High and Riot Performance Mode Beta were rejected on the target M4 host because of severe lag and unacceptable combat tails.
+The current DEV authority is TFT 18.3-5530794 at the promoted 1920x1080 / 416 dpi / 60 Hz with 8 vCPU, 6144 MiB, host GPU, CoreAudio, and OpenGL ES through ANGLE. Three matched full-Trial captures establish the playability promotion; the strict continuous-60-FPS contract and causal owner remain unresolved. Earlier High/60/OFF and Ultra High findings remain historical evidence.
 
 ## Project boundaries
 

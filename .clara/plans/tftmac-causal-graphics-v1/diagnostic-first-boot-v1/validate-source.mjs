@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const registryPath = 'ssot/runtime-modes.json';
-const expectedRegistrySha = '68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518';
+const expectedRegistrySha = 'f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369';
 const expectedPortReceiptSha = '3536b1d54a0643bc3fcbb9dbff01be2402ca9c45d2100e220c2f857e65a129cd';
 const expectedStockShadowReceiptSha = '540f57f762d67b894916a96adc2c0836aec803a8af9cba988b8b5df94ddde285';
 
@@ -106,7 +106,7 @@ assert(tests.includes('testRuntimeModeRegistrySelectsReceiptedDiagnosticsAndReje
 const testCount = fs.readdirSync(absolute('Tests/TFTMACTests'))
   .filter((name) => name.endsWith('.swift'))
   .reduce((total, name) => total + (readText(`Tests/TFTMACTests/${name}`).match(/^    func test/gm) ?? []).length, 0);
-assert(testCount === 112, `expected 112 native tests, found ${testCount}`);
+assert(testCount === 133, `expected 133 native tests, found ${testCount}`);
 
 console.log(JSON.stringify({
   state: 'DIAGNOSTIC_FIRST_BOOT_SOURCE_PASS',

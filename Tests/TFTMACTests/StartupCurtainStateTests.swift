@@ -24,6 +24,13 @@ final class StartupCurtainStateTests: XCTestCase {
         XCTAssertEqual(reducer.state, .covered)
     }
 
+    func testGooglePlayAuthenticationRevealsOfficialInteractiveSurface() {
+        var reducer = StartupCurtainReducer()
+        reducer.configure(workload: .officialTFT)
+        reducer.revealForInteractiveSurface()
+        XCTAssertEqual(reducer.state, .revealed)
+    }
+
     func testGameActivityEligibilityRejectsStaleSequence() {
         var reducer = StartupCurtainReducer()
         reducer.configure(workload: .officialTFT)

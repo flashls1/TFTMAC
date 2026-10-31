@@ -2,6 +2,10 @@
 
 Authority date: 2026-08-31
 
+Implementation note: the schema-v6 full-match recorder and read-only manifest
+verification are build-verified in the current worktree. They are not claimed
+as a live normal-DEV capture until a fresh 18.3 launch seals and analyzes one.
+
 ## Fixed premise and engineering objective
 
 TFT uses Epic's Unreal Engine technology. Fortnite and other shipped Unreal
@@ -84,6 +88,14 @@ extension adds:
 | `combat_benchmarks` | Named preset, configuration SHA, 300/480-second boundaries, coverage, validity and summary metrics |
 | `combat_incidents` | Optional controlled-A/B visible-stutter/benchmark evidence; not the authority for base graphics logging |
 | `combat_comparisons` | Control/candidate deltas and deterministic HOME_RUN/PROMISING/REJECT/INCONCLUSIVE result |
+| `pipeline_event_segments` | Fixed 96-byte `PipelineEventV1` segment identity/sequence, cumulative loss/overwrite counters and hash-chain validation |
+| `pipeline_events` | Read-only normalized source events with transport work ID, present lineage ID, boundary, source-site identity, queue depth and nullable queue identity |
+| `pipeline_stage_spans` | Boundary start/end/duration spans after segment validation; queue identity and clock uncertainty remain explicit when unavailable |
+| `pipeline_lineage` | Work-to-presentation joins, generation, nullable queue identity, ambiguity, eligible-frame coverage and first divergent span |
+| `pipeline_truth_matrix` | Separate direct/correlated/requested/inferred/unknown truth for TFT, ANGLE, guest/host Vulkan, gfxstream/ASG, MoltenVK, publication, SurfaceFlinger and native presenter |
+| `pipeline_source_sites` | Source commit/blob, file/function range, site hash, loaded binary identity and instrumentation schema |
+| `producer_health` | Required/optional producer cadence, gap, loss and seal status; zero rows are never silently healthy |
+| `capture_manifests` | Sealed run manifest with database/sidecar/configuration/package hashes and producer coverage |
 
 SurfaceFlinger history polls overlap. The collector establishes a first-poll
 boundary, de-duplicates actual-present timestamps, resets on layer replacement,
@@ -91,7 +103,8 @@ and records bounded-history loss explicitly rather than inventing one giant
 frame interval. Interval inserts are committed once per poll so the logger does
 not create dozens of disk transactions per second.
 
-The logger begins automatically with the observed TFT process/layer lifecycle
+The logger begins automatically with the app launch and one-match run, then
+tracks the observed TFT process/layer lifecycle
 and remains active until process/app close. It does not require a user marker,
 battle classifier, or Combat Benchmark. The fixed Combat Benchmark remains an
 optional controlled A/B path with one 20-second/32-MiB start trace and up to two

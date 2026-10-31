@@ -15,7 +15,7 @@
   },
   "package": {
     "name": "com.riotgames.league.teamfighttactics",
-    "versionName": "18.1-5402721",
+    "versionName": "pre-18.3 historical client",
     "versionCode": "8402721",
     "installer": "com.android.vending"
   },

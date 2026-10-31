@@ -1,6 +1,6 @@
 # TFTMAC Launch Profiles
 
-**Reconciled:** 2026-09-10 America/Chicago
+**Reconciled:** 2026-09-27 America/Chicago
 **Authority:** read `facts.md` first and `project.md` second. This file is a concise launch-profile reference and cannot override them.
 
 ## Current DEV working profile — `DEV-B8-WIN-01`
@@ -14,7 +14,7 @@ Runtime root: /Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockSha
 AVD: TFTMAC_Diagnostic_StockShadow_R1
 ADB / console / controller: 5041 / 5586 / 8556
 Serial: emulator-5586
-Display: 1920x1080 / 320 dpi / 60 Hz
+Display: 2560x1440 / 416 dpi / 60 Hz
 Effective guest: 8 vCPU / 6144 MiB
 GPU / audio: host / CoreAudio
 Graphics route: Unreal OpenGL ES -> ANGLE -> Vulkan/ranchu -> gfxstream -> host Vulkan/MoltenVK -> Metal
@@ -22,7 +22,7 @@ ASG: 1 MiB write buffer / 16 KiB write step / 32 KiB ring / 800 us flush
 ANGLE enabled: exposeNonConformant*:exposeES32ForTesting
 ANGLE disabled: preferSubmitAtFBOBoundary
 Cache: debug.egl.blobcache.multifile=true; syncMonolithicPipelinesToBlobCache removed
-Official TFT: 18.1-5423749 / versionCode 8423749
+Official TFT: 18.3-5530794 / versionCode 8530794
 ```
 
 The static StockShadow AVD restoration file remains 6 vCPU / 5120 MiB. Current source defaults `advanced_diagnostics` to 8 vCPU and uses the locked 6144-MiB DEV RAM value; live QEMU receipts prove `-cores 8 -memory 6144`. Do not rewrite the static AVD simply to make it resemble the transient effective launch.

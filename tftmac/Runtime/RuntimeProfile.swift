@@ -9,6 +9,16 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
     case queueSubmitInline = "queue_submit_inline"
     case virtualQueueOff = "virtual_queue_off"
     case fenceContextsOff = "fence_contexts_off"
+    /// Diagnostic-only PSO policy candidate. It keeps the emulator route and
+    /// worker count unchanged and changes one Unreal CVar in the private
+    /// HighPerf transaction.
+    case psoWaitAll = "pso_wait_all"
+    /// Diagnostic-only PSO priority escalation candidate.
+    case psoPriorityEscalate = "pso_priority_escalate"
+    /// Diagnostic-only OpenGL program-cache eviction candidate.
+    case programLRUEvict20 = "program_lru_evict20"
+    /// Diagnostic-only OpenGL deferred texture-creation candidate.
+    case deferTextureCreation1 = "defer_texture_creation1"
     case retiredCombatLatencyA = "combat_latency_a"
     case retiredHomeRunA = "home_run_a"
 
@@ -30,6 +40,10 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
         case .queueSubmitInline: "DEV — Queue Submit Inline"
         case .virtualQueueOff: "DEV — Virtual Queue Off"
         case .fenceContextsOff: "DEV — Fence Contexts Off"
+        case .psoWaitAll: "DEV — PSO Wait All"
+        case .psoPriorityEscalate: "DEV — PSO Priority Escalation"
+        case .programLRUEvict20: "DEV — OpenGL Program LRU 20s"
+        case .deferTextureCreation1: "DEV — OpenGL Defer Texture Creation"
         case .retiredCombatLatencyA: "Retired — Combat Latency A"
         case .retiredHomeRunA: "Retired — Performance Mode Beta"
         }
@@ -45,6 +59,14 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
             "DEV runner only: disables VulkanVirtualQueue and changes nothing else."
         case .fenceContextsOff:
             "DEV runner only: disables VirtioGpuFenceContexts and changes nothing else."
+        case .psoWaitAll:
+            "DEV runner only: sets r.PSOPrecaching.WaitForHighPriorityRequestsOnly=0 and changes nothing else."
+        case .psoPriorityEscalate:
+            "DEV runner only: sets r.PSOPrecaching.PermitPriorityEscalation=1 and changes nothing else."
+        case .programLRUEvict20:
+            "DEV runner only: sets r.OpenGL.ProgramLRUEvictTimeSeconds=20 and changes nothing else."
+        case .deferTextureCreation1:
+            "DEV runner only: sets r.OpenGL.DeferTextureCreation=1 and changes nothing else."
         case .retiredCombatLatencyA:
             "Historical receipt only. The host-QoS experiment is retired and cannot be selected."
         case .retiredHomeRunA:
@@ -58,7 +80,7 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
 
     var isActiveCandidate: Bool {
         switch self {
-        case .queueSubmitInline, .virtualQueueOff, .fenceContextsOff: true
+        case .queueSubmitInline, .virtualQueueOff, .fenceContextsOff, .psoWaitAll, .psoPriorityEscalate, .programLRUEvict20, .deferTextureCreation1: true
         case .control, .retiredCombatLatencyA, .retiredHomeRunA: false
         }
     }
@@ -69,7 +91,7 @@ enum RuntimeExperimentPreset: String, CaseIterable, Codable, Sendable {
 
     var emulatorFeatureAdditions: [String] {
         switch self {
-        case .control, .retiredCombatLatencyA: []
+        case .control, .retiredCombatLatencyA, .psoWaitAll, .psoPriorityEscalate, .programLRUEvict20, .deferTextureCreation1: []
         case .queueSubmitInline: ["-VulkanQueueSubmitWithCommands"]
         case .virtualQueueOff: ["-VulkanVirtualQueue"]
         case .fenceContextsOff: ["-VirtioGpuFenceContexts"]
@@ -179,7 +201,7 @@ struct DevExperimentProfile: Sendable, Equatable {
             throw TFTMACRuntimeModeError(message: "A DEV experiment profile cannot be selected for Control.")
         }
         guard let id = RuntimeExperimentPreset(rawValue: raw),
-              [.control, .queueSubmitInline, .virtualQueueOff, .fenceContextsOff].contains(id) else {
+              [.control, .queueSubmitInline, .virtualQueueOff, .fenceContextsOff, .psoWaitAll, .psoPriorityEscalate, .programLRUEvict20, .deferTextureCreation1].contains(id) else {
             throw TFTMACRuntimeModeError(message: "Unknown or retired DEV experiment profile \(raw).")
         }
         guard let manifestURL = bundle.url(forResource: "workload-manifest", withExtension: "json"),
@@ -202,9 +224,13 @@ struct DevExperimentProfile: Sendable, Equatable {
 
 struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
     static let supportedVCPU = [4, 6, 8]
+    static let supportedAdvancedDiagnosticsVCPU = [4, 6, 8, 10]
     static let supportedRAMMiB = [4096, 5120, 6144]
     static let supportedRefreshHz = [30, 60]
-    static let supportedASGDrawFlushIntervals = [400, 800]
+    static let supportedASGDrawFlushIntervals = [400, 800, 1500, 2000, 3000, 4000]
+    static let supportedASGDataRingSizes = [32_768, 65_536, 131_072, 262_144, 524_288, 1_048_576]
+    static let supportedASGWriteStepSizes = [16_384, 32_768, 65_536, 131_072]
+    static let supportedASGWriteBufferSizes = [1_048_576, 2_097_152, 4_194_304]
 
     static let playable = TFTMACRuntimeProfile(
         identifier: "tftmac_6gb_highperf_v1",
@@ -314,7 +340,15 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
         experimentPreset.save(to: defaults)
     }
 
-    func with(vCPU: Int, ramMiB: Int, refreshHz: Int, asgDrawFlushInterval: Int) -> Self {
+    func with(
+        vCPU: Int,
+        ramMiB: Int,
+        refreshHz: Int,
+        asgDrawFlushInterval: Int,
+        asgDataRingSize: Int? = nil,
+        asgWriteStepSize: Int? = nil,
+        asgWriteBufferSize: Int? = nil
+    ) -> Self {
         let safeVCPU = Self.supportedValue(vCPU, in: Self.supportedVCPU) ?? self.vCPU
         let safeRAM = Self.supportedValue(ramMiB, in: Self.supportedRAMMiB) ?? self.ramMiB
         let safeRefresh = Self.supportedValue(refreshHz, in: Self.supportedRefreshHz) ?? self.refreshHz
@@ -322,6 +356,9 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
             asgDrawFlushInterval,
             in: Self.supportedASGDrawFlushIntervals
         ) ?? self.asgDrawFlushInterval
+        let safeDataRing = asgDataRingSize.flatMap { Self.supportedValue($0, in: Self.supportedASGDataRingSizes) } ?? self.asgDataRingSize
+        let safeStep = asgWriteStepSize.flatMap { Self.supportedValue($0, in: Self.supportedASGWriteStepSizes) } ?? self.asgWriteStepSize
+        let safeWriteBuffer = asgWriteBufferSize.flatMap { Self.supportedValue($0, in: Self.supportedASGWriteBufferSizes) } ?? self.asgWriteBufferSize
         let identifier = "tftmac_native_\(safeRAM)m_\(safeVCPU)c_\(safeRefresh)hz_flush\(safeFlush)"
         return Self(
             identifier: identifier,
@@ -334,9 +371,9 @@ struct TFTMACRuntimeProfile: Codable, Equatable, Sendable {
             gpuMode: gpuMode,
             audioBackend: audioBackend,
             graphicsTransport: graphicsTransport,
-            asgWriteBufferSize: asgWriteBufferSize,
-            asgWriteStepSize: asgWriteStepSize,
-            asgDataRingSize: asgDataRingSize,
+            asgWriteBufferSize: safeWriteBuffer,
+            asgWriteStepSize: safeStep,
+            asgDataRingSize: safeDataRing,
             asgDrawFlushInterval: safeFlush,
             controllerPort: controllerPort,
             angleEnabledFeatures: angleEnabledFeatures,

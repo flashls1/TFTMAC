@@ -5,7 +5,7 @@ unsetopt BG_NICE
 readonly ROOT="${0:A:h:h}"
 readonly ICON_SOURCE="${ROOT}/tftmac/Assets/TFTMAC-DEV-Icon.png"
 readonly ICON_SOURCE_SHA256="660d312767f6367d5e60d21ff9f05c8e17c29c0e258a45f5cb5e40ac0cb4c945"
-readonly REGISTRY_SHA256="68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518"
+readonly REGISTRY_SHA256="f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369"
 readonly TRACE_PROCESSOR_SHA256="d29864d1ba3b36855527bb1b0ca3aa7f703cdce338b9680bb922c5c151b358fa"
 readonly SIGNING_IDENTITY_NAME="${TFTMAC_CODE_SIGN_IDENTITY_NAME:-TFTMAC Local Code Signing}"
 readonly DERIVED="${ROOT}/.build/native-dev"
@@ -43,7 +43,11 @@ readonly PROBE_RECEIPT="${ROOT}/.build/vulkan-probe/build-receipt.json"
 [[ -s "${PROBE_APK}" && -s "${PROBE_RECEIPT}" ]] \
   || fail "owned Vulkan probe build did not produce its sealed artifacts"
 
-readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing-identity.command")"
+if [[ -n "${TFTMAC_DEV_SIGNING_IDENTITY:-}" ]]; then
+  readonly SIGNING_IDENTITY_HASH="${TFTMAC_DEV_SIGNING_IDENTITY}"
+else
+  readonly SIGNING_IDENTITY_HASH="$(/bin/zsh "${ROOT}/scripts/ensure-local-signing-identity.command")"
+fi
 [[ -n "${SIGNING_IDENTITY_HASH}" ]] || fail "stable local signing identity is unavailable"
 TFTMAC_CLOCK_SIGN_IDENTITY="${SIGNING_IDENTITY_HASH}" /bin/zsh "${ROOT}/scripts/build-native-clock.command"
 

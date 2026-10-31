@@ -27,4 +27,15 @@ struct ViewportMapper: Sendable {
             y: (viewportPoint.y - rect.minY) / rect.height * sourceSize.height
         )
     }
+
+    func clampedSourcePoint(for viewportPoint: CGPoint) -> CGPoint? {
+        let rect = displayedRect
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        let clampedX = max(rect.minX, min(rect.maxX, viewportPoint.x))
+        let clampedY = max(rect.minY, min(rect.maxY, viewportPoint.y))
+        return CGPoint(
+            x: (clampedX - rect.minX) / rect.width * sourceSize.width,
+            y: (clampedY - rect.minY) / rect.height * sourceSize.height
+        )
+    }
 }

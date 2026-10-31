@@ -154,6 +154,11 @@ private func recognizeText(in image: CGImage) throws -> [OCRLine] {
         "Treasure Realms",
         "Loadouts",
         "Reroll",
+        "Buy XP",
+        "Fight",
+        "Planning",
+        "Prepare",
+        "Combat",
         "Match Found",
         "Match Accepted",
         "Reconnect",
@@ -194,23 +199,64 @@ private func recognizeText(in image: CGImage) throws -> [OCRLine] {
     }
 }
 
+private func upscaledImage(_ image: CGImage, factor: Int) -> CGImage? {
+    guard factor > 1 else { return image }
+    let width = image.width * factor
+    let height = image.height * factor
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: image.bitsPerComponent,
+        bytesPerRow: 0,
+        space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+        // PNG screenshots can carry an alpha layout that CoreGraphics will
+        // reject when creating a new bitmap context.  Use a stable premultiplied
+        // layout for diagnostic crops so the bounded OCR passes actually run.
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return nil }
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage()
+}
+
 private func recognizeTopStageText(in image: CGImage) throws -> [OCRLine] {
     let scaleX = CGFloat(image.width) / CGFloat(referenceWidth)
     let scaleY = CGFloat(image.height) / CGFloat(referenceHeight)
     let region = CGRect(
         x: 630 * scaleX,
-        y: 0,
+        // CGImage uses a lower-left crop origin while Vision reports boxes in
+        // a lower-left normalized coordinate system.  The round label is at
+        // the physical top edge, so the crop must start from image-height,
+        // not y=0 (which is the bottom HUD).
+        y: CGFloat(image.height) - 180 * scaleY,
         width: 800 * scaleX,
-        height: 95 * scaleY
+        // At 1080p the round label is only a few dozen pixels tall and the
+        // Trial reward/shop overlay can sit immediately below it.  Keep the
+        // crop bounded to the top strip, but include enough vertical context
+        // for Vision to resolve the anti-aliased `1-1` glyphs.
+        height: 180 * scaleY
     ).integral
     guard let crop = image.cropping(to: region) else {
         return []
     }
 
+    // At 1080p the round label is only a few dozen pixels tall and can be
+    // clipped by the top edge while the Trial reward/shop overlay is active.
+    // Enlarge this already bounded semantic crop before Vision OCR; the
+    // resulting normalized boxes are mapped back below, so stageMarker still
+    // remains the authority and no pixel-only stage guess is introduced.
+    let ocrImage: CGImage
+    if let enlarged = upscaledImage(crop, factor: 6) {
+        ocrImage = enlarged
+    } else {
+        ocrImage = crop
+    }
+
     // Full-frame Vision occasionally drops the tiny stage label during combat
     // when the adjacent timer is animated. A dedicated top-strip pass keeps the
     // semantic stage gate stable without relaxing it to a pixel heuristic.
-    return try recognizeText(in: crop).map { line in
+    return try recognizeText(in: ocrImage).map { line in
         OCRLine(
             text: line.text,
             normalized: line.normalized,
@@ -260,6 +306,44 @@ private func recognizeBoardOccupancyText(in image: CGImage) throws -> [OCRLine] 
             )
         )
     }
+}
+
+private func recognizeBattleControlsText(in image: CGImage) throws -> [OCRLine] {
+    let scaleY = CGFloat(image.height) / CGFloat(referenceHeight)
+    // At native 1440p the bottom-corner controls are visually clear but small
+    // enough that full-frame Vision can omit their labels. Keep this semantic
+    // crop bounded to the control band, enlarge it, and feed only its text
+    // back into the normal matcher. No phase or action is inferred from pixels.
+    let bandHeight = 340 * scaleY
+    let bandY = CGFloat(image.height) - bandHeight
+    let bandWidth = min(CGFloat(image.width), 760 * CGFloat(image.width) / CGFloat(referenceWidth))
+    let regions = [
+        CGRect(x: 0, y: bandY, width: bandWidth, height: bandHeight),
+        CGRect(x: CGFloat(image.width) - bandWidth, y: bandY, width: bandWidth, height: bandHeight)
+    ].map(\.integral)
+    var results: [OCRLine] = []
+    for region in regions {
+        guard let crop = image.cropping(to: region) else { continue }
+        let ocrImage = upscaledImage(crop, factor: 4) ?? crop
+        let ocrLines = try recognizeText(in: ocrImage)
+        results.append(contentsOf: ocrLines.map { line in
+            OCRLine(
+                text: line.text,
+                normalized: line.normalized,
+                compact: line.compact,
+                confidence: line.confidence,
+                boundingBox: CGRect(
+                    x: region.minX / CGFloat(image.width)
+                        + line.boundingBox.minX * (region.width / CGFloat(image.width)),
+                    y: region.minY / CGFloat(image.height)
+                        + line.boundingBox.minY * (region.height / CGFloat(image.height)),
+                    width: line.boundingBox.width * (region.width / CGFloat(image.width)),
+                    height: line.boundingBox.height * (region.height / CGFloat(image.height))
+                )
+            )
+        })
+    }
+    return results
 }
 
 private func combatCyanMetrics(in image: CGImage) -> (pixels: Int, longestRun: Int) {
@@ -805,6 +889,37 @@ private func classify(lines: [OCRLine]) -> Classification {
         )
     }
 
+    // The 1-4 Trial reward/shop overlay can clip the tiny round marker while
+    // leaving the mutually identifying battle controls visible. Preserve a
+    // battle classification with an explicitly absent stage so the harness
+    // may use only its bounded planning actions and wait for the next exact
+    // stage marker; it must never invent a stage number.
+    // Vision can read the final L in Reroll as I/1 on the bright round
+    // button.  Require the independent Buy XP control as well, so this
+    // bounded OCR tolerance cannot classify a generic dialog as the board.
+    if matcher.has("BUY XP") && (matcher.has("REROLL") || matcher.has("REROL")) {
+        return Classification(
+            state: .battle,
+            stage: nil,
+            reason: "battle_hud_without_stage",
+            evidence: matcher.matchedText(for: ["BUY XP", "REROLL", "REROL"])
+        )
+    }
+
+    // Some Trial rounds expose the same battle HUD with a readable Score and
+    // Fight/Buy XP controls while the small top-strip stage glyph is missed by
+    // OCR. This combination is specific to the in-game board and is safe to
+    // carry forward as a stage-less battle observation; the harness still
+    // requires its previously confirmed stage before taking bounded actions.
+    if matcher.has("SCORE") && matcher.hasAny(["FIGHT", "BUY XP"]) {
+        return Classification(
+            state: .battle,
+            stage: nil,
+            reason: "battle_score_and_control_without_stage",
+            evidence: matcher.matchedText(for: ["SCORE", "FIGHT", "BUY XP"])
+        )
+    }
+
     let modeMarkers = ["NORMAL", "DOUBLE UP", "RANKED", "TOCKER'S TRIALS"]
     let modeMarkerCount = modeMarkers.filter(matcher.has).count
     if (modeMarkerCount >= 2 && matcher.has("PLAY")) || modeMarkerCount >= 3 {
@@ -852,6 +967,7 @@ private func battlePhase(
     guard classification.state == .battle || classification.state == .trialChoice else {
         return nil
     }
+    let matcher = EvidenceMatcher(lines: lines)
     if classification.state == .trialChoice {
         return "planning"
     }
@@ -882,12 +998,14 @@ private func battlePhase(
     }) {
         return "planning"
     }
+    if shopOpen && matcher.has("BUY XP") {
+        return "planning"
+    }
     // Tocker's multi-orb reward gate keeps the battle HUD and stage visible,
     // but removes both the combat timer and planning controls. TIME BONUS is
     // the stable semantic marker on that completed-combat screen. Exposing a
     // separate phase lets the harness open each reward chooser without ever
     // guessing from a generic battle frame.
-    let matcher = EvidenceMatcher(lines: lines)
     if matcher.has("TIME BONUS") {
         return "post_combat"
     }
@@ -964,7 +1082,8 @@ private func main() -> Int32 {
         let fullFrameLines = try recognizeText(in: image)
         let topStageLines = try recognizeTopStageText(in: image)
         let boardOccupancyLines = try recognizeBoardOccupancyText(in: image)
-        let lines = fullFrameLines + topStageLines + boardOccupancyLines
+        let battleControlsLines = try recognizeBattleControlsText(in: image)
+        let lines = fullFrameLines + topStageLines + boardOccupancyLines + battleControlsLines
         emitDebugLines(lines)
         let classification = classify(lines: lines)
         let combatCyanMetrics = combatCyanMetrics(in: image)

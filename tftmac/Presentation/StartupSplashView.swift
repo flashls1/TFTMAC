@@ -67,7 +67,11 @@ final class StartupSplashView: NSView {
     override func otherMouseDown(with event: NSEvent) {}
     override func otherMouseDragged(with event: NSEvent) {}
     override func otherMouseUp(with event: NSEvent) {}
-    override func keyDown(with event: NSEvent) {}
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) || event.keyCode == 53 {
+            super.keyDown(with: event)
+        }
+    }
 
     private func configureErrorLabel() {
         errorLabel.font = .systemFont(ofSize: 17, weight: .semibold)

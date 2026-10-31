@@ -63,6 +63,15 @@ struct StartupCurtainReducer: Sendable {
         // to expose Android/SystemUI/PIN content.
     }
 
+    /// Google Play authentication is an explicit, user-controlled recovery
+    /// surface. Expose it immediately so the user can complete the official
+    /// sign-in flow; it does not authorize TFT gameplay or change package
+    /// currentness.
+    mutating func revealForInteractiveSurface() {
+        guard consumerCurtainEnabled, !isTerminal else { return }
+        state = .revealed
+    }
+
     private var isTerminal: Bool {
         switch state {
         case .revealed, .failed: true

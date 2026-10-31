@@ -288,7 +288,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "68237d1b47dc5cc52eac47c7fd4a9bef44cfbe42926741e41a37523c0a2cd518"
+    static let expectedRegistrySha256 = "a7317bd7e9dfe87ce04e679802eb6d1636f659f362c8bf0318f9c820f4a779ae"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String
@@ -431,9 +431,9 @@ struct TFTMACRuntimeModeRegistry: Sendable {
         let diagnostics = try required(.advancedDiagnostics, from: document)
         guard diagnostics.launchState == .enabled,
               diagnostics.controllerPort == 8556,
-              diagnostics.runtimeRoot == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow",
-              diagnostics.sdkRoot == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK",
-              diagnostics.adbPath == "/Volumes/MAC MINI M4/TFTMAC/Diagnostics/GraphicsRuntimeV1/StockShadow/SDK/platform-tools/adb",
+              diagnostics.runtimeRoot == "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow",
+              diagnostics.sdkRoot == "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK",
+              diagnostics.adbPath == "/Users/flash/Library/Application Support/TFTMAC/InternalRuntime/StockShadow/SDK/platform-tools/adb",
               diagnostics.avdName == "TFTMAC_Diagnostic_StockShadow_R1",
               diagnostics.adbServerPort == 5041,
               diagnostics.consolePort == 5586,

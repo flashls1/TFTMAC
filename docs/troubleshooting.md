@@ -26,7 +26,7 @@ Use the official Google Play path. Confirm the package is `com.riotgames.league.
 
 ## Performance is poor
 
-Use the existing raw-first capture tooling. Compare one variable at a time against the accepted baseline and cold-confirm any improvement before keeping it. High / 60 / Performance OFF is the user-confirmed current playable configuration. Riot Performance Mode Beta and Ultra High are rejected for current usability on the target M4 host.
+Use the existing raw-first capture tooling. Compare one variable at a time against the promoted 18.3 baseline (`1920×1080` guest / 416 dpi / 60 Hz / 8 vCPU / 6144 MiB / host GPU / OpenGL ES through ANGLE) and cold-confirm any improvement before keeping it. The in-game quality preset, FPS cap, and Performance Mode remain `NOT_RECORDED_POST_CLEANUP`; do not treat older M4 or pre-18.3 observations as current. The strict 60-FPS/severe-stall contract remains unresolved.
 
 ## Safe diagnostics
 

@@ -1,7 +1,10 @@
 # TFTMAC Native Embedded macOS App Build Plan
 
-**Status:** Replacement authority for the native macOS application/presentation work  
-**Project:** TFTMAC  
+**Status:** RETAINED BUILD PLAN / CURRENT 18.3 ROUTE OVERRIDES THIS DOCUMENT
+**Reconciled:** 2026-09-27
+**Project:** TFTMAC
+
+> This plan is retained for implementation history. Its original 1920×1080 and older-control assumptions are not current runtime authority. Use `TFTDEV-SSOT/TFTDEV1.md`, `facts.md`, `project.md`, `dev.md`, and the post-cleanup 18.3 receipt for the current route.
 **Goal:** Ship one legitimate native macOS application that owns Android/TFT presentation, runtime settings, live FPS, controls, logging, and fullscreen without altering the proven TFT graphics pipeline.
 
 ---
