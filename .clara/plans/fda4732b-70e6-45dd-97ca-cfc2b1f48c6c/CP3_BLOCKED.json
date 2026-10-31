@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "project_id": "tftmac",
+  "change_id": "fda4732b-70e6-45dd-97ca-cfc2b1f48c6c",
+  "checkpoint": 3,
+  "state": "BLOCKED_BEFORE_MIGRATION",
+  "accepted_checkpoint": false,
+  "authorized_by_user": true,
+  "planning_head": "b66e2d3f1fe68e40312c3988484abac0f61c519b",
+  "last_completed_checkpoint": 2,
+  "blocker": {
+    "layer": "CHATGPT_TOOL_SAFETY",
+    "operation": "CLARA_V2.files write scripts/turbo2_migrate.py",
+    "observed_message": "This tool call was blocked by OpenAI's safety checks. Please double check what you are sending.",
+    "specific_rule": "NOT_PROVIDED",
+    "effect_attempted_at_clara": false,
+    "file_persisted": false,
+    "clara_access_failure": false,
+    "retry_instruction": "Do not bypass the platform block, resubmit the same effect through host shell, or treat Full Access as overriding platform safety. Resume migration only through a permitted operation after this boundary is resolved."
+  },
+  "verified_discovery": {
+    "runtime_quiescent_at_observation": true,
+    "available_internal_storage_gib_approx": 159,
+    "candidate_paths_absent": true,
+    "vendor_qemu_img_backing_chain": "Three overlays; relative same-AVD backing files; all reported dirty/corrupt flags false",
+    "disk_conversion_required_by_observed_chain": false,
+    "engine_to_retain_for_cp3": "37.1.11",
+    "guest_image_to_retain": "API36 Google Play ARM64 revision7"
+  },
+  "planning_validation": {
+    "receipt": "CP3_ZENMC.json",
+    "model_source_sha256": "7e4b07db85149b4aebbf897a6e149f45c65c3f2ff406de8133ee2c1712c53c71",
+    "result": "PASS_MODEL_ONLY",
+    "reachable_states": 54,
+    "transitions": 76,
+    "deliberate_invalid_transitions_detected": 7,
+    "not_a_runtime_acceptance_test": true
+  },
+  "existing_route_review": {
+    "path": "scripts/build-stock-shadow-runtime.command",
+    "sha256": "3ff9c255d7d0f47ce2159f546623b0d53a4248d26e9d5a74421a15723117d2e4",
+    "result": "NOT_SUITABLE_UNMODIFIED",
+    "reason": "Hard-coded older Control SDK/AVD and old diagnostic target; not the current TURBO-to-TURBO2 migration or its preservation contract.",
+    "executed": false
+  },
+  "effects": {
+    "product_code_changes": "NONE",
+    "backup_created": false,
+    "avd_copied": false,
+    "sdk_changed": false,
+    "native_candidate_built": false,
+    "application_launched": false,
+    "original_apps_modified": false,
+    "original_account_state_modified": false,
+    "credentials_requested_from_user": false,
+    "authentication_retention_verified": false,
+    "audio_repair_claimed": false
+  },
+  "cp4": "NOT_AUTHORIZED_NOT_STARTED",
+  "next_action": "Resolve the platform permission boundary for the legitimate local offline migration, then resume CP3 from its saved plan. Do not advance to CP4 or manufacture a successful clone receipt."
+}
