@@ -1,0 +1,20 @@
+{
+  "result": "PASS_MODEL_ONLY",
+  "model_source_sha256": "8d72b2b0dbeb59c97d42fc3dc910a947f615e073cbfcb8131039639844457ef0",
+  "states": 44,
+  "transitions": 88,
+  "reachable_actions": [
+    "compile",
+    "interrupt",
+    "publish_exclusive",
+    "quarantine",
+    "resume_revalidate",
+    "sign_nested_then_outer",
+    "source_drift",
+    "stage_exclusive",
+    "target_conflict",
+    "verify_inputs_artifact_tests"
+  ],
+  "negative_controls_detected": 8,
+  "live_runtime_or_authentication_proof": false
+}
