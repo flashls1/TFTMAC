@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "checkpoint": "TFT TURBO 2 CP1 source snapshot",
+  "created_utc": "2026-10-31T03:49:37.227590+00:00",
+  "source_snapshot_sha": "04a6ac9673e44714b4cf1524290a4f7cbc64023a",
+  "snapshot_tree_sha": "eb3f6a253616f52c507430705f6090d574e68c83",
+  "original_head_sha": "70ee2aba4c67fc64864aa35a401b7be26cc665c1",
+  "source_manifest_sha256": "e4ca3173c0c0f8e1f77054cb521a19ee2d81173254effd0a03729457d28bbfb4",
+  "manifest_file_sha256": "6e61f207cb09965962b6ac78abaebfb9985b9b76aeca75740134e99fdb6383cc",
+  "verified_source_files": 482,
+  "source_blob_and_mode_parity": "PASS",
+  "current_worktree_source_parity": "PASS",
+  "protected_installed_artifacts": "UNCHANGED",
+  "product_files_edited": false,
+  "applications_rebuilt": false,
+  "runtime_or_credentials_modified": false,
+  "excluded_artifacts_retained": [
+    "DriverRuntime/angle1166/block-cache-candidate/args.gn",
+    "scripts/__pycache__/riot-update-audit.cpython-314.pyc"
+  ],
+  "baseline_native_test_run": "NOT_RUN_SOURCE_PRESERVATION_ONLY",
+  "completion_scope": "Snapshot only; successor branch and native publication next"
+}
