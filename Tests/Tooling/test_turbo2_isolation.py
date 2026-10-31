@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused CP2 tests of the actual build guard; no native runtime is launched."""
+"""Actual build/verification isolation tests; no native runtime is launched."""
 from __future__ import annotations
 
 import copy
@@ -36,6 +36,9 @@ class IsolationTests(unittest.TestCase):
         self.contract = isolation.load_contract()
         self.registry = json.loads((ROOT / 'ssot/runtime-modes.json').read_text())
         self.output = self.home / 'Desktop/TFT TURBO 2.app'
+        for key, value in list(self.registry['modes']['turbo2'].items()):
+            if isinstance(value, str) and value.startswith(str(Path.home()) + '/'):
+                self.registry['modes']['turbo2'][key] = str(self.home) + value[len(str(Path.home())):]
 
     def inspect(self, output=None):
         return isolation.inspect_contract(self.contract, self.registry, output, self.home)
@@ -43,9 +46,9 @@ class IsolationTests(unittest.TestCase):
     def test_valid_contract_is_not_a_ready_runtime(self):
         report = self.inspect()
         self.assertEqual(report['isolation_contract'], 'PASS')
-        self.assertFalse(report['build_allowed'])
+        self.assertTrue(report['build_allowed'])
         self.assertFalse(report['launch_allowed'])
-        self.assertEqual(report['credential_access'], 'NOT_VERIFIED')
+        self.assertEqual(report['credential_access'], 'DEFERRED_TO_LOCAL_CODEX')
         self.assertFalse(self.output.exists())
 
     def test_original_apps_and_parent_child_paths_rejected(self):
@@ -163,8 +166,10 @@ class IsolationTests(unittest.TestCase):
         self.contract['launch_state'] = 'enabled'
         with self.assertRaises(isolation.IsolationError):
             self.inspect()
-        with self.assertRaisesRegex(isolation.IsolationError, 'NOT_BUILD_READY'):
-            isolation.require_native_integration()
+        self.contract['launch_state'] = 'blocked_not_built'
+        self.registry['modes']['turbo2']['launch_state'] = 'enabled'
+        with self.assertRaises(isolation.IsolationError):
+            self.inspect()
 
     def test_only_valid_stable_signing_identity_accepted(self):
         listing = '  1) ' + ('a' * 40) + ' "TFTMAC Local Code Signing"\n 1 valid identities found\n'
@@ -188,7 +193,7 @@ class IsolationTests(unittest.TestCase):
         self.assertIn('AVAILABLE_AT_OBSERVATION', isolation.observe_ports({'test': port})['test'])
 
     def test_builder_guard_runs_before_effects_or_seed_reads(self):
-        argv = [str(ROOT / 'scripts/build-turbo-app.py'), '--seed', '/NONEXISTENT-PRIVATE-SEED']
+        argv = [str(ROOT / 'scripts/build-turbo-app.py'), '--output', str(Path.home() / 'Desktop/TFT TURBO.app')]
         with patch.object(sys, 'argv', argv), patch.object(sys, 'stderr', io.StringIO()) as error:
             with patch.object(subprocess, 'run', side_effect=AssertionError('process started')):
                 with patch.object(shutil, 'rmtree', side_effect=AssertionError('deletion attempted')):
@@ -197,16 +202,18 @@ class IsolationTests(unittest.TestCase):
                             with self.assertRaises(SystemExit) as stopped:
                                 runpy.run_path(str(ROOT / 'scripts/build-turbo-app.py'), run_name='__main__')
         self.assertEqual(stopped.exception.code, 2)
-        self.assertIn('NOT_BUILD_READY', error.getvalue())
+        self.assertIn('originals are protected', error.getvalue())
 
     def run_cli(self, command):
         return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=20)
 
     def test_actual_builder_preflight_reads_no_seed(self):
-        result = self.run_cli([sys.executable, '-B', 'scripts/build-turbo-app.py', '--preflight',
-                               '--seed', '/NONEXISTENT-PRIVATE-SEED'])
+        result = self.run_cli([sys.executable, '-B', 'scripts/build-turbo-app.py', '--preflight'])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(json.loads(result.stdout)['build_allowed'])
+        self.assertTrue(json.loads(result.stdout)['build_allowed'])
+        rejected = self.run_cli([sys.executable, '-B', 'scripts/build-turbo-app.py', '--seed', '/NOT-AN-INPUT'])
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn('unrecognized arguments', rejected.stderr)
 
     def test_actual_builder_rejects_original_output(self):
         result = self.run_cli([sys.executable, '-B', 'scripts/build-turbo-app.py', '--output',
@@ -216,7 +223,7 @@ class IsolationTests(unittest.TestCase):
 
     def test_actual_verifier_requires_exact_candidate(self):
         for args in [[], ['--app', str(Path.home() / 'Desktop/TFT TURBO.app')],
-                     ['--app', str(Path.home() / 'Desktop/TFT TURBO 2.app')]]:
+                     ['--app', 'TFT TURBO 2.app']]:
             result = self.run_cli(['/bin/zsh', 'scripts/verify-turbo-build.command', *args])
             with self.subTest(args=args):
                 self.assertEqual(result.returncode, 2, result.stderr)
@@ -226,7 +233,38 @@ class IsolationTests(unittest.TestCase):
     def test_actual_verifier_preflight_is_not_live_acceptance(self):
         result = self.run_cli(['/bin/zsh', 'scripts/verify-turbo-build.command', '--preflight'])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)['native_integration'], 'NOT_IMPLEMENTED')
+        self.assertEqual(json.loads(result.stdout)['native_integration'], 'BUILD_ONLY_RUNTIME_PENDING')
+
+    def test_exclusive_publish_never_overwrites_existing_target(self):
+        source, target = self.home / 'source', self.home / 'target'
+        source.mkdir(); target.mkdir()
+        (source / 'new').write_text('new')
+        (target / 'old').write_text('preserved')
+        with self.assertRaises(OSError):
+            isolation.publish_exclusively(source, target)
+        self.assertEqual((target / 'old').read_text(), 'preserved')
+        self.assertTrue((source / 'new').exists())
+
+    def test_exclusive_publish_promotes_complete_new_target(self):
+        source, target = self.home / 'source', self.home / 'target'
+        source.mkdir(); (source / 'content').write_text('complete')
+        isolation.publish_exclusively(source, target)
+        self.assertEqual((target / 'content').read_text(), 'complete')
+        self.assertFalse(source.exists())
+
+    def test_stage_must_be_owned_private_and_exact(self):
+        stage = self.home / 'Desktop/.tft-turbo2-build-fixture'
+        stage.mkdir(mode=0o700)
+        candidate = stage / 'TFT TURBO 2.app'
+        self.assertEqual(isolation.staged_candidate_path(candidate, self.home), candidate)
+        stage.chmod(0o755)
+        with self.assertRaises(isolation.IsolationError):
+            isolation.staged_candidate_path(candidate, self.home)
+
+    def test_native_identity_mismatch_cannot_be_hidden_in_descriptor(self):
+        self.registry['modes']['turbo2']['sdk_root'] = '/old/sdk'
+        with self.assertRaises(isolation.IsolationError):
+            self.inspect()
 
 
 if __name__ == '__main__':

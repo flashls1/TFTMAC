@@ -2,7 +2,7 @@
   "schema": 1,
   "mode": "turbo2",
   "launch_state": "blocked_not_built",
-  "native_integration": "pending",
+  "native_integration": "build_only",
   "application": {
     "name": "TFT TURBO 2",
     "bundle_identifier": "com.flashls1.tftmac.turbo2",
@@ -35,13 +35,13 @@
   },
   "exclusive_lease_home_relative": "Library/Application Support/TFTMAC/State/native-runtime.lease",
   "credential_policy": {
-    "google_and_riot_guest_state": "preserve_complete_offline_AVD_in_CP3",
-    "host_adb_identity": "existing_logged_in_user_identity_no_regeneration",
-    "saved_riot_store": "existing_authorized_read_interface_no_secret_export",
-    "guest_unlock": "separate_Turbo2_item_or_proven_existing_access_no_original_deletion",
-    "new_bundle_access": "NOT_VERIFIED_REQUIRES_SIGNED_APP_ACCEPTANCE"
+    "google_and_riot_guest_state": "not_copied_or_accessed_by_this_build",
+    "host_adb_identity": "not_accessed_by_this_build",
+    "saved_riot_store": "not_accessed_deferred_to_local_Codex",
+    "guest_unlock": "independent_turbo2_namespace_no_access_or_migration",
+    "new_bundle_access": "NOT_VERIFIED_DEFERRED_TO_LOCAL_CODEX"
   },
-  "migration_state": "NOT_STARTED",
+  "migration_state": "DEFERRED_TO_LOCAL_CODEX_BY_USER",
   "emulator_upgrade_state": "NOT_STARTED",
-  "note": "Future isolation contract only. Not loaded by the native runtime registry; no app, SDK, AVD or credential is created by preflight. Recheck ports and path ownership before later effects."
+  "note": "Native source and packaging integrated. Runtime remains blocked until observed SDK/AVD authority is installed in CP4. No signed-in environment backup or account migration."
 }

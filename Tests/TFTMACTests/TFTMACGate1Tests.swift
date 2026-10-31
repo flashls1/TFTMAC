@@ -687,6 +687,76 @@ final class TFTMACGate1Tests: XCTestCase {
         XCTAssertNil(RiotANRRecovery.preferredTarget(in: "<node text=\"Continue\" bounds=\"[1,2][3,4]\" />"))
     }
 
+    func testTurbo2DefinesIsolatedBlockedNativeIdentity() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        let definition = try registry.definition(for: .turbo2)
+        XCTAssertEqual(definition.launchState, .blockedNotBuilt)
+        XCTAssertEqual(definition.applicationBundleId, "com.flashls1.tftmac.turbo2")
+        XCTAssertEqual(definition.avdName, "TFTMAC_Turbo2_StockShadow_R2")
+        XCTAssertEqual(definition.adbServerPort, 5053)
+        XCTAssertEqual(definition.consolePort, 5600)
+        XCTAssertEqual(definition.controllerPort, 8560)
+        XCTAssertTrue(definition.requiresControlStopped)
+        for mode in [TFTMACRuntimeMode.control, .advancedDiagnostics, .candidate] {
+            XCTAssertNotEqual(definition.runtimeRoot, try registry.definition(for: mode).runtimeRoot)
+        }
+    }
+
+    func testTurbo2SelectionCannotFallBackToControlOrClaimProvisioning() throws {
+        let registry = try TFTMACRuntimeModeRegistry(data: runtimeModeRegistryData())
+        XCTAssertThrowsError(try registry.selection(environment: [TFTMACRuntimeModeRegistry.environmentKey: "turbo2"])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Checkpoint 4"))
+        }
+    }
+
+    func testTurbo2KeepsProvenFixedProfileWithoutEnablingLaunch() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        let selection = TFTMACRuntimeSelection(registrySha256: registry.registrySha256,
+            activeLeaseRelativePath: registry.document.activeLeaseRelativePath,
+            definition: try registry.definition(for: .turbo2))
+        let profile = try authority.effectiveProfile(savedProfile: .playable, selection: selection)
+        XCTAssertEqual(profile.vCPU, 8)
+        XCTAssertEqual(profile.ramMiB, 6144)
+        XCTAssertEqual(profile.width, 1920)
+        XCTAssertEqual(profile.height, 1080)
+        XCTAssertEqual(profile.asgDataRingSize, 262144)
+        XCTAssertEqual(profile.asgWriteStepSize, 65536)
+        XCTAssertEqual(profile.asgDrawFlushInterval, 2000)
+        XCTAssertThrowsError(try selection.validateLaunchPrerequisites())
+    }
+
+    func testTurbo2AccountNamespaceDoesNotAliasExistingItems() {
+        let service = TFTMACGuestUnlockSecretStore.service(for: .turbo2)
+        XCTAssertEqual(service, "com.flashls1.tftmac.turbo2.android-unlock.v1")
+        XCTAssertNotEqual(service, TFTMACGuestUnlockSecretStore.service(for: .control))
+        XCTAssertNotEqual(service, TFTMACGuestUnlockSecretStore.service(for: .advancedDiagnostics))
+    }
+
+    func testTurbo2HasIndependentStateAndSourceBuiltHost() throws {
+        let authority = try TFTMACRuntimeModeAuthority(data: runtimeModeRegistryData())
+        let definition = try authority.definition(for: .turbo2)
+        XCTAssertEqual(definition.launchStrategy, .bundledForwarder)
+        XCTAssertEqual(definition.hostApplication?.bundleIdentifier, "com.flashls1.tftmac.turbo2.emulator-host")
+        XCTAssertEqual(definition.hostApplication?.buildReceiptResource, "turbo2-host-build.json")
+        XCTAssertNotEqual(authority.applicationSupportURL(for: .turbo2), authority.applicationSupportURL(for: .advancedDiagnostics))
+        XCTAssertTrue(authority.applicationSupportURL(for: .turbo2).path.hasSuffix("/TFTMAC/Modes/turbo2"))
+    }
+
+    func testTurbo2ContainsNoInventedInstalledRuntimeReceipt() throws {
+        let data = try runtimeModeRegistryData()
+        let registry = try TFTMACRuntimeModeRegistry(data: data)
+        let definition = try registry.definition(for: .turbo2)
+        XCTAssertNil(definition.emulatorSha256)
+        XCTAssertNil(definition.gfxstreamBackendSha256)
+        XCTAssertNil(definition.authorityManifest.sha256)
+        XCTAssertNil(definition.avdConfigSha256)
+        let authority = try TFTMACRuntimeModeAuthority(data: data)
+        XCTAssertNil(try authority.definition(for: .turbo2).diagnosticReceipts)
+        XCTAssertNil(try authority.definition(for: .turbo2).expectedEmulatorVersionContains)
+    }
+
     private func runtimeModeRegistryData() throws -> Data {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -5,6 +5,7 @@ enum TFTMACRuntimeMode: String, Codable, CaseIterable, Sendable {
     case control
     case advancedDiagnostics = "advanced_diagnostics"
     case candidate
+    case turbo2
 }
 
 enum TFTMACRuntimeModeLaunchState: String, Codable, Sendable {
@@ -288,7 +289,7 @@ struct TFTMACRuntimeSelection: Equatable, Sendable {
 
 struct TFTMACRuntimeModeRegistry: Sendable {
     static let environmentKey = "TFTMAC_RUNTIME_MODE"
-    static let expectedRegistrySha256 = "a7317bd7e9dfe87ce04e679802eb6d1636f659f362c8bf0318f9c820f4a779ae"
+    static let expectedRegistrySha256 = "f1170306c5300584770ac742e4c570317f9f15bd028ec493c7c1f357b4c1084b"
 
     let document: TFTMACRuntimeModeRegistryDocument
     let registrySha256: String
@@ -353,6 +354,9 @@ struct TFTMACRuntimeModeRegistry: Sendable {
             mode = document.defaultMode
         }
         let definition = try definition(for: mode)
+        if mode == .turbo2, definition.launchState == .blockedNotBuilt {
+            throw TFTMACRuntimeModeError(message: "TFT TURBO 2 is built. Android runtime setup is pending (Checkpoint 4). Account setup is deferred to local Codex.")
+        }
         guard definition.launchState == .enabled else {
             throw TFTMACRuntimeModeError(
                 message: "Runtime mode \(mode.rawValue) is \(definition.launchState.rawValue) and remains fail-closed."
@@ -379,7 +383,7 @@ struct TFTMACRuntimeModeRegistry: Sendable {
         let expectedKeys = Set(TFTMACRuntimeMode.allCases.map(\.rawValue))
         guard Set(document.modes.keys) == expectedKeys else {
             throw TFTMACRuntimeModeError(
-                message: "The runtime-mode registry must contain exactly control, advanced_diagnostics, and candidate."
+                message: "The runtime-mode registry must contain exactly control, advanced_diagnostics, candidate, and turbo2."
             )
         }
 
@@ -447,6 +451,27 @@ struct TFTMACRuntimeModeRegistry: Sendable {
             throw TFTMACRuntimeModeError(
                 message: "Advanced diagnostics no longer matches its isolated stock-shadow authority."
             )
+        }
+
+        let turbo2 = try required(.turbo2, from: document)
+        let turboRoot = "/Users/flash/Library/Application Support/TFTMAC/Turbo2/StockShadow"
+        guard turbo2.launchState == .blockedNotBuilt,
+              turbo2.applicationBundleId == "com.flashls1.tftmac.turbo2",
+              turbo2.runtimeRoot == turboRoot,
+              turbo2.sdkRoot == turboRoot + "/SDK",
+              turbo2.avdHome == turboRoot + "/AVD",
+              turbo2.avdName == "TFTMAC_Turbo2_StockShadow_R2",
+              turbo2.adbServerPort == 5053,
+              turbo2.consolePort == 5600,
+              turbo2.controllerPort == 8560,
+              turbo2.serial == "emulator-5600",
+              turbo2.authorityManifest.kind == "future_turbo2_manifest",
+              turbo2.authorityManifest.sha256 == nil,
+              turbo2.emulatorSha256 == nil,
+              turbo2.gfxstreamBackendSha256 == nil,
+              turbo2.requiresControlStopped,
+              turbo2.rollbackTarget == .control else {
+            throw TFTMACRuntimeModeError(message: "TURBO 2 must retain its isolated, unprovisioned runtime boundary until Checkpoint 4.")
         }
 
         let candidate = try required(.candidate, from: document)

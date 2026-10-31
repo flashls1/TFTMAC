@@ -75,6 +75,9 @@ enum TFTMACGuestUnlockSecretStore {
         switch runtimeMode {
         case .advancedDiagnostics:
             return devService
+        case .turbo2:
+            // This namespace does not access or migrate any existing item.
+            return "com.flashls1.tftmac.turbo2.android-unlock.v1"
         case .control, .candidate:
             return controlService
         }

@@ -424,7 +424,7 @@ struct TFTMACRuntimeModeAuthority: Sendable {
         let exactModes = Set(TFTMACRuntimeMode.allCases.map(\.rawValue))
         guard Set(document.modes.keys) == exactModes else {
             throw TFTMACRuntimeModeError(
-                message: "Supplemental authority must define exactly control, advanced_diagnostics, and candidate."
+                message: "Supplemental authority must define exactly control, advanced_diagnostics, candidate, and turbo2."
             )
         }
         var namespaces = Set<String>()
@@ -489,6 +489,32 @@ struct TFTMACRuntimeModeAuthority: Sendable {
               receipts.clone.requiredState == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS",
               receipts.nativeHost.requiredState == "STOCK_SHADOW_RUNTIME_IDENTITY_PASS" else {
             throw TFTMACRuntimeModeError(message: "Supplemental diagnostic authority is incomplete.")
+        }
+
+        guard let turbo2 = document.modes[TFTMACRuntimeMode.turbo2.rawValue],
+              !turbo2.usesLegacyApplicationSupportRoot,
+              turbo2.stateNamespace == "turbo2",
+              turbo2.launchStrategy == .bundledForwarder,
+              turbo2.profilePolicy == .fixedRegistryProfile,
+              turbo2.lockedProfile?.vcpu == 8,
+              turbo2.lockedProfile?.ramMib == 6144,
+              turbo2.lockedProfile?.width == 1920,
+              turbo2.lockedProfile?.height == 1080,
+              turbo2.lockedProfile?.asgDataRingSize == 262144,
+              turbo2.lockedProfile?.asgWriteStepSize == 65536,
+              turbo2.lockedProfile?.asgDrawFlushInterval == 2000,
+              turbo2.adbSha256 == nil,
+              turbo2.expectedEmulatorVersionContains == nil,
+              turbo2.qemuSha256 == nil,
+              turbo2.hostApplication?.kind == .bundledResource,
+              turbo2.hostApplication?.bundleIdentifier == "com.flashls1.tftmac.turbo2.emulator-host",
+              turbo2.hostApplication?.sourcePath == "RuntimeHost/main.c",
+              turbo2.hostApplication?.sourceSha256.map(Self.isSHA256) == true,
+              turbo2.hostApplication?.infoPlistPath == "RuntimeHost/Turbo2Info.plist",
+              turbo2.hostApplication?.infoPlistSha256.map(Self.isSHA256) == true,
+              turbo2.hostApplication?.buildReceiptResource == "turbo2-host-build.json",
+              turbo2.diagnosticReceipts == nil else {
+            throw TFTMACRuntimeModeError(message: "Supplemental TURBO 2 build-only authority is incomplete.")
         }
 
         guard let candidate = document.modes[TFTMACRuntimeMode.candidate.rawValue],
@@ -634,7 +660,8 @@ struct TFTMACRuntimeModeAuthority: Sendable {
         let receiptURL = resources.appendingPathComponent(receiptName)
         guard let data = try? Data(contentsOf: receiptURL),
               let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              string(receipt, ["state"]) == "CONTROL_NATIVE_HOST_BUILD_PASS",
+              string(receipt, ["state"]) == (host.bundleIdentifier == "com.flashls1.tftmac.turbo2.emulator-host"
+                  ? "TURBO2_NATIVE_HOST_BUILD_PASS" : "CONTROL_NATIVE_HOST_BUILD_PASS"),
               string(receipt, ["host_application_relative_path"]) == host.path,
               string(receipt, ["bundle_identifier"]) == host.bundleIdentifier,
               string(receipt, ["source_path"]) == sourcePath,

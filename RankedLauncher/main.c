@@ -6,12 +6,21 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef TFTMAC_TURBO2
+static const char *const kRuntimeMode = "turbo2";
+#else
 static const char *const kRuntimeMode = "advanced_diagnostics";
+#endif
 static const char *const kCoreExecutable = "TFTMACDEVCore";
 
 int main(int argc, char *argv[]) {
     if (setenv("TFTMAC_AUTONOMOUS_SILENT", "0", 1) != 0) return 70;
+#ifdef TFTMAC_TURBO2
+    if (setenv("TFTMAC_DEV_DIRECT_HOST", "0", 1) != 0) return 70;
+    unsetenv("TFTMAC_ANGLE_DRIVER_MANIFEST");
+#else
     if (setenv("TFTMAC_DEV_DIRECT_HOST", "1", 1) != 0) return 70;
+#endif
     if (setenv("TFTMAC_DEV_DISPLAY", "1920x1080", 1) != 0) return 70;
     if (setenv("TFTMAC_DEV_VCPU", "8", 1) != 0) return 70;
     if (setenv("TFTMAC_DEV_RAM_MIB", "6144", 1) != 0) return 70;
@@ -40,6 +49,7 @@ int main(int argc, char *argv[]) {
     }
     *lastSlash = '\0';
 
+#ifndef TFTMAC_TURBO2
     char angleManifestPath[PATH_MAX];
     int manifestWritten = snprintf(angleManifestPath, sizeof(angleManifestPath), "%s/../Resources/ANGLEDriver/angle-driver-manifest.json", resolvedPath);
     if (manifestWritten > 0 && (size_t)manifestWritten < sizeof(angleManifestPath)) {
@@ -49,6 +59,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+#endif
     char corePath[PATH_MAX];
     int written = snprintf(corePath, sizeof(corePath), "%s/%s", resolvedPath, kCoreExecutable);
     if (written < 0 || (size_t)written >= sizeof(corePath)) {

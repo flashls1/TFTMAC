@@ -14,13 +14,13 @@ ROOT="${0:A:h:h}"
 if [[ $# -eq 1 && "$1" == "--preflight" ]]; then
     exec /usr/bin/python3 -B "${ROOT}/scripts/turbo2_isolation.py" --preflight
 fi
-if [[ $# -ne 2 || "$1" != "--app" ]]; then
-    print -u2 -- "Usage: $0 --app /absolute/path/to/TFT\\ TURBO\\ 2.app | --preflight"
+if [[ $# -ne 2 || ( "$1" != "--app" && "$1" != "--staged-app" ) ]]; then
+    print -u2 -- "Usage: $0 --app <exact candidate> | --staged-app <exclusive build stage> | --preflight"
     exit 2
 fi
 APP="$2"
 # Reject wrong identity, alias or unintegrated runtime before any native tests.
-/usr/bin/python3 -B "${ROOT}/scripts/turbo2_isolation.py" --app "${APP}"
+/usr/bin/python3 -B "${ROOT}/scripts/turbo2_isolation.py" "$1" "${APP}"
 RANKED="/Users/flash/Desktop/TFT Ranked.app"
 EXPECTED_RANKED_CORE_SHA256="00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee"
 EXPECTED_TURBO_ICNS_MD5="a8f93ea0c9770af6c0a53d6a8bee57d7"
@@ -89,7 +89,7 @@ if [[ ! -d "${APP}" ]]; then
 else
     CODESIGN_DVV=$(/usr/bin/codesign -dvv "${APP}" 2>&1 || true)
     if echo "${CODESIGN_DVV}" | grep -q "Authority=TFTMAC Local Code Signing"; then
-        pass_gate "G-02" "Stable Code Signing Identity" "Signed with 'TFTMAC Local Code Signing' (TCC consent preserved)"
+        pass_gate "G-02" "Stable Code Signing Identity" "Signed with 'TFTMAC Local Code Signing'; new-bundle TCC acceptance is separate"
     else
         fail_gate "G-02" "Stable Code Signing Identity" "App is NOT signed with 'TFTMAC Local Code Signing' (found: $(echo "${CODESIGN_DVV}" | grep Authority || echo 'ad-hoc or unsigned'))"
     fi
@@ -159,7 +159,7 @@ else
     HAS_LAYER_GUARD=$(grep -c "currentExactLayerName == nil" "${SWIFT_SRC}" || true)
 
     if [[ ${HAS_BUFFER} -gt 0 && ${HAS_BOOT_RESTART} -gt 0 && ${HAS_LAYER_GUARD} -gt 0 ]]; then
-        pass_gate "G-06" "Audio Subsystem Health" "682ms buffer configured, audioserver boot pre-warmed, mid-game root toggle guarded"
+        pass_gate "G-06" "Audio source safeguards (static only)" "Existing configuration and in-game restart guard present; audible/runtime acceptance NOT tested"
     else
         fail_gate "G-06" "Audio Subsystem Health" "Audio guards missing (buffer=${HAS_BUFFER}, boot_restart=${HAS_BOOT_RESTART}, layer_guard=${HAS_LAYER_GUARD})"
     fi
@@ -200,15 +200,18 @@ if [[ ! -x "${TEST_CMD}" ]]; then
     fail_gate "G-08" "Native Unit Test Suite" "test-native-app.command is missing or not executable"
 else
     echo "  Running test suite (/bin/zsh ${TEST_CMD})..."
-    TEST_OUTPUT=$(/bin/zsh "${TEST_CMD}" 2>&1)
-    if echo "${TEST_OUTPUT}" | grep -q "Executed 135 tests, with 0 failures"; then
-        pass_gate "G-08" "Native Unit Test Suite" "All 135 native unit tests passed with 0 failures"
-    elif echo "${TEST_OUTPUT}" | grep -q "with 0 failures"; then
-        TEST_COUNT=$(echo "${TEST_OUTPUT}" | grep -o 'Executed [0-9]* tests' | awk '{print $2}')
-        pass_gate "G-08" "Native Unit Test Suite" "All ${TEST_COUNT} native unit tests passed with 0 failures"
+    if TEST_OUTPUT=$(/bin/zsh "${TEST_CMD}" 2>&1); then
+        TEST_SUMMARY=$(echo "${TEST_OUTPUT}" | grep -E 'Executed [0-9]+ tests, with [0-9]+ failures' | tail -n 1 || true)
+        TEST_COUNT=$(echo "${TEST_SUMMARY}" | awk '{print $2}')
+        TEST_FAILURES=$(echo "${TEST_SUMMARY}" | awk '{print $5}')
+        if [[ "${TEST_COUNT}" == <-> && ${TEST_COUNT} -ge 135 && "${TEST_FAILURES}" == "0" ]]; then
+            pass_gate "G-08" "Native Unit Test Suite" "${TEST_COUNT} tests passed; runner exit 0 and zero failures"
+        else
+            fail_gate "G-08" "Native Unit Test Suite" "Missing/insufficient successful suite summary: ${TEST_SUMMARY}"
+        fi
     else
-        FAIL_LINE=$(echo "${TEST_OUTPUT}" | grep "failures" | tail -n 1 || echo "Test failure")
-        fail_gate "G-08" "Native Unit Test Suite" "Tests failed: ${FAIL_LINE}"
+        echo "${TEST_OUTPUT}" | tail -n 40
+        fail_gate "G-08" "Native Unit Test Suite" "Native test runner returned failure; a partial success line is not acceptance"
     fi
 fi
 
@@ -252,7 +255,9 @@ APP_ASSET_DIR="${APP}/Contents/Resources/DEVHighPerf"
 if [[ -d "${APP_ASSET_DIR}" ]]; then
     APP_INI_HASH=$(/usr/bin/shasum -a 256 "${APP_ASSET_DIR}/DeviceProfiles.ini" | awk '{print $1}')
     APP_SH_HASH=$(/usr/bin/shasum -a 256 "${APP_ASSET_DIR}/profile-transaction.sh" | awk '{print $1}')
-    if [[ "${APP_INI_HASH}" != "${INI_HASH}" || "${APP_SH_HASH}" != "${SH_HASH}" ]]; then
+    APP_RAM_HASH=$(/usr/bin/shasum -a 256 "${APP_ASSET_DIR}/debug-ramdisk.img" | awk '{print $1}')
+    APP_RIOT_HASH=$(/usr/bin/shasum -a 256 "${APP_ASSET_DIR}/riot-defaults.sh" | awk '{print $1}')
+    if [[ "${APP_INI_HASH}" != "${INI_HASH}" || "${APP_SH_HASH}" != "${SH_HASH}" || "${APP_RAM_HASH}" != "${RAM_HASH}" || "${APP_RIOT_HASH}" != "${RIOT_HASH}" ]]; then
         G9_ERRORS+=("Deployed app bundle DEVHighPerf assets do not match source assets")
     fi
 else

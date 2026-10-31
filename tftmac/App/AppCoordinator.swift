@@ -25,6 +25,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         }
 
         do {
+            // A directly invoked successor core must never fall back to Control.
+            if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.turbo2",
+               ProcessInfo.processInfo.environment[TFTMACRuntimeModeRegistry.environmentKey] != "turbo2" {
+                throw TFTMACRuntimeModeError(message: "TFT TURBO 2 requires its isolated launcher; no Control fallback is allowed.")
+            }
             let savedProfile = TFTMACRuntimeProfile.load()
             let runtimeConfiguration = try TFTMACSelectedRuntimeConfiguration.load(
                 savedProfile: savedProfile
@@ -118,9 +123,11 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             runtime.start()
         } catch {
             var message = error.localizedDescription
-            if Bundle.main.bundleIdentifier == "com.flashls1.tftmac.dev" {
+            let bundleID = Bundle.main.bundleIdentifier
+            if bundleID == "com.flashls1.tftmac.dev" || bundleID == "com.flashls1.tftmac.turbo2" {
+                let namespace = bundleID == "com.flashls1.tftmac.turbo2" ? "turbo2" : "advanced_diagnostics"
                 let support = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent("Library/Application Support/TFTMAC/Modes/advanced_diagnostics", isDirectory: true)
+                    .appendingPathComponent("Library/Application Support/TFTMAC/Modes/" + namespace, isDirectory: true)
                 do { _ = try DiagnosticArtifactFile.persistStartupFailure(message, applicationSupport: support) }
                 catch { message += " (The private failure receipt could not be written: \(error.localizedDescription))" }
             }

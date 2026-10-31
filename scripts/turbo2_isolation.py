@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Read-only TURBO 2 identity preflight; never launches, builds or migrates.
+"""TURBO 2 identity preflight and exclusive candidate publication primitives.
 
-The legacy build entrypoints use this guard before reading private seed inputs
-or performing effects. CP2 defines isolation, not a launch-ready native mode.
+CLI inspection is read-only. The source-only builder uses the explicit atomic
+publication function after verification. No account migration or runtime launch.
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -63,7 +65,9 @@ def protected_paths(home: Path, registry: dict[str, Any]) -> list[Path]:
         "TFTMAC.app", "TFTMAC DEV.app", "TFTMAC Control Launcher.app")]
     roots = [home / "Library/Application Support/TFTMAC/InternalRuntime/StockShadow",
              home / "Library/Application Support/TFTMAC/Modes/advanced_diagnostics"]
-    for mode in registry.get("modes", {}).values():
+    for name, mode in registry.get("modes", {}).items():
+        if name == "turbo2":
+            continue  # Validated independently below; never protect it as an incumbent.
         for key in ("runtime_root", "sdk_root", "avd_home", "avd_directory"):
             if mode.get(key):
                 roots.append(Path(mode[key]))
@@ -78,8 +82,8 @@ def inspect_contract(contract: dict[str, Any], registry: dict[str, Any],
         if contract["schema"] != 1 or contract["mode"] != "turbo2":
             raise IsolationError("Unsupported isolation contract")
         if (contract["launch_state"] != "blocked_not_built"
-                or contract["native_integration"] != "pending"):
-            raise IsolationError("CP2 cannot declare a native runtime ready")
+                or contract["native_integration"] != "build_only"):
+            raise IsolationError("Build-only integration cannot declare a runtime ready")
         app = contract["application"]
         if (app["name"] != "TFT TURBO 2"
                 or app["bundle_identifier"] != "com.flashls1.tftmac.turbo2"
@@ -121,8 +125,25 @@ def inspect_contract(contract: dict[str, Any], registry: dict[str, Any],
             raise IsolationError("Emulator console/adjacent ADB transport pair is invalid")
         if len(set(ports.values())) != 4:
             raise IsolationError("Candidate endpoints collide")
+        if set(registry["modes"]) != {"control", "advanced_diagnostics", "candidate", "turbo2"}:
+            raise IsolationError("Unexpected native mode registry")
+        native = registry["modes"]["turbo2"]
+        required = {
+            "mode": "turbo2", "launch_state": "blocked_not_built",
+            "application_bundle_id": app["bundle_identifier"],
+            "runtime_root": str(runtime), "sdk_root": str(paths["sdk_root"]),
+            "avd_home": str(paths["avd_home"]), "avd_name": contract["avd_name"],
+            "adb_server_port": ports["adb_server"], "console_port": ports["emulator_console"],
+            "controller_port": ports["authenticated_controller"], "serial": contract["serial"],
+            "state_namespace": "turbo2", "requires_control_stopped": True,
+            "emulator_sha256": None, "gfxstream_backend_sha256": None,
+        }
+        if any(k not in native or native[k] != v for k, v in required.items()):
+            raise IsolationError("Native TURBO 2 identity differs from its build-only contract")
         occupied = set()
-        for mode in registry["modes"].values():
+        for name, mode in registry["modes"].items():
+            if name == "turbo2":
+                continue
             for key in ("adb_server_port", "console_port", "controller_port"):
                 if mode.get(key) is not None:
                     occupied.add(mode[key])
@@ -134,7 +155,7 @@ def inspect_contract(contract: dict[str, Any], registry: dict[str, Any],
             raise IsolationError("Serial does not match the console endpoint")
         if contract["avd_name"] != "TFTMAC_Turbo2_StockShadow_R2":
             raise IsolationError("Unexpected candidate AVD identity")
-        if any(m.get("avd_name") == contract["avd_name"] for m in registry["modes"].values()):
+        if any(m.get("avd_name") == contract["avd_name"] for n, m in registry["modes"].items() if n != "turbo2"):
             raise IsolationError("Candidate reuses an incumbent AVD identity")
         lease = "Library/Application Support/TFTMAC/State/native-runtime.lease"
         if (contract["exclusive_lease_home_relative"] != lease
@@ -150,8 +171,8 @@ def inspect_contract(contract: dict[str, Any], registry: dict[str, Any],
         "paths": {k: str(v) for k, v in paths.items()}, "ports": dict(ports),
         "serial": contract["serial"], "avd_name": contract["avd_name"],
         "exclusive_lease": str(home / lease),
-        "build_allowed": False, "launch_allowed": False,
-        "native_integration": "NOT_IMPLEMENTED", "credential_access": "NOT_VERIFIED",
+        "build_allowed": True, "launch_allowed": False,
+        "native_integration": "BUILD_ONLY_RUNTIME_PENDING", "credential_access": "DEFERRED_TO_LOCAL_CODEX",
     }
 
 
@@ -160,7 +181,13 @@ def preflight(output: Path | None = None, root: Path = ROOT) -> dict[str, Any]:
         registry = json.loads((root / "ssot/runtime-modes.json").read_text())
     except (OSError, ValueError) as exc:
         raise IsolationError("Cannot read existing runtime registry") from exc
-    return inspect_contract(load_contract(root), registry, output)
+    report = inspect_contract(load_contract(root), registry, output)
+    source = (root / "tftmac/Runtime/RuntimeMode.swift").read_text()
+    expected = re.search(r'expectedRegistrySha256 = "([0-9a-f]{64})"', source)
+    observed = hashlib.sha256((root / "ssot/runtime-modes.json").read_bytes()).hexdigest()
+    if expected is None or expected.group(1) != observed:
+        raise IsolationError("Native runtime registry source digest is not synchronized")
+    return report
 
 
 def observe_ports(ports: dict[str, int]) -> dict[str, str]:
@@ -177,10 +204,86 @@ def observe_ports(ports: dict[str, int]) -> dict[str, str]:
     return results
 
 
-def require_native_integration() -> None:
-    # Intentional checkpoint boundary, not an environment flag. Remove only with
-    # governed native-mode/build wiring and authenticated-clone acceptance.
-    raise IsolationError("TURBO2_NOT_BUILD_READY: native mode, candidate packaging and authenticated clone are not integrated; no build or legacy fallback was started")
+def require_native_integration(root: Path = ROOT) -> None:
+    # Build admission is separate from runtime/account readiness. The native
+    # mode remains blocked until the later SDK/AVD provisioning checkpoint.
+    if not preflight(root=root)["build_allowed"]:
+        raise IsolationError("TURBO2_NOT_BUILD_READY: source integration is incomplete")
+
+
+def staged_candidate_path(app: Path, home: Path | None = None) -> Path:
+    home = home or Path.home()
+    _no_symlink(app)
+    if (not app.is_absolute() or ".." in app.parts
+            or app.name != "TFT TURBO 2.app"
+            or app.parent.parent != home / "Desktop"
+            or not app.parent.name.startswith(".tft-turbo2-build-")):
+        raise IsolationError("Invalid exclusive TURBO 2 staging path")
+    try:
+        status = app.parent.stat()
+    except OSError as exc:
+        raise IsolationError("Candidate stage is absent") from exc
+    if status.st_uid != os.getuid() or status.st_mode & 0o077:
+        raise IsolationError("Candidate stage must be owner-only")
+    return app
+
+
+def publish_exclusively(source: Path, destination: Path) -> None:
+    """Atomic macOS rename that fails if ANY destination already exists."""
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = library.renamex_np
+    rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+    rename.restype = ctypes.c_int
+    # Darwin RENAME_EXCL (also VFS_RENAME_EXCL) is 0x00000004.
+    if rename(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))
+
+
+def verify_packaged_identity(app: Path, root: Path = ROOT) -> dict[str, Any]:
+    """Validate exact source-built resources; does not start runtime or access accounts."""
+    require_candidate_bundle(app)
+    resources = app / "Contents/Resources"
+    registry_path = resources / "runtime-modes.json"
+    if registry_path.read_bytes() != (root / "ssot/runtime-modes.json").read_bytes():
+        raise IsolationError("Packaged runtime registry differs from reviewed source")
+    registry = json.loads(registry_path.read_text())
+    native = registry["modes"]["turbo2"]
+    if native["launch_state"] != "blocked_not_built":
+        raise IsolationError("This build has no authority to activate a runtime")
+    host_authority = native["host_application"]
+    host = resources / host_authority["path"]
+    with (host / "Contents/Info.plist").open("rb") as stream:
+        host_info = plistlib.load(stream)
+    if host_info.get("CFBundleIdentifier") != host_authority["bundle_identifier"]:
+        raise IsolationError("Nested host bundle identity mismatch")
+    receipt = json.loads((resources / "turbo2-host-build.json").read_text())
+    expected = {
+        "state": "TURBO2_NATIVE_HOST_BUILD_PASS",
+        "host_application_relative_path": host_authority["path"],
+        "bundle_identifier": host_authority["bundle_identifier"],
+        "source_path": host_authority["source_path"],
+        "source_sha256": host_authority["source_sha256"],
+        "info_plist_path": host_authority["info_plist_path"],
+        "info_plist_sha256": host_authority["info_plist_sha256"],
+        "executable_relative_path": host_authority["executable_relative_path"],
+        "compile_arguments": ["-Os", "-arch", "arm64", "-mmacosx-version-min=15.0"],
+    }
+    if any(receipt.get(k) != v for k, v in expected.items()):
+        raise IsolationError("Nested host receipt differs from source authority")
+    for relative, expected_hash in [
+        (host_authority["executable_relative_path"], receipt.get("executable_sha256")),
+        ("Contents/Info.plist", host_authority["info_plist_sha256"]),
+    ]:
+        if hashlib.sha256((host / relative).read_bytes()).hexdigest() != expected_hash:
+            raise IsolationError("Nested host content does not match its signed receipt")
+    for directory in (app, *[p for p in app.rglob("*") if p.is_dir()]):
+        if directory.is_symlink():
+            raise IsolationError("Unexpected linked directory in source-only candidate")
+    for private_name in ("DEVGuestPIN.txt", "riot-login.json"):
+        if any(app.rglob(private_name)):
+            raise IsolationError("Account provisioning must not be embedded in this candidate")
+    return {"packaged_identity": "PASS", "runtime": "PENDING_CP4", "accounts": "DEFERRED_TO_LOCAL_CODEX"}
 
 
 def require_candidate_bundle(app: Path) -> None:
@@ -218,12 +321,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path)
     parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--staged-app", type=Path)
     parser.add_argument("--check-ports", action="store_true")
     args = parser.parse_args(argv)
     try:
-        if not args.preflight and args.app is None:
+        if args.app is not None and args.staged_app is not None:
+            raise IsolationError("Choose one exact verification target")
+        if not args.preflight and args.app is None and args.staged_app is None:
             raise IsolationError("Explicit --app is required for candidate verification")
         report = preflight(args.app)
+        target = staged_candidate_path(args.staged_app) if args.staged_app else Path(report["app"])
         if args.check_ports:
             report["port_observations"] = observe_ports(report["ports"])
             if "UNAVAILABLE" in report["port_observations"].values():
@@ -231,8 +338,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.preflight:
             print(json.dumps(report, indent=2, sort_keys=True))
             return 0
-        require_candidate_bundle(Path(report["app"]))
         require_native_integration()
+        print(json.dumps(verify_packaged_identity(target), sort_keys=True))
     except IsolationError as exc:
         print(str(exc), file=sys.stderr)
         return 2
