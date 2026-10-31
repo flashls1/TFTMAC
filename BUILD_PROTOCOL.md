@@ -1,10 +1,12 @@
 # TFT TURBO — Authoritative Build, Verification & Anti-Regression Protocol
 
-## Successor branch supersession — TFT TURBO 2 / CP2
+## Successor branch supersession — TFT TURBO 2 / revised CP3
 
-Both installed TURBO and Ranked apps are protected. The successor's build entrypoint now accepts only the exact new app path and exposes read-only --preflight. Non-preflight build is intentionally blocked until native runtime and candidate packaging integration; no environment flag may override it. The verifier requires --app for the exact candidate, never an implicit original, and --preflight does not run native tests or verify playback. Stable signing must fail closed; no ad-hoc fallback and no forced Finder restart.
+Both originals are immutable. Flash removed signed-in backup/migration from CP3 and delegated later account setup to local Codex. The only build route is `python3 -B scripts/build-turbo-app.py` in this successor: source-only Xcode app, source-compiled launcher/host/helpers, tracked icons/HighPerf assets and existing pinned public trace processor. No --seed, account file, PIN provisioning or AVD copy is permitted. --preflight is read-only. An existing candidate or receipt is refused, never overwritten; later replacement needs its own accepted stage/rollback procedure.
 
-Read ssot/turbo2-isolation.json and docs/TFT_TURBO_2_ISOLATION.md before later builds. The new native mode, credentials-preserving clone and live runtime do not exist yet. The 29 CP2 guard tests verify only isolation entry boundaries. Historical G-06 pattern checks below remain insufficient for runtime audio acceptance; CP6 must replace that assumption with actual PCM/audible evidence. Historical commands below are not authorization to build against the old app from the successor branch.
+Every new artifact is assembled in an owner-only exclusive Desktop stage, signed inside-out with TFTMAC Local Code Signing, verified against source and all 9 static gates, and published using exclusive atomic rename. The verifier takes --app for the exact final target or --staged-app for its private stage. G08 requires actual runner exit0, at least the original135 tests and a final zero-failure summary. G09 checks all four packaged HighPerf hashes. G06 is explicitly source/configuration evidence only; clean audio needs later runtime proof. New-bundle signing does not itself establish inherited TCC or Keychain consent.
+
+The fourth native mode remains blocked_not_built: the native app may be smoke-launched to show runtime setup pending, but cannot start Android or access accounts. CP4 must obtain actual package/AVD identities and finish runtime-specific wiring. Source build and native smoke acceptance cannot substitute for signed-in TFT startup, audio or gameplay. Historical original-app commands and literal135-test expectations below are preserved history, not successor execution instructions. Read docs/TFT_TURBO_2_ISOLATION.md and the current acceptance receipt.
 
 **Current as of:** October 2026  
 **Host Target:** Apple Mac mini (`Mac18,5`, Apple M6 SoC: 12 Cores [2 Super + 4 Performance + 6 Efficiency], Metal 4, 16 GB Unified Memory)  

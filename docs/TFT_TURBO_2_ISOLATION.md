@@ -1,39 +1,25 @@
-# TFT TURBO 2 isolation contract — Checkpoint 2
+# TFT TURBO 2 isolation — revised Checkpoint 3
 
-The canonical future identity descriptor is `ssot/turbo2-isolation.json`. It is deliberately `blocked_not_built` and is **not** a replacement for the accepted `ssot/runtime-modes.json`. The native app cannot select `turbo2` yet. CP2 installs no application, SDK or AVD. The shared preflight is real production entrypoint protection; its PASS means identity/path consistency, never launch, login or audio success.
+Flash changed CP3 to build without copying/backing up the signed-in environment. Local Codex owns later account provisioning. The previous denied migration is not retried. The native candidate is compiled entirely from managed source and existing non-account resources; no private seed or installed personal app supplies its contents.
 
 ## Independent identities
 
-- App: `~/Desktop/TFT TURBO 2.app`; bundle `com.flashls1.tftmac.turbo2`.
-- Packaged forwarder: `Contents/Resources/TFTMAC Emulator Host.app`; its future bundle is `com.flashls1.tftmac.turbo2.emulator-host`.
-- Runtime: `~/Library/Application Support/TFTMAC/Turbo2/StockShadow`; separate SDK, AVD and Manifests below it.
-- AVD: `TFTMAC_Turbo2_StockShadow_R2`.
-- State and captures: reuse the existing per-mode derivation under `~/Library/Application Support/TFTMAC/Modes/turbo2`, not the incumbent `advanced_diagnostics` namespace.
-- Endpoints: ADB server5053; emulator console5600; adjacent emulator ADB transport5601; authenticated controller8560. Serial `emulator-5600`.
-- Existing shared exclusive lease remains `~/Library/Application Support/TFTMAC/State/native-runtime.lease`. Separate ports do not authorize concurrent games or a new lease owner.
+App: ~/Desktop/TFT TURBO 2.app, bundle com.flashls1.tftmac.turbo2. The nested source-compiled host is Contents/Resources/TFTMAC Emulator Host.app, bundle com.flashls1.tftmac.turbo2.emulator-host. Future SDK/AVD/Manifests stay under ~/Library/Application Support/TFTMAC/Turbo2/StockShadow; AVD TFTMAC_Turbo2_StockShadow_R2. State/captures use TFTMAC/Modes/turbo2. Ports are server5053, console5600, guestADB5601, authenticated controller8560; serial emulator-5600. They are project assignments, not continuously held reservations. The existing shared TFTMAC/State/native-runtime.lease remains unchanged.
 
-These ports are assigned in the project contract and were free at the CP2 observation. No socket is held open; the launcher must recheck availability and never terminate a foreign owner to obtain a port.
+## Build is not runtime activation
 
-## Guarded route
+ssot/turbo2-isolation.json now declares native_integration=build_only. ssot/runtime-modes.json includes the exact fourth turbo2 mode, while all three original mode records retain field parity. New mode remains blocked_not_built with no fabricated emulator/gfxstream/AVD/manifest hashes. Runtime selection produces a clear provisioning-pending message before account APIs or emulator spawn. Directly invoking the new core without its correct launcher environment is rejected instead of falling back to Control.
 
-`python3 scripts/build-turbo-app.py --preflight` and `zsh scripts/verify-turbo-build.command --preflight` perform read-only identity checks. The builder must reject all outputs except the exact Turbo2 path, including symlink parents and nested originals. Normal build remains blocked **before reading a private seed, deleting output, compiling, signing, registering or touching Finder** until a later checkpoint implements the native route. A configuration toggle or environment flag cannot override this boundary.
+The builder accepts only the exact new Desktop path. It refuses existing output/receipt and aliases before effects, compiles from Xcode/source, packages its own host and existing source-owned helpers, signs with TFTMAC Local Code Signing, verifies in an owner-only exclusive stage, and publishes with no-overwrite atomic rename. It never deletes an installed application or accepts --seed. Both protected originals are checked before/after. The verifier binds its --app or --staged-app to the actual candidate; strict signature, registry/host receipt, native tests and all four HighPerf resources are checked. Static audio configuration is not audible acceptance.
 
-Verifier requires an explicit candidate `--app`, validates the new bundle identity, and cannot fall back to validating TURBO1. Its eventual invocation is tied to the builder's exact output. Missing local signing identity must fail closed, never choose ad-hoc signing. A full native build is not needed to prove these entrypoint boundaries; focused tooling tests exercise them with forbidden-effect mocks and actual rejected CLI invocations.
+## Completed source integration versus remaining live wiring
 
-## Native wiring required before clone-launch acceptance
+The new enum/registry digest/configuration identity, blocked-mode static checks, state namespace, nested-host source/Info/receipt identity, source-only packaging, independent unlock-service name, native branding and pending-state error route are implemented. No new credential is accessed or created merely by defining a service name.
 
-1. `RuntimeMode.swift`: enum, exact registry digest, registered-mode cardinality, definition/configuration digests and new exact identity checks. Keep existing three modes and their safety checks; never rename advanced_diagnostics to evade validation.
-2. `RuntimeModeAuthority.swift`: supplemental mode record, independent state namespace, exact forwarder identity, coherent immutable runtime evidence and profile ownership. Preserve existing global lease derivation.
-3. `TFTMACRuntime.swift`: audit all mode-specific guest provisioning, startup, login, capture, ADB transition and recovery sites. New runtime must not use old hard-coded serial/ports or fall back to protected Control. The CP2 audit found 102 ownership-related matches, not 102 required edits.
-4. `AppCoordinator.swift` and presentation bundle checks: new mode must retain native startup, window and frame behavior, not silently become Control.
-5. `GuestUnlockSecret.swift`: current mode switch, original DEV service and dedicated keychain path must not be reused for deletion/recreation. New bundle access requires proof. Do not copy secrets into manifests or logs.
-6. `RiotLogin.swift`: existing remembered credentials are a read-only dependency through the authorized interface. Preserve the store and remember preference; do not generate a new login workflow or edit the source store.
-7. Builder, verifier and launcher: rebind names/Info.plist/native runtime registry/forwarder/receipt to Turbo2 together, then remove the explicit no-build boundary only with accepted isolation and migration authority. Preserve 8vCPU/6144MiB/1080p baseline.
+Before enabling the new runtime in CP4, reconcile exact installed engine/AVD hashes and native forwarder authority with observed files. Audit the existing diagnostic-only branches of TFTMACRuntime.swift, RuntimeModeAuthority.swift, FrameContract, presentation buffering, guest HighPerf/startup, ADB ownership and login flow. Do not assume compilation extended those behaviors to turbo2. Preserve 8vCPU/6144MiB/1080p and proven ASG parameters unless a separately accepted change supersedes them. Preserve original guards, authenticated controller and shared exclusive lease. Never restore mid-game ADB root/audio restart.
 
-## Authentication boundary
+## Account and acceptance boundary
 
-The old TURBO designated requirement includes identifier com.flashls1.tftmac.dev and its certificate. A different bundle ID is not proof of access to that app's Keychain items or TCC consent. `com.flashls1.tftmac.turbo2` is the selected independent identity, but authentication/permission acceptance remains OPEN for the signed candidate. The first choice is preserving the complete offline guest state and using already-authorized host interfaces without changing the originals. Genuine provider consent must be surfaced, never bypassed or silently retried indefinitely.
+No account backup/migration, old AVD copy, PIN resource, Riot store read, Keychain item access or authentication acceptance belongs to revised CP3. Provider consent must never be bypassed. Stable signing does not guarantee that a distinct bundle inherits TCC/Keychain authorization. Local Codex provisioning is separate; actual repeated automatic TFT startup and audio/match checks remain required afterwards. A native provisioning-pending smoke test is not a playable release.
 
-## Explicitly deferred
-
-CP3: offline backup/clone, qcow2 backing-chain independence, native candidate route and retained-session verification. CP4: official emulator package verification/upgrade. CP5: repeated one-click startup acceptance. CP6: actual audio acceptance. CP10: complete reproducible packaging. No custom daemon, scheduler, credential vault, dynamic identity framework or source emulator rebuild is introduced by CP2.
+Current build/smoke status is recorded in facts.md and the exact CP3_BUILD_ACCEPTANCE.json when produced. CP4 remains unstarted until a new explicit continue. Historical CP2 and original CP3 receipts remain history. No daemon, credential vault, scheduler, Android OS build or source-emulator fork was introduced.

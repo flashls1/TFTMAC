@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "state": "CP3_NATIVE_PENDING_STATE_SMOKE_PASS",
+  "observed_utc": "2026-10-31T04:49:25.495132+00:00",
+  "application": "/Users/flash/Desktop/TFT TURBO 2.app",
+  "native_pid": 9653,
+  "startup_receipt": "/Users/flash/Library/Application Support/TFTMAC/Modes/turbo2/State/StartupFailures/d2491b20-b037-40a5-bca0-aba85c090baf.json",
+  "startup_receipt_sha256": "e7e8ea59bf991e11c265de7918c9a5d8f325445f991f6ea30cfbc62e0cf71e69",
+  "expected_message": "TFT TURBO 2 is built. Android runtime setup is pending (Checkpoint 4). Account setup is deferred to local Codex.",
+  "normal_termination": true,
+  "engine_process_set_unchanged": true,
+  "adb_process_set_unchanged": true,
+  "runtime_root_absent": true,
+  "account_apis_reached": false,
+  "authentication_gameplay_or_audio_acceptance": "NOT_RUN"
+}

@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "project_id": "tftmac",
+  "change_id": "fda4732b-70e6-45dd-97ca-cfc2b1f48c6c",
+  "checkpoint": 3,
+  "scope": "USER_REVISED_ACCOUNT_FREE_NATIVE_BUILD",
+  "acceptance": "PASS_NATIVE_BUILD_AND_PENDING_STATE_SMOKE",
+  "observed_utc": "2026-10-31T04:50:00.661827+00:00",
+  "source_head": "d8d3f00e15688dc80e1614f0087b59afe96f0020",
+  "source_input_count": 82,
+  "source_inputs_sha256": "0b9c48ca294e397c0cf76be884abd7f97545bba50f003ad474d42372e8ff69f1",
+  "application": "/Users/flash/Desktop/TFT TURBO 2.app",
+  "bundle_identifier": "com.flashls1.tftmac.turbo2",
+  "core_sha256": "4bb69584da7ee410701e293529601071b921346c7db20219258dd6ff14fa3b88",
+  "launcher_sha256": "8d94d85816f86e4359c9104417ae1343fbe7f58c8f537b20597da69982b854cf",
+  "runtime_modes_sha256": "f1170306c5300584770ac742e4c570317f9f15bd028ec493c7c1f357b4c1084b",
+  "build_receipt": {
+    "path": "/Users/flash/Desktop/TFT TURBO 2.build-receipt.json",
+    "sha256": "3f6d284b19a6f385a5be1f557763b7bf2e225a15b0c73688f3e687aada399a95",
+    "status": "VERIFIED_STATIC_BUILD_RUNTIME_PENDING"
+  },
+  "build_operation": "turbo2-cp3b-source-build-fixed-fixture-20261030-v1",
+  "build_log_sha256": "1f00b23336a490df7753a38f97f7fb72b79716b633637cfcc34f0c91d9de0665",
+  "build_gates": "9/9_STATIC",
+  "native_tests": {
+    "count": 141,
+    "failures": 0,
+    "runner_exit": 0
+  },
+  "isolation_tests": {
+    "count": 33,
+    "failures": 0,
+    "log_sha256": "13584b0f16275b4eab3febf349589fabb675fb4e869a4752629d920059e57fda"
+  },
+  "signature": "STRICT_DEEP_PASS",
+  "signing_identity": "TFTMAC Local Code Signing",
+  "packaged_identity": {
+    "packaged_identity": "PASS",
+    "runtime": "PENDING_CP4",
+    "accounts": "DEFERRED_TO_LOCAL_CODEX"
+  },
+  "native_smoke": {
+    "path": ".clara/plans/fda4732b-70e6-45dd-97ca-cfc2b1f48c6c/CP3_NATIVE_SMOKE.json",
+    "sha256": "9aabb80a74f5d74b4478ea8325056d56f666b4342a8abeb3f741b153f62ba7d3",
+    "result": "CP3_NATIVE_PENDING_STATE_SMOKE_PASS",
+    "normal_termination": true
+  },
+  "original_applications": {
+    "TFT TURBO.app": {
+      "Contents/MacOS/TFTMACDEVCore": "a3955be420b00b1fd13801a5dfcad65fe085fe7e3486a763b6788750acb1ed67",
+      "Contents/MacOS/TFTMACDEVLauncher": "133a4ee1355d7c2c07522391fa48dc1c4cab51d3f8eda436444ddd8bc3ebd9cf",
+      "Contents/Info.plist": "76df64006301091e1070cd64fcc4ca9286c96d5cd200fd73a16a78ec49de6ef5",
+      "Contents/Resources/runtime-modes.json": "a7317bd7e9dfe87ce04e679802eb6d1636f659f362c8bf0318f9c820f4a779ae"
+    },
+    "TFT Ranked.app": {
+      "Contents/MacOS/TFTMACDEVCore": "00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee",
+      "Contents/MacOS/TFTMACDEVLauncher": "66ffe9e18a9a5a0659daeeae3e7a356aa6b2bbb4bbad94f2a4499961f5fadc1e",
+      "Contents/Info.plist": "d3531b5453cd28c6ef98c6ed3e8d0d49c31ae3098a720780bb964afb243c4a2e",
+      "Contents/Resources/runtime-modes.json": "f8b97577d3f9c44b80119a82665945f46c4b471f6a81b03d16b440319ecfc369"
+    }
+  },
+  "original_mode_field_parity": "PASS",
+  "audio_render_runtime_source": "UNCHANGED_FROM_CP2",
+  "private_seed_used": false,
+  "signed_in_backup_or_clone": "NOT_PERFORMED_USER_REMOVED_REQUIREMENT",
+  "account_provisioning": "DEFERRED_TO_LOCAL_CODEX",
+  "runtime_installation": "NOT_STARTED_CP4",
+  "full_TFT_startup": "NOT_TESTED",
+  "audio_quality": "NOT_TESTED",
+  "gameplay_performance": "NOT_TESTED",
+  "first_build_rejected": "G08 correctly rejected dependence on absent rejected-driver artifacts; production manifest test now uses existing local fixture and checks missing-file rejection. No driver restored or test skipped.",
+  "checkpoint_4": "NOT_STARTED_REQUIRES_NEW_CONTINUE",
+  "publication_layer": "SOURCE_PUBLICATION_MUST_BE_RECONCILED_BY_CLARA"
+}
