@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Build the personal TFT TURBO candidate on Flash's Mac.
+"""TFT TURBO 2 successor entrypoint (CP2: read-only --preflight only).
+
+The inherited packaging body remains blocked until the native Turbo2 route and
+credential-preserving clone are integrated. Never build the original apps here.
 """
 import argparse
 import datetime
@@ -10,10 +13,15 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+from turbo2_isolation import (IsolationError, preflight as isolation_preflight,
+                              require_native_integration, required_signing_identity)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SEED = Path('/Volumes/MAC MINI M4/TFTDEV-SSOT/private-build-inputs/ranked-65fd6587/TFT Ranked.app')
-DEFAULT_OUTPUT = Path('/Users/flash/Desktop/TFT TURBO.app')
+DEFAULT_OUTPUT = Path.home()/'Desktop/TFT TURBO 2.app'
 PIN = 'Contents/Resources/DEVGuestPIN.txt'
 TURBO_ICNS = ROOT/'tftmac/Assets/TFTMAC-TURBO.icns' if (ROOT/'tftmac/Assets/TFTMAC-TURBO.icns').exists() else Path('/tmp/TFTMAC-TURBO.icns')
 
@@ -36,8 +44,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seed', type=Path, default=DEFAULT_SEED)
     parser.add_argument('--output', type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument('--preflight', action='store_true', help='Read-only isolation check; no build, seed read or runtime mutation')
     args = parser.parse_args()
-    output = args.output.resolve()
+    try:
+        report = isolation_preflight(args.output)
+        if args.preflight:
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
+        require_native_integration()
+        # Reached only after a later governed phase replaces the CP2 build lock.
+        signing_identity = required_signing_identity()
+    except IsolationError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
+    output = Path(report['app'])
     seed = args.seed.resolve()
     
     # User constraint: existing production app on Desktop must never be touched
@@ -137,13 +157,7 @@ if __name__ == '__main__':
     (output/PIN).chmod(0o600)
     
     # 10. Code signing with stable local identity to permanently preserve TCC permissions across builds
-    signing_identity = '-'
-    try:
-        id_output = subprocess.check_output(['/usr/bin/security', 'find-identity', '-v', '-p', 'codesigning'], text=True)
-        if 'TFTMAC Local Code Signing' in id_output:
-            signing_identity = 'TFTMAC Local Code Signing'
-    except Exception:
-        pass
+    # Required stable identity was verified before all build effects; no ad-hoc fallback.
     
     clock_host = output/'Contents/Resources/NativeClock/tftmac-clock-host'
     if clock_host.exists():
@@ -159,7 +173,6 @@ if __name__ == '__main__':
         subprocess.run([str(lsregister), '-f', str(output)], check=False)
     subprocess.run(['/usr/bin/touch', str(output)], check=False)
     subprocess.run(['/usr/bin/osascript', '-e', f'tell application "Finder" to update (POSIX file "{output}") as alias'], check=False)
-    subprocess.run(['/usr/bin/killall', 'Finder'], check=False)
     
     # 12. Verify protected invariant INV-01
     prod_ranked = Path('/Users/flash/Desktop/TFT Ranked.app/Contents/MacOS/TFTMACDEVCore')
@@ -175,7 +188,7 @@ if __name__ == '__main__':
     verify_script = ROOT/'scripts/verify-turbo-build.command'
     if verify_script.exists():
         print('\nExecuting automated 9-gate verification protocol...')
-        subprocess.run(['/bin/zsh', str(verify_script)], check=True)
+        subprocess.run(['/bin/zsh', str(verify_script), '--app', str(output)], check=True)
     
     receipt.update(
         status='VERIFIED_9_GATES_PASS',

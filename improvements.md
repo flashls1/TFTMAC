@@ -54,6 +54,9 @@
 
 ## 4. Chronological Action & Decision Log
 
+- `2026-10-30 22:56 America/Chicago` | `[BEFORE / TURBO2 CP2]` User continued to isolation checkpoint. Audit confirmed original builder deletes TURBO1 output and verifier silently targets TURBO1; selected independent candidate identity/paths and four noncolliding endpoints. Preserve all installed products, native registry and credentials; do not clone AVD or build in this slice.
+- `2026-10-30 23:02 America/Chicago` | `[AFTER / TURBO2 CP2]` Implemented blocked future identity descriptor, shared read-only path/port/identity guards and exact-candidate builder/verifier entrypoints; removed ad-hoc signing fallback and forced Finder restart. 29 focused tests passed, including actual CLI refusal of old/missing targets and forbidden-effect checks. Native Swift/registry and installed apps remain unchanged; no emulator upgrade, AVD migration or audio-repair claim. See CP2_ACCEPTANCE.json and docs/TFT_TURBO_2_ISOLATION.md. Stop before CP3 until continue.
+
 *Format: `[Timestamp] [PHASE] Action: ... | Reason: ... | Outcome: ...`*
 
 - `2026-10-26 19:40` | `[BEFORE]` Decided to isolate and implement transport batching first | Reason: Match 7 logs proved RHIThread saturated on ASG ring backpressure and MMIO notification stalls | Outcome: Created implementation plan for 256 KB ring and 2000 µs flush interval.

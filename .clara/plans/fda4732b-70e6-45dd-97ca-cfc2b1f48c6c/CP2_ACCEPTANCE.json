@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "project_id": "tftmac",
+  "change_id": "fda4732b-70e6-45dd-97ca-cfc2b1f48c6c",
+  "checkpoint": 2,
+  "observed_utc": "2026-10-31T04:06:31.881616+00:00",
+  "scope": "ISOLATION_IDENTITY_CONTRACT_AND_BUILD_ENTRY_GUARDS_ONLY",
+  "branch": "clara/tft-turbo-2-fda4732b",
+  "baseline_cp1_sha": "d47c77a91cbc26a15757028c14cd2f28fe493b4a",
+  "validation_head_before_publication": "80ff000abaa142232bad00d5e6edf1d01c73285a",
+  "acceptance": "PASS_AT_CP2_SOURCE_LAYER",
+  "reviewed_input_sha256": {
+    "scripts/turbo2_isolation.py": "9cd51c3da564f017fc898dc1f0e511d8981977baef867f1fb9797f32eabef78d",
+    "scripts/build-turbo-app.py": "86e60be039cb745dbf2ce62b519b86ddc68c9e821d4cffc0c19ce81836b12927",
+    "scripts/verify-turbo-build.command": "bb5ce0b37582c41168e83fe2f1480d0bd6dd2aaae189f30eed94c66159d32f70",
+    "Tests/Tooling/test_turbo2_isolation.py": "ca71ef765623e28379ff26ed044b0e3db8c4fafc30757669864a18c9aa5ce13c",
+    "ssot/turbo2-isolation.json": "0d4aca7bc795966b3c60dbcdc682215f78cb2525a2ff64a981a0ec4337317973",
+    "docs/TFT_TURBO_2_ISOLATION.md": "6f9c2957f4932f863d0f776ce20634d8067551424c73812b088ebcd5cbe2eae2",
+    "facts.md": "abc9f544d00723e4d643fc7a1c9223fec66120008f3bc2f98c4cbb8d19644514",
+    "project.md": "613740d48054ca5aa5cf70acd2a0bd54712027e3dd209a618e17c82c903f3def",
+    "AGENTS.md": "b8e645afc5416df617e5f6de778339aa4b5017c1b1a56f29221e59ed1a7b56e8",
+    "BUILD_PROTOCOL.md": "ce314631c48e97a2082999bce77e605f0e79a782d023b1030bbb0b44726c4e89",
+    "TFT_TURBO_2_PLAN.md": "f06ed338a77ac16232aba68b325245fac1236989ea0f1d0b85f8b85305275bfe",
+    "improvements.md": "448564701640743e238afeed85a32683fc78e8398ec95a3620098a55ffd4ec11"
+  },
+  "guard_test_operation": "tft-turbo2-cp2-guard-tests-20261030-v1",
+  "guard_test_count": 29,
+  "guard_test_result": "PASS",
+  "guard_test_log_sha256": "575f4175fb312e0711e077ba5865fc96bb49409c0f207890492ad81afeec10e2",
+  "python_and_zsh_syntax": "PASS",
+  "diff_check": "PASS",
+  "native_sources_and_active_registry": "UNCHANGED_FROM_CP1",
+  "protected_applications": [
+    {
+      "application": "TFT TURBO.app",
+      "core_sha256": "a3955be420b00b1fd13801a5dfcad65fe085fe7e3486a763b6788750acb1ed67",
+      "strict_signature": "PASS",
+      "state": "UNCHANGED_CORE"
+    },
+    {
+      "application": "TFT Ranked.app",
+      "core_sha256": "00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee",
+      "strict_signature": "PASS",
+      "state": "UNCHANGED_CORE"
+    }
+  ],
+  "turbo_nonsecret_resources_sha256": {
+    "Contents/MacOS/TFTMACDEVLauncher": "133a4ee1355d7c2c07522391fa48dc1c4cab51d3f8eda436444ddd8bc3ebd9cf",
+    "Contents/Resources/runtime-modes.json": "a7317bd7e9dfe87ce04e679802eb6d1636f659f362c8bf0318f9c820f4a779ae",
+    "Contents/Resources/TFTMAC-TURBO.icns": "9fbef42a57ee20467cdb607e9ee04f486f4641f6ae51ff72a8190a5a881d9d6b"
+  },
+  "candidate_ports": {
+    "adb_server": 5053,
+    "emulator_console": 5600,
+    "emulator_adb_transport": 5601,
+    "authenticated_controller": 8560
+  },
+  "port_availability": "FREE_AT_TEST_OBSERVATION_ONLY_RECHECK_BEFORE_LAUNCH",
+  "exclusive_runtime_lease": "PRESERVED_GLOBAL_LEASE_NOT_REPLACED",
+  "candidate_app_and_runtime_directories": "ABSENT_NO_INSTALLATION",
+  "build_entry": "BLOCKED_UNTIL_GOVERNED_NATIVE_AND_PACKAGING_INTEGRATION",
+  "native_runtime_integration": "NOT_IMPLEMENTED",
+  "new_bundle_credential_access": "NOT_VERIFIED",
+  "native_XCTest_and_gameplay": "NOT_RUN_NO_NATIVE_CODE_CHANGES",
+  "application_builds": "NONE",
+  "emulator_updates": "NONE",
+  "AVD_or_account_writes": "NONE",
+  "publication_evidence_owner": "tft-turbo2-cp2-final-publication-20261030-v1",
+  "clean_remote_state_owner": "Clara changes.status after publication",
+  "checkpoint_3": "NOT_STARTED_AWAITS_EXPLICIT_CONTINUE"
+}

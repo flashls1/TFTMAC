@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "mode": "turbo2",
+  "launch_state": "blocked_not_built",
+  "native_integration": "pending",
+  "application": {
+    "name": "TFT TURBO 2",
+    "bundle_identifier": "com.flashls1.tftmac.turbo2",
+    "forwarder_bundle_identifier": "com.flashls1.tftmac.turbo2.emulator-host",
+    "forwarder_relative_path": "Contents/Resources/TFTMAC Emulator Host.app",
+    "signing_identity": "TFTMAC Local Code Signing"
+  },
+  "paths": {
+    "application": "Desktop/TFT TURBO 2.app",
+    "runtime_root": "Library/Application Support/TFTMAC/Turbo2/StockShadow",
+    "sdk_root": "Library/Application Support/TFTMAC/Turbo2/StockShadow/SDK",
+    "avd_home": "Library/Application Support/TFTMAC/Turbo2/StockShadow/AVD",
+    "manifests": "Library/Application Support/TFTMAC/Turbo2/StockShadow/Manifests",
+    "state_root": "Library/Application Support/TFTMAC/Modes/turbo2/State",
+    "captures": "Library/Application Support/TFTMAC/Modes/turbo2/Captures",
+    "build_receipt": "Desktop/TFT TURBO 2.build-receipt.json"
+  },
+  "avd_name": "TFTMAC_Turbo2_StockShadow_R2",
+  "state_namespace": "turbo2",
+  "serial": "emulator-5600",
+  "ports": {
+    "adb_server": 5053,
+    "emulator_console": 5600,
+    "emulator_adb_transport": 5601,
+    "authenticated_controller": 8560
+  },
+  "controller": {
+    "loopback_only": true,
+    "authentication_required": true
+  },
+  "exclusive_lease_home_relative": "Library/Application Support/TFTMAC/State/native-runtime.lease",
+  "credential_policy": {
+    "google_and_riot_guest_state": "preserve_complete_offline_AVD_in_CP3",
+    "host_adb_identity": "existing_logged_in_user_identity_no_regeneration",
+    "saved_riot_store": "existing_authorized_read_interface_no_secret_export",
+    "guest_unlock": "separate_Turbo2_item_or_proven_existing_access_no_original_deletion",
+    "new_bundle_access": "NOT_VERIFIED_REQUIRES_SIGNED_APP_ACCEPTANCE"
+  },
+  "migration_state": "NOT_STARTED",
+  "emulator_upgrade_state": "NOT_STARTED",
+  "note": "Future isolation contract only. Not loaded by the native runtime registry; no app, SDK, AVD or credential is created by preflight. Recheck ports and path ownership before later effects."
+}

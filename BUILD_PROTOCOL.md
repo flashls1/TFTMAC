@@ -1,5 +1,11 @@
 # TFT TURBO — Authoritative Build, Verification & Anti-Regression Protocol
 
+## Successor branch supersession — TFT TURBO 2 / CP2
+
+Both installed TURBO and Ranked apps are protected. The successor's build entrypoint now accepts only the exact new app path and exposes read-only --preflight. Non-preflight build is intentionally blocked until native runtime and candidate packaging integration; no environment flag may override it. The verifier requires --app for the exact candidate, never an implicit original, and --preflight does not run native tests or verify playback. Stable signing must fail closed; no ad-hoc fallback and no forced Finder restart.
+
+Read ssot/turbo2-isolation.json and docs/TFT_TURBO_2_ISOLATION.md before later builds. The new native mode, credentials-preserving clone and live runtime do not exist yet. The 29 CP2 guard tests verify only isolation entry boundaries. Historical G-06 pattern checks below remain insufficient for runtime audio acceptance; CP6 must replace that assumption with actual PCM/audible evidence. Historical commands below are not authorization to build against the old app from the successor branch.
+
 **Current as of:** October 2026  
 **Host Target:** Apple Mac mini (`Mac18,5`, Apple M6 SoC: 12 Cores [2 Super + 4 Performance + 6 Efficiency], Metal 4, 16 GB Unified Memory)  
 **Operating Target:** `/Users/flash/Desktop/TFT TURBO.app`  

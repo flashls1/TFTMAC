@@ -10,7 +10,17 @@ set -euo pipefail
 # ==============================================================================
 
 ROOT="${0:A:h:h}"
-APP="/Users/flash/Desktop/TFT TURBO.app"
+# Successor branch: never silently validate the installed TURBO 1 artifact.
+if [[ $# -eq 1 && "$1" == "--preflight" ]]; then
+    exec /usr/bin/python3 -B "${ROOT}/scripts/turbo2_isolation.py" --preflight
+fi
+if [[ $# -ne 2 || "$1" != "--app" ]]; then
+    print -u2 -- "Usage: $0 --app /absolute/path/to/TFT\\ TURBO\\ 2.app | --preflight"
+    exit 2
+fi
+APP="$2"
+# Reject wrong identity, alias or unintegrated runtime before any native tests.
+/usr/bin/python3 -B "${ROOT}/scripts/turbo2_isolation.py" --app "${APP}"
 RANKED="/Users/flash/Desktop/TFT Ranked.app"
 EXPECTED_RANKED_CORE_SHA256="00566b69d805b544645b478d272de1a94c63486ee9deccb406d6aea1d291cbee"
 EXPECTED_TURBO_ICNS_MD5="a8f93ea0c9770af6c0a53d6a8bee57d7"
@@ -24,7 +34,7 @@ CYAN="\033[1;36m"
 RESET="\033[0m"
 
 echo "${CYAN}${BOLD}==============================================================================${RESET}"
-echo "${CYAN}${BOLD}     TFT TURBO — 9-Gate Pre-Delivery Quality Verification Runner              ${RESET}"
+echo "${CYAN}${BOLD}     TFT TURBO 2 — exact-artifact static build verification              ${RESET}"
 echo "${CYAN}${BOLD}==============================================================================${RESET}"
 echo "Workspace Root: ${ROOT}"
 echo "Target App:     ${APP}"
@@ -262,7 +272,7 @@ echo ""
 echo "${CYAN}${BOLD}==============================================================================${RESET}"
 echo "Summary: ${BOLD}${PASSED_GATES}/${TOTAL_GATES} Gates Passed${RESET}"
 if [[ ${FAILED_GATES} -eq 0 ]]; then
-    echo "${GREEN}${BOLD}VERDICT: 100% PASS — TFT TURBO.app IS CLEARED FOR LAUNCH AND DELIVERY${RESET}"
+    echo "${GREEN}${BOLD}VERDICT: STATIC GATES PASS for ${APP}; separate live acceptance is still required${RESET}"
     echo "${CYAN}${BOLD}==============================================================================${RESET}"
     exit 0
 else
